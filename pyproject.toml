@@ -1,0 +1,250 @@
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+
+[project]
+name = "kaxanuk-data_curator"
+description = "Tool for retrieving and combining financial and related data for informing security investments"
+
+authors = [
+    {name = "Rinku Kazeno", email="rinku.kazeno@kaxanuk.mx"},
+    {name = "Arturo Aguilar", email="arturo.aguilar@kaxanuk.mx"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [    # dev dependencies are in the [tool.pdm.dev-dependencies] section
+    "click>=8.1.7",
+    "openpyxl>=3.1.5",
+    "packaging>=24.2",
+    "pandas>=2.2.3",
+    "pandas_ta>=0.3.14b",
+    "pyarrow>=18.0",
+    "ta>=0.11",
+    "python-dotenv>=1.0.1",
+]
+dynamic = ["version"]
+license = {text = "MIT License"}
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+
+[project.scripts]
+"kaxanuk.data_curator" = "kaxanuk.data_curator:cli"
+
+[project.urls]
+"Homepage" = "https://kaxanuk.mx"
+# @todo: add the follwing:
+#Documentation = "https://readthedocs.org"
+#Repository = "https://github.com/me/spam.git"
+#Issues = "https://github.com/me/spam/issues"
+#Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
+
+
+[tool.coverage.run]
+branch = true
+source = [
+    "src/*",
+    "tests/*"
+]
+
+
+[tool.mypy]
+explicit_package_bases = true
+files = [
+    "src/*"
+]
+mypy_path = "src/"
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydevd_pycharm"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ta"
+ignore_missing_imports = true
+
+
+[tool.pdm.build]
+excludes = ["./**/.git"]
+includes = [
+    "src",
+    "templates",
+]
+source-includes = [
+    # LICENSE and README.md get included by default
+    "CHANGELOG.md",
+    "docs",
+    "tests",
+]
+package-dir = "src"
+
+[tool.pdm.build.wheel-data]
+data = [
+    {path = "templates/**/*", relative-to = "templates"},  # install templates dir to the python default data scheme dir
+]
+
+[tool.pdm.dev-dependencies]
+debug = [
+    "pydevd-pycharm>=243.23654.177"
+]
+lint = [
+    "ruff>=0.10",
+]
+test = [
+    "pytest>=8.3.3",
+    "pytest-cov>=6.0",
+    #"pytest-xdist>=3.5.0",     # enable when we have enough tests it does speed them up
+]
+typing = [
+    "mypy>=1.13",
+    "types-openpyxl>=3.1.5",
+    "pandas-stubs>=2.2.3",
+]
+docs = [
+    "sphinx>=8.1.3",
+    "myst-parser>=4.0.0",
+]
+
+[tool.pdm.scripts]
+# Run these with pdm run <script_name>
+install_dev = "pdm install --dev --no-lock --project ."
+lint = "ruff check"
+test = "pytest --cov=src --cov=tests --cov-report=term-missing:skip-covered tests"
+
+[tool.pdm.version]
+source = "file"
+path = "src/kaxanuk/data_curator/__init__.py"
+# @todo: change to read from scm once we're using Git tags
+# source = "scm"
+# When building from a source tree where SCM is not available, you can use the env var PDM_BUILD_SCM_VERSION to pretend the version is set.
+
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+pythonpath = [
+    "src"
+]
+
+
+[tool.ruff]
+indent-width = 4
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# Full rule list: https://docs.astral.sh/ruff/rules/
+select = [
+    # Indispensable linters:
+    "A",    # flake8-builtins: check for python builtins being used as variables or parameters
+    "C4",   # flake8-comprehensions: helps you write better list/set/dict comprehensions.
+    "E",    # pycodestyle errors
+    "F",    # pyflakes: checks Python source files for errors
+    "FBT",  # flake8-boolean-trap: detect boolean traps
+    "INP",  # flake8-no-pep420: ban PEP-420 implicit namespace packages (we'll add exceptions for our library namespace)
+    "ISC",  # flake8-implicit-str-concat: encourage correct string literal concatenation
+    "N",    # PEP8 naming
+    "PLC",  # pylint conventions
+    "PLE",  # pylint errors
+    "PLW",  # pylint warnings
+    "S",    # flake8-bandit: automated security testing
+    "SIM",  # flake8-simplify: helps you simplify your code
+    "T10",  # flake8-debugger: check for debug code
+    "T20",  # flake8-print: check for Print statements in python files
+    "W",    # pycodestyle warnings
+
+    # Rigorous linters:
+    #"ANN",  # flake8-annotations: detect the absence of PEP 3107-style function annotations
+    "ASYNC",# check for bad async / asyncio practices
+    "B",    # bugbear: find likely bugs and design problems
+    "BLE",  # flake8-blind-except: check for blind, catch-all except: and except Exception: statements
+    #"D",    # pydocstyle documentation errors
+    "DTZ",  # flake8-datetimez: ban the usage of unsafe naive datetime class
+    #"EM",   # flake8-errmsg: helps format nice error messages
+    "G",    # flake8-logging-format: validate (lack of) logging format strings
+    "INT",  # flake8_gettext: check for incorrect use of gettext
+    "PERF", # perflint: detect performance anti-patterns
+    "PIE",  # flake8-pie:  warn about code that assigns and then immediately returns the assignment
+    "PLR",  # pylint refactor rules
+    "PT",   # flake8-pytest-style: check common style issues or inconsistencies with pytest-based tests
+    "PTH",  # flake8-use-pathlib: find use of functions that can be replaced by pathlib module
+    "RET",  # flake8-return: checks return values
+    "RUF",  # Ruff-specific rules
+    "RSE",  # flake8-raise:  finds improvements for raise statements
+    "SLF",  # flake8-self: check for private member access
+    "SLOT", # flake8-slots: require __slots__ to be defined for subclasses of immutable types
+    "TID",  # flake8-tidy-imports: better control imports
+    "UP",   # pyupgrade: upgrade syntax for newer versions of the language
+    "YTT",  # flake8-2020: checks for misuse of sys.version or sys.version_info
+
+    # Limited reference linters:
+    #"COM",  # flake8-commas: comma warnings
+    #"Q",    # flake8-quotes: prefer double quotes, unless single ones allow to avoid escaping inner quotes
+    #"TCH",  # flake8-type-checking: finds imports to move into type-checking blocks for "performance"
+    #"TRY",  # tryceratops: prevent exception handling antiPatterns
+]
+ignore = [
+    "ANN204",   # missing-return-type-special-method - those obviously have a standard return interface
+    "ANN401",   # any-type - abuse is an issue, but it's not that rare to be used in valid contexts
+    "D200",     # One-line docstring should fit on one line - it's more prominent if quotes are on separate lines
+    "PLR09",    # Too many "too many" restrictions
+    "RET505",   # superfluous-else-return - more explicit branching improves code understanding
+    "RET506",   # superfluous-else-raise - more explicit branching improves code understanding
+    "RET507",   # superfluous-else-continue - more explicit branching improves code understanding
+    "RET508",   # superfluous-else-break - more explicit branching improves code understanding
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"unittest.mock".msg = "use pytest builtin monkeypatch fixture instead"
+
+[tool.ruff.lint.per-file-ignores]
+"__main__.py" = ["E402", "I"]    # Module level import not at top of file
+"src/kaxanuk/data_curator/data_providers/data_provider_interface.py" = [
+    # @todo: we'll probably be able to remove following ignore on async http:
+    "S310"  # Audit URL open for permitted schemes
+]
+"src/kaxanuk/data_curator/entities/market_data_daily_row.py" = ["A003"]     # shadows open(), but not in a dataclass
+"src/kaxanuk/data_curator/features/calculations.py" = [
+    "ANN",      # Keep code in calculations.py simpler, as it will be consulted for custom user calculations
+    "D103",     # Ditto with docstrings
+    "RET504",   # And with intermediate variables before returns, to make them easier to debug
+]
+"src/kaxanuk/data_curator/modules/data_column.py" = [
+    "A002",     # Argument `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
+    "SIM108",   # I'm not using a ternary instead of if-else, it would make the code harder to read
+    "UP007",    # Apparently pytest is retarded and doesn't understand Union type shorthand
+]
+"src/kaxanuk/data_curator/services/cli.py" = [
+    "S603",     # The whole point of cli._run_entry_script is to actually run scripts
+]
+"src/kaxanuk/data_curator/services/entity_helper.py" = [
+    "PLR2004",   # Don't see the use of introducing a constant for checking if there's 2 arguments
+]
+"templates/**" = [
+    "ANN",      # Keep code in custom_calculations template simpler, as it will be consulted for custom user calculations
+    "F401",     # Leave imported but unused modules so that users don't have to look for them
+    "INP001"    # File part of an implicit namespace package
+]
+"tests/**" = [
+    "ANN",      # Tests don't need to be annotated
+    "FBT003",   # Multiple external libraries require boolean positional arguments
+    "D",        # Tests don't need to follow strict documentation requirements
+    "PLR2004",  # No problem if magic values are usen in tests
+    "RET",      # No need for return strictness in tests
+    "S101",     # Permit use of pytest assert
+    "SLF",      # Tests need private member access
+]
+"tests/unit/modules/data_column/equality_test.py" = [
+    "A001", #  Variable `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
+    "FBT003",  # pyarrow.Scalar requires boolean positional values for boolean scalars
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"

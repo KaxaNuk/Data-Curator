@@ -1,0 +1,37 @@
+/* Mantener el resto de estilos que has agregado previamente */
+.wy-side-nav-search::before {
+    content: '';
+    display: block;
+    background: url("Imagotipo_Kaxanuk.png") no-repeat center;
+    background-size: contain;
+    width: 80%;  /* Ajusta el ancho al 100% para asegurarte de que se centre */
+    height: 70px; /* Ajusta la altura según sea necesario */
+    margin: 0 auto; /* Asegura que el elemento se centre horizontalmente */
+    text-align: center; /* Asegura que el contenido dentro esté centrado */
+}
+
+/* Asegurar que el contenido se desplaza hacia abajo para no cubrir el logo */
+.wy-side-nav-search {
+    padding-top: 10px; /* Ajusta según la altura del logo */
+    background-color: #f0f0f0 !important; /* Cambia este valor al color que desees */
+}
+
+/* Cambiar el color del texto y el borde de la barra de búsqueda si es necesario */
+.wy-side-nav-search input[type="text"] {
+    background-color: #f0f0f0 !important; /* Mismo color para unificar el diseño */
+    border-color: #e84328 !important; /* Ajusta el borde si es necesario */
+    color: #2c2c2c !important; /* Cambia el color del texto si es necesario */
+}
+
+/* Cambiar el color del enlace del nombre del proyecto */
+.wy-side-nav-search a {
+    color: #e84328 !important; /* Cambia el color del enlace al rojo */
+}
+
+.wy-side-nav-search a:hover {
+    color: #e84328 !important; /* Cambia el color del enlace al pasar el cursor */
+}
+
+.wy-menu-vertical li a:hover {
+    color: #e84328 !important; /* Mantén el color deseado para los enlaces al pasar el cursor */
+}
