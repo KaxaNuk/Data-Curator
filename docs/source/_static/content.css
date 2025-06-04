@@ -1,0 +1,81 @@
+/* Cambiar el color de fondo del contenido */
+.wy-nav-content {
+    background-color: #ffffff !important; /* Cambia este valor al color de fondo deseado */
+    padding: 20px; /* Añade un padding para evitar que el texto esté pegado al borde */
+    min-height: 100vh; /* Asegura que el fondo blanco cubra toda la altura de la ventana */
+}
+
+/* Cambiar el color del texto de los enlaces y otros elementos fuera de la barra lateral */
+.wy-nav-content a, .wy-nav-content p a, .wy-nav-content h1 a, .wy-nav-content h2 a, .wy-nav-content h3 a, .wy-nav-content h4 a, .wy-nav-content h5 a, .wy-nav-content h6 a {
+    color: #e84328 !important; /* Cambia este valor al color deseado para los enlaces */
+}
+
+/* Cambiar el color del borde y el fondo de los cuadros de las funciones */
+.highlight {
+    background-color: #f0f0f0 !important; /* Cambia el color de fondo */
+}
+
+/* Cambiar el color de fondo del bloque de código */
+.highlight pre {
+    background-color: #f0f0f0 !important; /* Cambia el color de fondo del código */
+}
+
+/* Cambiar el color del borde y el fondo del cuadro de la firma de la función */
+.sig {
+    background-color: #f0f0f0 !important; /* Cambia el color de fondo de la firma */
+    border-bottom: 1px solid #e84328 !important; /* Cambia el color del borde inferior */
+    border-top: 2px solid #e84328 !important; /* Cambia el color del borde superior */
+}
+
+/* Cambiar el color del texto de la firma de la función */
+.sig-name, .sig-param {
+    color: #000000 !important; /* Mantén el color del texto de la firma en negro */
+}
+
+/* Cambiar el color del borde y el fondo de los cuadros de descripción de las funciones */
+.field-list {
+    background-color: #f0f0f0 !important; /* Cambia el color de fondo */
+}
+
+/* Cambiar el color del borde y el fondo de las filas de la tabla de parámetros */
+.field-list .field {
+    border: none !important; /* Quitar el borde de las filas */
+    background-color: #f0f0f0 !important; /* Cambia el color de fondo de las filas */
+}
+
+.highlight .c {
+    color: #6E6E6E !important; /* Cambia el color de los comentarios */
+}
+
+.highlight .err {
+    border: 1px solid #FF0000 !important; /* Cambia el borde de los errores */
+}
+
+/* Mantener el resto de estilos de Pygments */
+.highlight .o { color: #666666 } /* Operator */
+.highlight .m { color: #666666 } /* Literal.Number */
+.highlight .s { color: #BA2121 } /* Literal.String */
+.highlight .p { color: #888888 } /* Punctuation */
+
+.wy-nav-top {
+    display: none;
+    background: #e84328;
+    color: #fff;
+    padding: .4045em .809em;
+    position: relative;
+    line-height: 50px;
+    text-align: center;
+    font-size: 100%;
+}
+
+a.headerlink {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background-repeat: no-repeat;
+    background-position: center;
+    text-indent: -9999px;
+    overflow: hidden;
+    background-image: url('Isologo_Kaxanuk.png');
+    background-size: contain;
+}

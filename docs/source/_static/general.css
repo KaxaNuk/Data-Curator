@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
+
+/* Cambiar la fuente de todo el cuerpo de la documentación */
+body {
+    font-family: 'Montserrat', sans-serif !important;
+}
+
+/* Cambiar la fuente de los encabezados */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Montserrat', sans-serif !important;
+}
+
+/* Cambiar la fuente de otros elementos */
+a, p, li, .wy-menu-vertical .caption, .highlight {
+    font-family: 'Montserrat', sans-serif !important;
+}
+
+/* Cambiar el color del texto del contenido principal */
+body {
+    color: #000000 !important; /* Cambia este valor al color deseado para el texto principal */
+}
+
+/* Cambiar el color de los títulos */
+h1, h2, h3, h4, h5, h6 {
+    color: #e84328 !important; /* Cambia este valor al color deseado para los títulos */
+}
+
+/* Justificar texto del cuerpo */
+body {
+    text-align: justify;
+}

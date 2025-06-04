@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+.mypy_cache
+.pdm-build
+.pdm-python
+.pytest_cache
+.venv
+__pycache__
+__pypackages__
+dist
+Config
+Input
+Output
