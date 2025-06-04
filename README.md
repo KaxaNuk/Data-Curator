@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=ffdd54)
 
-![Build](https://github.com/KaxaNuk-Community/O_Data-Curation/actions/workflows/main.yml/badge.svg)
+[![Build Status](https://github.com/KaxaNuk/Data-Curator/actions/workflows/main.yml/badge.svg)](https://github.com/KaxaNuk/Data-Curator/actions/workflows/main.yml)
 
 Tool for building a structured database for market, fundamental and alternative data obtained
 from different financial data provider web services.
