@@ -7,7 +7,7 @@
 Tool for building a structured database for market, fundamental and alternative data obtained
 from different financial data provider web services.
 
-Allows for easy creation of additional calculated column functions.
+Allows for easy creation of additional calculated feature functions.
 
 # Requirements
 * Python `3.12` or `3.13`
@@ -47,13 +47,13 @@ Allows for easy creation of additional calculated column functions.
 
 # Usage
 Now you can run the entry script with either:
-    ```
-    kaxanuk.data_curator run
-    ```
+```
+kaxanuk.data_curator run
+```
 or by executing the `__main__.py` script directly with Python:
-    ```
-    python __main__.py
-    ```
+```
+python __main__.py
+```
 The system will download the data for the tickers configured in the file, and save the data to the `Output` folder.
 
 
