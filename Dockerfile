@@ -54,6 +54,8 @@ RUN \
 FROM base AS dev_env
 # Development environment setup
 
+ENV PDM_USE_VENV=false
+
 COPY pyproject.toml ./
 COPY README.md ./
 COPY src/ ./src/
