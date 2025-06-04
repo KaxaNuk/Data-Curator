@@ -1,7 +1,7 @@
 # Run tests and, if successful, build and publish the Docker image and PyPI library
 # cf. https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Build Status
+name: Build and Publish
 
 on:
   push:
@@ -188,9 +188,17 @@ jobs:
           pip install twine
           twine check dist/*
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ -z "$TEST_PYPI_API_TOKEN" ]; then
+              echo "::error ::TEST_PYPI_API_TOKEN is not set!"
+              exit 1
+            fi
             echo "Uploading to TestPyPI..."
-            twine upload --non-interactive --repository-url https://test.pypi.org/legacy/ -u __token__ -p "$TEST_PYPI_TOKEN" dist/*
+            twine upload --non-interactive --verbose --repository-url https://test.pypi.org/legacy/ -u __token__ -p "$TEST_PYPI_API_TOKEN" dist/*
           else
+            if [ -z "$PYPI_API_TOKEN" ]; then
+              echo "::error ::PYPI_API_TOKEN is not set!"
+              exit 1
+            fi
             echo "Uploading to PyPI..."
-            twine upload --non-interactive -u __token__ -p "$PYPI_TOKEN" dist/*
+            twine upload --non-interactive -u __token__ -p "$PYPI_API_TOKEN" dist/*
           fi
