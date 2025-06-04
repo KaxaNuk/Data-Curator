@@ -1,4 +1,4 @@
-# Run tests and, if successful, build and deploy the Docker image
+# Run tests and, if successful, build and publish the Docker image and PyPI library
 # cf. https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
 name: Build Status
@@ -14,8 +14,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # @todo: change this when we move the repo to the main KaxaNuk org
-  IMAGE_NAME: kaxanuk-community/data-curator
+  IMAGE_NAME: kaxanuk/data-curator
 
 permissions:
   contents: read
@@ -24,22 +23,24 @@ permissions:
 jobs:
   run_tests:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ "3.12", "3.13" ]   # Run tests on both 3.12 and 3.13
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "${{ matrix.python-version }}"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pdm
           pdm install --dev --global --no-lock --no-self --project .
-          pip uninstall --yes pdm
 
       - name: Lint with ruff
         run: |
@@ -79,10 +80,20 @@ jobs:
           fi
           branch="$(echo ${raw//origin\//} | tr -d '\n')"
           echo "branch=$branch" >> $GITHUB_OUTPUT
-          echo "Branches where this tag exists : $branch."
+          echo "Branches where this tag exists : $branch."     
+      
+      - name: Check tag for SemVer
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # This regex matches: 1.2.3, v1.2.3, 1.2.3-rc1, v1.2.3-beta.1, etc.
+          if [[ ! "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "::error ::Tag '$TAG' is not a valid SemVer. Skipping build."
+            exit 1
+          fi
 
 
-  deploy:
+  publish_docker:
     if: |
       startsWith(github.ref, 'refs/tags/')
       || contains(needs.check_current_branch.outputs.branch, 'dev')
@@ -104,6 +115,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push dev image
         # dev images only set `dev` tag
@@ -118,8 +132,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push production image
-        # prod images set commit tag and `latest`
-        if: contains(needs.check_current_branch.outputs.branch, 'main')
+        # Only build production image if this is a git tag AND on main branch
+        if: |
+          startsWith(github.ref, 'refs/tags/') 
+          && contains(needs.check_current_branch.outputs.branch, 'main')
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -128,3 +144,53 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+
+  publish_pypi:
+    name: Build and Publish Python Package to PyPI/TestPyPI
+    if: |
+      (
+        (
+          startsWith(github.ref, 'refs/tags/')
+          && contains(needs.check_current_branch.outputs.branch, 'main')
+        )
+        || github.event_name == 'workflow_dispatch'
+      )
+    needs: check_current_branch
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PDM and build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pdm
+          pdm install --prod --no-lock --no-self --project .
+
+      - name: Build package with PDM
+        run: |
+          pdm build
+
+      - name: Publish to PyPI on main tag, or TestPyPI on manual workflow dispatch
+        env:
+          TWINE_USERNAME: __token__
+          PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          TEST_PYPI_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          pip install twine
+          twine check dist/*
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Uploading to TestPyPI..."
+            twine upload --non-interactive --repository-url https://test.pypi.org/legacy/ -u __token__ -p "$TEST_PYPI_TOKEN" dist/*
+          else
+            echo "Uploading to PyPI..."
+            twine upload --non-interactive -u __token__ -p "$PYPI_TOKEN" dist/*
+          fi

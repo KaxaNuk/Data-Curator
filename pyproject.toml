@@ -9,6 +9,7 @@ description = "Tool for retrieving and combining financial and related data for 
 
 authors = [
     {name = "Rinku Kazeno", email="rinku.kazeno@kaxanuk.mx"},
+    {name = "Ruben Flores", email="ruben.flores@kaxanuk.mx"},
     {name = "Arturo Aguilar", email="arturo.aguilar@kaxanuk.mx"},
 ]
 classifiers = [
@@ -35,12 +36,12 @@ requires-python = ">=3.12,<3.14"
 "kaxanuk.data_curator" = "kaxanuk.data_curator:cli"
 
 [project.urls]
-"Homepage" = "https://kaxanuk.mx"
+Homepage = "https://kaxanuk.mx"
 # @todo: add the follwing:
 #Documentation = "https://readthedocs.org"
-#Repository = "https://github.com/me/spam.git"
-#Issues = "https://github.com/me/spam/issues"
-#Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
+Repository = "https://github.com/KaxaNuk/Data-Curator"
+Issues = "https://github.com/KaxaNuk/Data-Curator/issues"
+Changelog = "https://github.com/KaxaNuk/Data-Curator/blob/main/CHANGELOG.md"
 
 
 [tool.coverage.run]
@@ -122,7 +123,7 @@ test = "pytest --cov=src --cov=tests --cov-report=term-missing:skip-covered test
 [tool.pdm.version]
 source = "file"
 path = "src/kaxanuk/data_curator/__init__.py"
-# @todo: change to read from scm once we're using Git tags
+# @todo: change to read from scm Git tags
 # source = "scm"
 # When building from a source tree where SCM is not available, you can use the env var PDM_BUILD_SCM_VERSION to pretend the version is set.
 
