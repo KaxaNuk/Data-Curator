@@ -8,6 +8,7 @@ name = "kaxanuk.data_curator"
 description = "Tool for retrieving and combining financial and related data for informing security investments"
 
 authors = [
+    {name = "KaxaNuk", email="info@kaxanuk.mx"},
     {name = "Rinku Kazeno", email="rinku.kazeno@kaxanuk.mx"},
     {name = "Ruben Flores", email="ruben.flores@kaxanuk.mx"},
     {name = "Arturo Aguilar", email="arturo.aguilar@kaxanuk.mx"},
