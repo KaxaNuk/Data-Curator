@@ -168,5 +168,6 @@ cython_debug/
 # Customizations
 __main__*.py
 !templates/**/__main__.py
+!templates/**/.env
 Config/*
 Output/*
