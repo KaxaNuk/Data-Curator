@@ -1,4 +1,4 @@
-__version__ = '0.39.4'
+__version__ = '0.39.5'
 __parameters_format_version__ = '0.39.0'
 
 __package_name__ = 'kaxanuk.data_curator'

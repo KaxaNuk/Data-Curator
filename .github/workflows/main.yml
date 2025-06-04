@@ -181,8 +181,8 @@ jobs:
       - name: Publish to PyPI on main tag, or TestPyPI on manual workflow dispatch
         env:
           TWINE_USERNAME: __token__
-          PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-          TEST_PYPI_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          TEST_PYPI_API_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           pip install twine
