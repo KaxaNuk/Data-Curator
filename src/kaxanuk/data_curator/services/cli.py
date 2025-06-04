@@ -305,12 +305,16 @@ def _find_templates_dir() -> str | None:
     # Cf. https://stackoverflow.com/a/77824551/5220723
     package_distribution = importlib.metadata.Distribution.from_name(__package_name__)
     direct_url = package_distribution.read_text("direct_url.json")
-    direct_url_obj = json.loads(direct_url)
-    package_is_editable = (
-        direct_url_obj
-            .get("dir_info", {})
-            .get("editable", False)
-    )
+
+    if direct_url is None:
+        package_is_editable = False
+    else:
+        direct_url_obj = json.loads(direct_url)
+        package_is_editable = (
+            direct_url_obj
+                .get("dir_info", {})
+                .get("editable", False)
+        )
 
     if package_is_editable:
         base_dir_url = urllib.parse.unquote(
