@@ -1,6 +1,6 @@
 # KaxaNuk Data Curator
 
-![Python](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=ffdd54)
+![Python](https://img.shields.io/badge/python-3.12%20|%203.13-blue?logo=python&logoColor=ffdd54)
 
 [![Build Status](https://github.com/KaxaNuk/Data-Curator/actions/workflows/main.yml/badge.svg)](https://github.com/KaxaNuk/Data-Curator/actions/workflows/main.yml)
 
@@ -11,7 +11,7 @@ Allows for easy creation of additional calculated column functions.
 
 # Requirements 
 
-* Python >= `3.12`
+* Python `3.12` or `3.13`
 * All the dependency library versions specified in `pyproject.toml` under the `[project].dependencies` section
   (see the installation guide)
 
