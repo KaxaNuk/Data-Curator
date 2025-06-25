@@ -74,7 +74,6 @@ html_theme_options = {
         "image_light": "_static/Imagotipo_Kaxanuk.png",
         "image_dark": "_static/Imagotipo_Kaxanuk_dark.png",
     },
-    "navbar_end": ["version-switcher", "theme-switcher", "navbar-icon-links"],
     "icon_links": [
         {
             "name": "GitHub",
@@ -82,6 +81,7 @@ html_theme_options = {
             "icon": "fa-brands fa-square-github",
         },
     ],
+    "navbar_end": ["theme-switcher", "navbar-icon-links"],
 }
 
 html_static_path = ['_static']
