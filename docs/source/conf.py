@@ -86,10 +86,8 @@ html_theme_options = {
 
 html_static_path = ['_static']
 
-# Configuración para Mermaid
 mermaid_output_format = 'svg'
 
-# Configuración del tema
 html_context = {
     "github_user": "tu-usuario",
     "github_repo": "tu-repo",

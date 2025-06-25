@@ -1,37 +1,37 @@
-/* Mantener el resto de estilos que has agregado previamente */
+/* Keep the rest of the previously added styles */
 .wy-side-nav-search::before {
     content: '';
     display: block;
     background: url("Imagotipo_Kaxanuk.png") no-repeat center;
     background-size: contain;
-    width: 80%;  /* Ajusta el ancho al 100% para asegurarte de que se centre */
-    height: 70px; /* Ajusta la altura según sea necesario */
-    margin: 0 auto; /* Asegura que el elemento se centre horizontalmente */
-    text-align: center; /* Asegura que el contenido dentro esté centrado */
+    width: 80%;  /* Adjust width to 100% to ensure it's centered */
+    height: 70px; /* Adjust the height as needed */
+    margin: 0 auto; /* Ensures the element is horizontally centered */
+    text-align: center; /* Ensures content inside is centered */
 }
 
-/* Asegurar que el contenido se desplaza hacia abajo para no cubrir el logo */
+/* Ensure content is pushed down so it doesn't overlap the logo */
 .wy-side-nav-search {
-    padding-top: 10px; /* Ajusta según la altura del logo */
-    background-color: #f0f0f0 !important; /* Cambia este valor al color que desees */
+    padding-top: 10px; /* Adjust according to the logo's height */
+    background-color: #f0f0f0 !important; /* Change this to your desired background color */
 }
 
-/* Cambiar el color del texto y el borde de la barra de búsqueda si es necesario */
+/* Change the background, border, and text color of the search bar if needed */
 .wy-side-nav-search input[type="text"] {
-    background-color: #f0f0f0 !important; /* Mismo color para unificar el diseño */
-    border-color: #e84328 !important; /* Ajusta el borde si es necesario */
-    color: #2c2c2c !important; /* Cambia el color del texto si es necesario */
+    background-color: #f0f0f0 !important; /* Same color for visual consistency */
+    border-color: #e84328 !important; /* Adjust the border color if needed */
+    color: #2c2c2c !important; /* Change text color if needed */
 }
 
-/* Cambiar el color del enlace del nombre del proyecto */
+/* Change the color of the project name link */
 .wy-side-nav-search a {
-    color: #e84328 !important; /* Cambia el color del enlace al rojo */
+    color: #e84328 !important; /* Change link color to red */
 }
 
 .wy-side-nav-search a:hover {
-    color: #e84328 !important; /* Cambia el color del enlace al pasar el cursor */
+    color: #e84328 !important; /* Maintain red color on hover */
 }
 
 .wy-menu-vertical li a:hover {
-    color: #e84328 !important; /* Mantén el color deseado para los enlaces al pasar el cursor */
+    color: #e84328 !important; /* Maintain desired hover color for sidebar links */
 }
