@@ -1,0 +1,9 @@
+.. _c_simple_moving_average_63d_close_split_adjusted_ref:
+
+c_simple_moving_average_63d_close_split_adjusted
+================================================
+
+.. currentmodule:: kaxanuk.data_curator.features.calculations
+
+.. autofunction:: c_simple_moving_average_63d_close_split_adjusted
+   :no-index:

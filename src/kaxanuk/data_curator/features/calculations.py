@@ -1667,34 +1667,48 @@ def c_macd_signal_9d_dividend_and_split_adjusted(
     1. Calculate the 12-day EMA:
        - In cell B13, enter::
 
-               =AVERAGE(A2:A13)
+
+           =AVERAGE(A2:A13)
+
        - In cell B14, enter::
 
-               =(A14*(2/(12+1)))+(B13*(1-(2/(12+1))))
+
+           =(A14*(2/(12+1)))+(B13*(1-(2/(12+1))))
+
        - Drag the formula down through column B.
 
     2. Calculate the 26-day EMA:
        - In cell C27, enter::
 
-               =AVERAGE(A2:A27)
+
+           =AVERAGE(A2:A27)
+
        - In cell C28, enter::
 
-               =(A28*(2/(26+1)))+(C27*(1-(2/(26+1))))
+
+           =(A28*(2/(26+1)))+(C27*(1-(2/(26+1))))
+
        - Drag the formula down through column C.
 
     3. Calculate the MACD line:
        - In cell D28, enter::
 
-               =B28 - C28
+
+           =B28 - C28
+
        - Drag the formula down through column D.
 
     4. Calculate the 9-day EMA of the MACD (signal line):
        - In cell E36, enter::
 
-               =AVERAGE(D28:D36)
+
+           =AVERAGE(D28:D36)
+
        - In cell E37, enter::
 
-               =(D37*(2/(9+1)))+(E36*(1-(2/(9+1))))
+
+           =(D37*(2/(9+1)))+(E36*(1-(2/(9+1))))
+
        - Drag the formula down through column E.
     """
     output = helpers.exponential_moving_average(
@@ -1742,34 +1756,48 @@ def c_macd_signal_9d_split_adjusted(
     1. Calculate the 12-day EMA:
        - In cell B13, enter::
 
-               =AVERAGE(A2:A13)
+
+           =AVERAGE(A2:A13)
+
        - In cell B14, enter::
 
-               =(A14*(2/(12+1)))+(B13*(1-(2/(12+1))))
+
+           =(A14*(2/(12+1)))+(B13*(1-(2/(12+1))))
+
        - Drag the formula down through column B.
 
     2. Calculate the 26-day EMA:
        - In cell C27, enter::
 
-               =AVERAGE(A2:A27)
+
+           =AVERAGE(A2:A27)
+
        - In cell C28, enter::
 
-               =(A28*(2/(26+1)))+(C27*(1-(2/(26+1))))
+
+           =(A28*(2/(26+1)))+(C27*(1-(2/(26+1))))
+
        - Drag the formula down through column C.
 
     3. Calculate the MACD line:
        - In cell D28, enter::
 
-               =B28 - C28
+
+           =B28 - C28
+
        - Drag the formula down through column D.
 
     4. Calculate the 9-day EMA of the MACD (signal line):
        - In cell E36, enter::
 
-               =AVERAGE(D28:D36)
+
+           =AVERAGE(D28:D36)
+
        - In cell E37, enter::
 
-               =(D37*(2/(9+1)))+(E36*(1-(2/(9+1))))
+
+           =(D37*(2/(9+1)))+(E36*(1-(2/(9+1))))
+
        - Drag the formula down through column E.
     """
     output = helpers.exponential_moving_average(

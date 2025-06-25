@@ -184,7 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.26] - 2024-11-13
 ### Added
--`Datacolumn.__neg__`
+- `Datacolumn.__neg__`
 - Left a not implemented placeholder for `Datacolumn.__pos__` for completeness
 
 ### Changed
@@ -192,7 +192,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated usage instructions in README.md
 
 ### Fixed
-- DataColumn reflected operators for +, -, *, /, //, %
+- DataColumn reflected operators for `+`, `-`, `*`, `/`, `//`, `%`
 
 
 ## [0.25] - 2024-11-08

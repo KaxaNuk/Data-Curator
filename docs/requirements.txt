@@ -1,6 +1,13 @@
 sphinx
-sphinx_rtd_theme
-sphinx.ext.autodoc
-sphinx.ext.napoleon
-sphinx.ext.viewcode
 myst-parser
+myst_parser
+sphinx_copybutton
+sphinx_design
+sphinxcontrib.mermaid
+sphinx_click
+pydata_sphinx_theme
+
+
+
+
+
