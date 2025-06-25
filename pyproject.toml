@@ -207,6 +207,7 @@ ignore = [
 "unittest.mock".msg = "use pytest builtin monkeypatch fixture instead"
 
 [tool.ruff.lint.per-file-ignores]
+"docs/source/conf.py" = ["A001"] #  Variable `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
 "__main__.py" = ["E402", "I"]    # Module level import not at top of file
 "src/kaxanuk/data_curator/data_providers/data_provider_interface.py" = [
     # @todo: we'll probably be able to remove following ignore on async http:

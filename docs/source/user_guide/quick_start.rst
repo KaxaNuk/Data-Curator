@@ -19,7 +19,6 @@ The system can run either on your local Python environment or on Docker.
 
    .. code-block:: bash
 
-      pip install --upgrade pip
       pip install kaxanuk.data_curator
 
 3. If you want to use the Yahoo Finance data provider, install the extension package:
