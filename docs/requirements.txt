@@ -1,3 +1,4 @@
+# Sphinx and extensions
 sphinx
 myst-parser
 sphinx_copybutton
@@ -5,3 +6,6 @@ sphinx_design
 sphinxcontrib.mermaid
 sphinx_click
 pydata_sphinx_theme
+
+# Install the library from PyPI
+kaxanuk.data_curator
