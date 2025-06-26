@@ -10,7 +10,7 @@ SOURCE_DIR = Path(__file__).parent
 OUTPUT_DIR = SOURCE_DIR / "release_notes"
 MAIN_INDEX = OUTPUT_DIR / "index.rst"
 
-VERSION_HEADER_RE = re.compile(r"^## \[(.*?)\]\s*-\s*(\d{4}-\d{2}-\d{2})$")  # ← EN DASH replaced with HYPHEN
+VERSION_HEADER_RE = re.compile(r"^## \[(.*?)\]\s*-\s*(\d{4}-\d{2}-\d{2})$")
 SECTION_HEADER_RE = re.compile(r"^###\s+(.*)$")
 BULLET_RE = re.compile(r"^\s*[-*]\s*(.*)$")
 CODE_SNIPPET_RE = re.compile(r"`([^`]+)`")
@@ -21,13 +21,9 @@ INTRO_TEXT = (
     "and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.\n\n"
 )
 
-
 def escape_inline_backticks(text):
-    # Convert `code` to ``code`` for Sphinx
     text = CODE_SNIPPET_RE.sub(r"``\1``", text)
-    # Escape any remaining single backticks to avoid unclosed emphasis
     return re.sub(r"(?<!`)`(?!`)", r"\`", text)
-
 
 def parse_changelog():
     if not CHANGELOG_FILE.exists():
@@ -46,10 +42,7 @@ def parse_changelog():
             current_version, current_date = m.groups()
             title = f"{current_version} ({current_date})"
             separator = "-" * len(title)
-            buffer = [
-                f"{title}\n",
-                f"{separator}\n\n",
-            ]
+            buffer = [f"{title}\n", f"{separator}\n\n"]
         elif current_version:
             sec = SECTION_HEADER_RE.match(line)
             if sec:
@@ -67,13 +60,6 @@ def parse_changelog():
     if current_version:
         entries.append(((current_version, current_date), buffer))
     return entries
-
-
-def sort_versions(versions):
-    def version_key(v):
-        return tuple(map(int, v.split('.')))
-    return sorted(versions, key=version_key, reverse=True)
-
 
 def generate_changelog_index(app):
     entries = parse_changelog()
@@ -96,6 +82,8 @@ def generate_changelog_index(app):
 
         index_path = major_dir / "index.rst"
         with index_path.open("w", encoding="utf-8") as f:
+            label = f"changelog_{major.lower()}"
+            f.write(f".. _{label}:\n\n")
             f.write(f"{major.upper()} Changelog\n")
             f.write(f"{'=' * (len(major) + 10)}\n\n")
             for _ver, _date, buf in version_entries:
@@ -103,15 +91,21 @@ def generate_changelog_index(app):
                     f.write(line)
                 f.write("\n")
 
+    # Main index.rst with :ref: list and hidden toctree
     with MAIN_INDEX.open("w", encoding="utf-8") as f:
         f.write("Changelog\n")
         f.write("=========\n\n")
         f.write(INTRO_TEXT)
-        f.write(".. toctree::\n")
-        f.write("   :maxdepth: 1\n\n")
-        for major in sorted(grouped.keys()):
+        f.write("What you’ll find here:\n\n")
+        for major in sorted(grouped.keys(), reverse=True):
+            label = f"changelog_{major.lower()}"
+            title = f"{major.upper()} changelog"
+            f.write(f"- :ref:`{label}` – {title}\n")
+        f.write("\n.. toctree::\n")
+        f.write("   :maxdepth: 1\n")
+        f.write("   :hidden:\n\n")
+        for major in sorted(grouped.keys(), reverse=True):
             f.write(f"   {major}/index\n")
-
 
 def setup(app):
     app.connect('builder-inited', generate_changelog_index)

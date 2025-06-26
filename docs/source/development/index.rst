@@ -16,8 +16,9 @@ Learn more about our work at:
 Why We're Doing This
 --------------------
 
-Investment research often suffers from limited transparency, unstructured processes, and lack of tooling.
-Data Curator aims to solve these problems by providing open-source solutions for reproducible, traceable, and reliable data workflows.
+Investment research often struggles with limited transparency, fragmented workflows, and a lack of robust tooling. Too much time is spent manually structuring raw data, cleaning datasets, and testing new data providers, repetitive tasks that drain resources and delay insights.
+
+Data Curator addresses these challenges by offering open-source tools that enable reproducible, traceable, and efficient data workflows.
 
 Share Your Calculation Modules
 --------------------------------

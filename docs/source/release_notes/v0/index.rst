@@ -1,3 +1,5 @@
+.. _changelog_v0:
+
 V0 Changelog
 ============
 

@@ -26,7 +26,7 @@ copyright = (
     f"{datetime.now(ZoneInfo('America/Mexico_City')).year}, "
     "KaxaNuk - Kaxan means Seek and Find, and Nuuk Answer in Mayan"
 )
-release = '1.0.0'
+release = '0.40.2'
 
 # -- General configuration ---------------------------------------------------
 extensions = [
