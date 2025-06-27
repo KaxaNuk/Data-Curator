@@ -38,8 +38,7 @@ Beyond calculations, there are many ways to contribute:
 
 Together we can grow a powerful and useful ecosystem.
 
-What You'll Find Here
----------------------
+What you’ll find here:
 
 - :ref:`reporting_and_triage` – how to report issues and suggest new features
 - :ref:`dev_setup_and_workflow` – environment setup and branching workflow
