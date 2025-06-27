@@ -96,11 +96,11 @@ def generate_changelog_index(app):
         f.write("Changelog\n")
         f.write("=========\n\n")
         f.write(INTRO_TEXT)
-        f.write("What you’ll find here:\n\n")
+        f.write("What you'll find here:\n\n")
         for major in sorted(grouped.keys(), reverse=True):
             label = f"changelog_{major.lower()}"
             title = f"{major.upper()} changelog"
-            f.write(f"- :ref:`{label}` – {title}\n")
+            f.write(f"- :ref:`{label}` - {title}\n")
         f.write("\n.. toctree::\n")
         f.write("   :maxdepth: 1\n")
         f.write("   :hidden:\n\n")
