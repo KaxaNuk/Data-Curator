@@ -27,7 +27,9 @@ The system can run either on your local Python environment or on Docker.
 
       pip install kaxanuk.data_curator_extensions.yahoo_finance
 
-**Configuration**
+4. Set the path where Data Curator should generate its configuration files
+
+**Excel Configuration**
 
 1. Open a terminal and run:
 
