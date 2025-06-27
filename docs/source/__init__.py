@@ -1,9 +1,10 @@
 """
-Package containing the Inputs fot the Read_the_Docs.
+Package containing the inputs for Read the Docs.
 """
-from Read_the_Docs.source import sphinx_ext
 
 __all__ = [
-    'conf.py',
-    'sphinx_ext',
+    'changelog_extension',
+    'conf',
+    'features_extension',
+    'fmp_extension',
 ]
