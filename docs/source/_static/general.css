@@ -82,4 +82,40 @@ a, p, li, .wy-menu-vertical .caption, .highlight {
   border-color: #e84328 !important;
 }
 
+/* === RTD flyout customization === */
+#rtd-footer-container {
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 5000;
+  font-size: 0.8rem;
+  font-family: 'Montserrat', sans-serif !important;
+  color: #000000 !important;
+}
 
+#rtd-footer-container .rst-versions {
+  background-color: #f5f5f5 !important;
+  border: 1px solid #cccccc !important;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  padding: 8px;
+}
+
+#rtd-footer-container .rst-current-version {
+  font-weight: bold;
+  color: #e84328 !important;
+}
+
+#rtd-footer-container .rst-other-versions {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+[data-theme="dark"] #rtd-footer-container .rst-versions {
+  background-color: #2a2a2a !important;
+  border: 1px solid #444 !important;
+  color: #f0f0f0 !important;
+}
+
+[data-theme="dark"] #rtd-footer-container .rst-current-version {
+  color: #e84328 !important;
+}

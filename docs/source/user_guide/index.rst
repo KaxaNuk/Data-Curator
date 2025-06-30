@@ -5,7 +5,7 @@ User Guide
 
 Welcome to Data Curator! This documentation is designed to help you get up and running quickly, as well as to provide in-depth guidance for advanced usage. Whether you’re looking for a fast overview or detailed instructions, you’ll find everything you need here.
 
-If you’re new to Data Curator, start with the Quick Guide for a streamlined walkthrough that will have you set up in no time. For a comprehensive reference on configuration options, custom calculations, and component integration, refer to the How to Use section.
+If you’re new to Data Curator, start with the Quick Start for a streamlined walkthrough that will have you set up in no time. For a comprehensive reference on configuration options, custom calculations, and component integration, refer to the How to Use section.
 
 What you’ll find here:
 

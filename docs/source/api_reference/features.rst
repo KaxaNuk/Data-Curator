@@ -127,6 +127,12 @@ Volume
 
 .. toctree::
    :hidden:
-   :glob:
+   :maxdepth: 1
 
-   api/*
+   api/adjustments/index
+   api/fundamental/index
+   api/market_and_fundamental/index
+   api/momentum/index
+   api/trend/index
+   api/volatility/index
+   api/volume/index
