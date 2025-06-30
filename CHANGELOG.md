@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - CODEOWNERS file for GitHub code review automation
+- `DataColumn.__hash__` method for hashing DataColumns
 
 
 ## [0.40.2] - 2025-06-05

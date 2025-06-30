@@ -84,9 +84,38 @@ class TestDunderEq:
                 pyarrow.null()
             )
         )
-        result = int_column == null_column
+        result = (int_column == null_column)
 
         assert DataColumn.is_null(result)
+
+
+class TestDunderHash:
+    def test_hashing_equal_integer_columns_with_nulls(self):
+        base_data = [1, 2, None, 3, 4]
+        column1 = DataColumn.load(
+            base_data
+        )
+        column2 = DataColumn.load(
+            base_data
+        )
+        result1 = hash(column1)
+        result2 = hash(column2)
+
+        assert result1 == result2
+
+    def test_hashing_different_integer_columns_with_nulls(self):
+        data1 = [1, 2, None, 3, 4]
+        data2 = [1, None, 2, 3, 4]
+        column1 = DataColumn.load(
+            data1
+        )
+        column2 = DataColumn.load(
+            data2
+        )
+        result1 = hash(column1)
+        result2 = hash(column2)
+
+        assert result1 != result2
 
 
 class TestDunderGe:

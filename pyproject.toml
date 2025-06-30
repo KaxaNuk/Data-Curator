@@ -221,7 +221,6 @@ ignore = [
 ]
 "src/kaxanuk/data_curator/modules/data_column.py" = [
     "A002",     # Argument `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
-    "PLW1641",  # @todo: add hash method
     "SIM108",   # I'm not using a ternary instead of if-else, it would make the code harder to read
     "UP007",    # Apparently pytest is retarded and doesn't understand Union type shorthand
 ]
