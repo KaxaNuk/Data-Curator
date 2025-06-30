@@ -112,12 +112,36 @@ All functions operate on `DataColumn` inputs and return iterable values compatib
 
         f.write(".. toctree::\n")
         f.write("   :hidden:\n")
-        f.write("   :glob:\n\n")
-        f.write("   api/*\n")
+        f.write("   :maxdepth: 1\n\n")
+        for category in sorted(functions_by_category):
+            cat_dir = category.replace(" ", "_").lower()
+            f.write(f"   api/{cat_dir}/index\n")
 
     for category in functions_by_category:
+        cat_dir = category.replace(" ", "_").lower()
+        category_path = api_dir / cat_dir
+        category_path.mkdir(parents=True, exist_ok=True)
+
+        index_path = category_path / "index.rst"
+        with index_path.open("w", encoding="utf-8") as index_file:
+            index_file.write(f"{category}\n")
+            index_file.write(f"{'=' * len(category)}\n\n")
+
+            index_file.write(".. list-table::\n")
+            index_file.write("   :header-rows: 1\n")
+            index_file.write("   :widths: 100\n\n")
+            index_file.write("   * - Function\n")
+
+            for name, _ in sorted(functions_by_category[category], key=lambda x: x[0]):
+                index_file.write(f"   * - :ref:`{name} <{name}_ref>`\n")
+
+            index_file.write("\n.. toctree::\n")
+            index_file.write("   :hidden:\n\n")
+            for name, _ in sorted(functions_by_category[category], key=lambda x: x[0]):
+                index_file.write(f"   {name}\n")
+
         for name, _ in functions_by_category[category]:
-            path = api_dir / f"{name}.rst"
+            path = category_path / f"{name}.rst"
             with path.open("w", encoding="utf-8") as out:
                 out.write(f".. _{name}_ref:\n\n")
                 out.write(f"{name}\n")

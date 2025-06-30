@@ -7,14 +7,14 @@ Welcome! Thank you for considering contributing to **Data Curator**.
 
 Who We Are
 ----------
-
-Our mission with Data Curator is to enhance **reproducibility** and **auditability** in financial research by building robust and accessible tools for the development of investment strategies.
+We are an investment research and technology development firm.
 
 Learn more about our work at:
 `www.kaxanuk.mx <https://www.kaxanuk.mx/>`_
 
 Why We're Doing This
 --------------------
+Our mission with Data Curator is to enhance **reproducibility** and **auditability** in financial research by building robust and accessible tools for the development of investment strategies.
 
 Investment research often struggles with limited transparency, fragmented workflows, and a lack of robust tooling. Too much time is spent manually structuring raw data, cleaning datasets, and testing new data providers, repetitive tasks that drain resources and delay insights.
 
