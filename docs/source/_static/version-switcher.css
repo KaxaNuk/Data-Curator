@@ -1,0 +1,21 @@
+.version-switcher-container {
+  display: inline-block;
+  margin-left: 1rem;
+  margin-top: 0.25rem;
+}
+
+#version-switcher {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background-color: #ffffff;
+  color: #000000;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.9rem;
+}
+
+[data-theme="dark"] #version-switcher {
+  background-color: #2a2a2a;
+  color: #ffffff;
+  border-color: #666;
+}
