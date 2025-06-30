@@ -100,5 +100,3 @@ def setup(app):
     app.add_css_file('sidebar.css')
     app.add_css_file('general.css')
     app.add_css_file('content.css')
-    app.add_css_file('version-switcher.css')
-    app.add_js_file('version-switcher.js')
