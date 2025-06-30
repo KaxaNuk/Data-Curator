@@ -152,6 +152,26 @@ class DataColumn:
             )
         )
 
+    def __hash__(self) -> int:
+        """
+        Implement the `hash` function for DataColumn objects.
+
+        This allows DataColumn objects to be used as keys in dictionaries or be added to sets.
+        The hash is based on the type and contents of the array.
+
+        Returns
+        -------
+        The hash value of the DataColumn object's internal PyArrow array.
+        """
+        hashable_tuple = (
+            self.array.type,
+            tuple(
+                self.array.to_pylist()
+            )
+        )
+
+        return hash(hashable_tuple)
+
     def __ge__(
         self,
         other: typing.Union['DataColumn', int, float, decimal.Decimal, pyarrow.Scalar],
