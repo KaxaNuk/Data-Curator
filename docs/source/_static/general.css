@@ -119,3 +119,7 @@ a, p, li, .wy-menu-vertical .caption, .highlight {
 [data-theme="dark"] #rtd-footer-container .rst-current-version {
   color: #e84328 !important;
 }
+
+#rtd-footer-container {
+  display: none !important;
+}
