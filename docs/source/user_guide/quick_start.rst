@@ -29,9 +29,9 @@ The system can run either on your local Python environment or on Docker.
 
 4. Set the path where Data Curator should generate its configuration files
 
-.. code-block:: bash
+    .. code-block:: bash
 
-   cd /path/to/your/datacurator/project
+        cd /path/to/your/datacurator/project
 
 **Excel Configuration**
 
