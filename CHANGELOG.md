@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - CODEOWNERS file for GitHub code review automation
 - `DataColumn.__hash__` method for hashing DataColumns
-- - Docs: Inserted hidden `toctree` entries in each category `index.rst` to ensure all functions are registered in the Sphinx documentation build.
+- Docs: Inserted hidden `toctree` entries in each category `index.rst` to ensure all functions are registered in the Sphinx documentation build.
+- Docs: Added Use Cases section, with links to the Data-Curator-Use-Cases repo
 
 ### Changed
 - Docs: Refactored `features_extension.py` to group calculation functions by category for documentation generation.
@@ -18,7 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: Each category generates its own `index.rst` file with a clean table layout listing all functions.
 - Docs: The Section Navigation panel now displays categories as expandable subsections instead of a flat list.
 - Docs: Added `:ref:`-based linking for function references without affecting Excel configuration behavior.
-
 
 
 ## [0.40.2] - 2025-06-05
