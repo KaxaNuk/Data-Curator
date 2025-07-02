@@ -208,6 +208,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__main__.py" = ["E402", "I"]    # Module level import not at top of file
+"docs/source/conf.py" = ["A001"] #  Variable `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
 "src/kaxanuk/data_curator/data_providers/data_provider_interface.py" = [
     # @todo: we'll probably be able to remove following ignore on async http:
     "S310"  # Audit URL open for permitted schemes
@@ -222,6 +223,9 @@ ignore = [
     "A002",     # Argument `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
     "SIM108",   # I'm not using a ternary instead of if-else, it would make the code harder to read
     "UP007",    # Apparently pytest is retarded and doesn't understand Union type shorthand
+]
+"src/kaxanuk/data_curator/modules/debugger.py" = [
+    "PLC0415",  # Need to limit the debugger module import to specific envs
 ]
 "src/kaxanuk/data_curator/services/cli.py" = [
     "S603",     # The whole point of cli._run_entry_script is to actually run scripts

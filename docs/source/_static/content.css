@@ -1,81 +1,114 @@
-/* Cambiar el color de fondo del contenido */
+/* Set background color for main content area */
 .wy-nav-content {
-    background-color: #ffffff !important; /* Cambia este valor al color de fondo deseado */
-    padding: 20px; /* Añade un padding para evitar que el texto esté pegado al borde */
-    min-height: 100vh; /* Asegura que el fondo blanco cubra toda la altura de la ventana */
+    background-color: #ffffff !important;
+    padding: 20px;
+    min-height: 100vh;
 }
 
-/* Cambiar el color del texto de los enlaces y otros elementos fuera de la barra lateral */
-.wy-nav-content a, .wy-nav-content p a, .wy-nav-content h1 a, .wy-nav-content h2 a, .wy-nav-content h3 a, .wy-nav-content h4 a, .wy-nav-content h5 a, .wy-nav-content h6 a {
-    color: #e84328 !important; /* Cambia este valor al color deseado para los enlaces */
+/* Link colors */
+.wy-nav-content a,
+.wy-nav-content p a,
+.wy-nav-content h1 a,
+.wy-nav-content h2 a,
+.wy-nav-content h3 a,
+.wy-nav-content h4 a,
+.wy-nav-content h5 a,
+.wy-nav-content h6 a {
+    color: #e84328 !important;
 }
 
-/* Cambiar el color del borde y el fondo de los cuadros de las funciones */
+/* Code block background and borders */
 .highlight {
-    background-color: #f0f0f0 !important; /* Cambia el color de fondo */
+    background-color: #f0f0f0 !important;
 }
 
-/* Cambiar el color de fondo del bloque de código */
 .highlight pre {
-    background-color: #f0f0f0 !important; /* Cambia el color de fondo del código */
+    background-color: #f0f0f0 !important;
 }
 
-/* Cambiar el color del borde y el fondo del cuadro de la firma de la función */
+/* Function signature styling */
 .sig {
-    background-color: #f0f0f0 !important; /* Cambia el color de fondo de la firma */
-    border-bottom: 1px solid #e84328 !important; /* Cambia el color del borde inferior */
-    border-top: 2px solid #e84328 !important; /* Cambia el color del borde superior */
+    background-color: #f0f0f0 !important;
+    border-bottom: 1px solid #e84328 !important;
+    border-top: 2px solid #e84328 !important;
 }
 
-/* Cambiar el color del texto de la firma de la función */
-.sig-name, .sig-param {
-    color: #000000 !important; /* Mantén el color del texto de la firma en negro */
+/* Function name and parameter text */
+.sig-name,
+.sig-param {
+    color: #000000 !important;
 }
 
-/* Cambiar el color del borde y el fondo de los cuadros de descripción de las funciones */
+/* Description boxes and field lists */
 .field-list {
-    background-color: #f0f0f0 !important; /* Cambia el color de fondo */
+    background-color: #f0f0f0 !important;
 }
 
-/* Cambiar el color del borde y el fondo de las filas de la tabla de parámetros */
 .field-list .field {
-    border: none !important; /* Quitar el borde de las filas */
-    background-color: #f0f0f0 !important; /* Cambia el color de fondo de las filas */
+    border: none !important;
+    background-color: #f0f0f0 !important;
 }
 
+/* Code highlighting styles (light mode) */
 .highlight .c {
-    color: #6E6E6E !important; /* Cambia el color de los comentarios */
+    color: #6E6E6E !important;
 }
 
 .highlight .err {
-    border: 1px solid #FF0000 !important; /* Cambia el borde de los errores */
+    border: 1px solid #FF0000 !important;
 }
 
-/* Mantener el resto de estilos de Pygments */
-.highlight .o { color: #666666 } /* Operator */
-.highlight .m { color: #666666 } /* Literal.Number */
-.highlight .s { color: #BA2121 } /* Literal.String */
-.highlight .p { color: #888888 } /* Punctuation */
+.highlight .o { color: #666666 }
+.highlight .m { color: #666666 }
+.highlight .s { color: #BA2121 }
+.highlight .p { color: #888888 }
 
-.wy-nav-top {
-    display: none;
-    background: #e84328;
-    color: #fff;
-    padding: .4045em .809em;
-    position: relative;
-    line-height: 50px;
-    text-align: center;
-    font-size: 100%;
-}
-
+/* Header link icon using custom logo */
 a.headerlink {
     display: inline-block;
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     background-repeat: no-repeat;
     background-position: center;
     text-indent: -9999px;
     overflow: hidden;
     background-image: url('Isologo_Kaxanuk.png');
     background-size: contain;
+}
+
+/* Override headerlink icon for dark mode */
+[data-theme="dark"] a.headerlink {
+    background-image: url('Isologo_Kaxanuk_dark.png');
+}
+
+/* Dark mode customizations for content boxes */
+[data-theme="dark"] .highlight,
+[data-theme="dark"] .highlight pre,
+[data-theme="dark"] .sig,
+[data-theme="dark"] .field-list,
+[data-theme="dark"] .field-list .field {
+    background-color: #2a2a2a !important;
+    color: #f0f0f0 !important;
+}
+
+/* Function signature text in dark mode */
+[data-theme="dark"] .sig-name,
+[data-theme="dark"] .sig-param {
+    color: #ffffff !important;
+}
+
+/* Code coloring adjustments for dark mode */
+[data-theme="dark"] .highlight .c {
+    color: #999999 !important;
+}
+
+[data-theme="dark"] .highlight .o,
+[data-theme="dark"] .highlight .m,
+[data-theme="dark"] .highlight .s,
+[data-theme="dark"] .highlight .p {
+    color: #d0d0d0 !important;
+}
+
+[data-theme="dark"] .highlight .err {
+    border: 1px solid #ff4d4d !important;
 }

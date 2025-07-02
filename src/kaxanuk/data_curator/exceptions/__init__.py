@@ -126,6 +126,10 @@ class MarketDataRowError(DataCuratorError):
     pass
 
 
+class OutputHandlerError(DataCuratorError):
+    pass
+
+
 class PassedArgumentError(DataCuratorError):
     pass
 
