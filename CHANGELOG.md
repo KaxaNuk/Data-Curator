@@ -6,10 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.41.0] - 2025-07-02
 ### Added
-- CODEOWNERS file for GitHub code review automation
 - `DataColumn.__hash__` method for hashing DataColumns
+- `InMemoryOutput` output handler for saving data to memory
+- CI: CODEOWNERS file for GitHub code review automation
 - Docs: Inserted hidden `toctree` entries in each category `index.rst` to ensure all functions are registered in the Sphinx documentation build.
 - Docs: Added Use Cases section, with links to the Data-Curator-Use-Cases repo
 
