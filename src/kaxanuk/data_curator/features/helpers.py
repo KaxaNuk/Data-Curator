@@ -153,10 +153,11 @@ def exponential_moving_average(
 
     Parameters
     ----------
-    column : DataColumn
+    column
         Data for which the EMA is calculated.
-    days : int
-        Number of days for the EMA.
+    days
+        The span for the EMA. It specifies that the "center of mass" of the EMA's weights is roughly at the same point
+        as an SMA of the same length in days.
 
     Returns
     -------

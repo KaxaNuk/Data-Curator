@@ -22,6 +22,7 @@ from kaxanuk.data_curator.entities import (
 )
 from kaxanuk.data_curator.exceptions import (
     DataProviderMissingKeyError,
+    DataProviderPaymentError,
     DividendDataEmptyError,
     DividendDataRowError,
     EntityFieldTypeError,
@@ -44,6 +45,7 @@ from kaxanuk.data_curator.services import entity_helper
 class FinancialModelingPrep(DataProviderInterface):
     CONNECTION_VALIDATION_TICKER = 'AAPL'   # will be used to validate we can connect
     MAX_RECORDS_DOWNLOAD_LIMIT = 1000
+    MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT = 5
     # @todo: add logic to determine number of statements to retrieve based on initial date
     FILING_DATE_FIELD_NAME = "filing_date"
     PERIOD_END_DATE_PROVIDER_FIELD_NAME = 'date'
@@ -65,6 +67,7 @@ class FinancialModelingPrep(DataProviderInterface):
         STOCK_DIVIDEND = 'https://financialmodelingprep.com/stable/dividends'
         STOCK_SPLIT = 'https://financialmodelingprep.com/stable/splits'
 
+    _is_paid_account_plan = None
 
     _fields_dividend_data_rows = types.MappingProxyType({
         'declaration_date': 'declarationDate',
@@ -332,17 +335,42 @@ class FinancialModelingPrep(DataProviderInterface):
         ------
         ConnectionError
         """
+        if self._get_paid_account_status() is False:
+            max_records_download_limit = self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT
+        else:
+            max_records_download_limit = self.MAX_RECORDS_DOWNLOAD_LIMIT
+
         endpoint_id = self.Endpoints.STOCK_DIVIDEND.name
-        dividend_raw_data = self._request_data(
-            endpoint_id,
-            self.Endpoints.STOCK_DIVIDEND,
-            main_identifier,
-            {
-                'apikey': self.api_key,
-                'limit': self.MAX_RECORDS_DOWNLOAD_LIMIT,
-                'symbol': main_identifier,
-            }
-        )
+
+        try:
+            # Attempt to download the data, possibly with a paid account download limit
+            dividend_raw_data = self._request_data(
+                endpoint_id,
+                self.Endpoints.STOCK_DIVIDEND,
+                main_identifier,
+                {
+                    'apikey': self.api_key,
+                    'limit': max_records_download_limit,
+                    'symbol': main_identifier,
+                }
+            )
+        except DataProviderPaymentError as error:
+            if self._get_paid_account_status() is None:
+                # Attempt to download the data with a free account download limit
+                dividend_raw_data = self._request_data(
+                    endpoint_id,
+                    self.Endpoints.STOCK_DIVIDEND,
+                    main_identifier,
+                    {
+                        'apikey': self.api_key,
+                        'limit': self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT,
+                        'symbol': main_identifier,
+                    }
+                )
+                # If the download actually completed this time, looks like we're using a free account
+                self._set_paid_account_status(is_paid_account_plan=False)
+            else:
+                raise error
 
         return self._create_dividend_data_from_raw_stock_response(
             main_identifier,
@@ -382,6 +410,46 @@ class FinancialModelingPrep(DataProviderInterface):
         ConnectionError
 
         """
+        if self._get_paid_account_status() is False:
+            max_records_download_limit = self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT
+        else:
+            max_records_download_limit = self.MAX_RECORDS_DOWNLOAD_LIMIT
+
+        income_endpoint_id = self.Endpoints.INCOME_STATEMENT.name
+
+        try:
+            # Attempt to download the data, possibly with a paid account download limit
+            fundamental_income_raw_data = self._request_data(
+                income_endpoint_id,
+                self.Endpoints.INCOME_STATEMENT,
+                main_identifier,
+                {
+                    'apikey': self.api_key,
+                    'limit': max_records_download_limit,
+                    'period': self._periods[period],
+                    'symbol': main_identifier,
+                }
+            )
+        except DataProviderPaymentError as error:
+            if self._get_paid_account_status() is None:
+                # Attempt to download the data with a free account download limit
+                fundamental_income_raw_data = self._request_data(
+                    income_endpoint_id,
+                    self.Endpoints.INCOME_STATEMENT,
+                    main_identifier,
+                    {
+                        'apikey': self.api_key,
+                        'limit': self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT,
+                        'period': self._periods[period],
+                        'symbol': main_identifier,
+                    }
+                )
+                # If the download actually completed this time, looks like we're using a free account
+                self._set_paid_account_status(is_paid_account_plan=False)
+                max_records_download_limit = self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT
+            else:
+                raise error
+
         balance_endpoint_id = self.Endpoints.BALANCE_SHEET_STATEMENT.name
         fundamental_balance_sheet_raw_data = self._request_data(
             balance_endpoint_id,
@@ -389,7 +457,7 @@ class FinancialModelingPrep(DataProviderInterface):
             main_identifier,
             {
                 'apikey': self.api_key,
-                'limit': self.MAX_RECORDS_DOWNLOAD_LIMIT,
+                'limit': max_records_download_limit,
                 'period': self._periods[period],
                 'symbol': main_identifier,
             }
@@ -401,19 +469,7 @@ class FinancialModelingPrep(DataProviderInterface):
             main_identifier,
             {
                 'apikey': self.api_key,
-                'limit': self.MAX_RECORDS_DOWNLOAD_LIMIT,
-                'period': self._periods[period],
-                'symbol': main_identifier,
-            }
-        )
-        income_endpoint_id = self.Endpoints.INCOME_STATEMENT.name
-        fundamental_income_raw_data = self._request_data(
-            income_endpoint_id,
-            self.Endpoints.INCOME_STATEMENT,
-            main_identifier,
-            {
-                'apikey': self.api_key,
-                'limit': self.MAX_RECORDS_DOWNLOAD_LIMIT,
+                'limit': max_records_download_limit,
                 'period': self._periods[period],
                 'symbol': main_identifier,
             }
@@ -523,17 +579,50 @@ class FinancialModelingPrep(DataProviderInterface):
         ------
         ConnectionError
         """
+        if self._get_paid_account_status() is False:
+            max_records_download_limit = self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT
+        else:
+            max_records_download_limit = self.MAX_RECORDS_DOWNLOAD_LIMIT
+
         endpoint_id = self.Endpoints.STOCK_SPLIT.name
-        split_raw_data = self._request_data(
-            endpoint_id,
-            self.Endpoints.STOCK_SPLIT,
-            main_identifier,
-            {
-                'apikey': self.api_key,
-                'limit': self.MAX_RECORDS_DOWNLOAD_LIMIT,
-                'symbol': main_identifier,
-            }
-        )
+
+        if self._get_paid_account_status() is False:
+            max_records_download_limit = self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT
+        else:
+            max_records_download_limit = self.MAX_RECORDS_DOWNLOAD_LIMIT
+
+        endpoint_id = self.Endpoints.STOCK_DIVIDEND.name
+
+        try:
+            # Attempt to download the data, possibly with a paid account download limit
+            split_raw_data = self._request_data(
+                endpoint_id,
+                self.Endpoints.STOCK_SPLIT,
+                main_identifier,
+                {
+                    'apikey': self.api_key,
+                    'limit': max_records_download_limit,
+                    'symbol': main_identifier,
+                }
+            )
+        except DataProviderPaymentError as error:
+            if self._get_paid_account_status() is None:
+                # Attempt to download the data with a free account download limit
+                split_raw_data = self._request_data(
+                    endpoint_id,
+                    self.Endpoints.STOCK_SPLIT,
+                    main_identifier,
+                    {
+                        'apikey': self.api_key,
+                        'limit': self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT,
+                        'symbol': main_identifier,
+                    }
+                )
+                # If the download actually completed this time, looks like we're using a free account
+                self._set_paid_account_status(is_paid_account_plan=False)
+            else:
+                raise error
+
 
         return self._create_split_data_from_raw_stock_response(
             main_identifier,
@@ -1129,3 +1218,35 @@ class FinancialModelingPrep(DataProviderInterface):
             )
 
         return split_data
+
+    @classmethod
+    def _get_paid_account_status(
+        cls,
+    ) -> bool | None:
+        """
+        Get the account paid plan status of the FMP account.
+
+        Returns
+        ----------
+        Whether the account is a paid account plan or not
+        """
+        return cls._is_paid_account_plan
+
+    @classmethod
+    def _set_paid_account_status(
+        cls,
+        *,
+        is_paid_account_plan: bool,
+    ):
+        """
+        Set the account paid plan status of the FMP account.
+
+        Parameters
+        ----------
+        is_paid_account_plan
+            Whether the account is a paid account plan or not
+        """
+        cls._is_paid_account_plan = is_paid_account_plan
+        if not cls._is_paid_account_plan:
+            msg = "Free FMP account plan limitation: fundamental data is only available for the most recent periods."
+            logging.getLogger(__name__).warning(msg)
