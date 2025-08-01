@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `DataProviderPaymentError` and `DataProviderConnectionError` exceptions
 - `FinancialModelingPrep` now has class methods for setting and getting whether the user's account plan is paid
+- `pdm run docs` script as shortcut to the corresponding docs maker for the current OS. Use with `pdm run docs html`, etc.
 
 ### Changed
 - `DataProviderInterface._request_data()` now has special handling for 402 Payment Required errors
