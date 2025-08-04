@@ -53,6 +53,14 @@ class DataProviderMissingKeyError(DataCuratorError):
     pass
 
 
+class DataProviderConnectionError(DataCuratorError):
+    pass
+
+
+class DataProviderPaymentError(DataProviderConnectionError):
+    pass
+
+
 class DividendDataEmptyError(DataCuratorError):
     pass
 

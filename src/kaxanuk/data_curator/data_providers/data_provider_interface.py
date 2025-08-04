@@ -22,6 +22,7 @@ from kaxanuk.data_curator.entities import (
 )
 from kaxanuk.data_curator.exceptions import (
     ApiEndpointError,
+    DataProviderPaymentError,
     IdentifierNotFoundError,
 )
 
@@ -415,6 +416,13 @@ class DataProviderInterface(metaclass=abc.ABCMeta):
                         msg = f"API Error accessing endpoint {endpoint_id}, returned error {error_message}"
 
                         raise IdentifierNotFoundError(msg) from error
+                    elif error.code == http.HTTPStatus.PAYMENT_REQUIRED.value:
+                        detailed_error_message = error.read().decode('utf-8')
+                        if len(detailed_error_message) < 1:
+                            detailed_error_message = error_message
+
+                        raise DataProviderPaymentError(detailed_error_message) from error
+
                     if (
                         error.code < http.HTTPStatus.INTERNAL_SERVER_ERROR.value # client error, so no point in retrying
                     ):

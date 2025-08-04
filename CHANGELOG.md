@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.42.0] - 2025-08-04
+### Added
+- `DataProviderPaymentError` and `DataProviderConnectionError` exceptions
+- `FinancialModelingPrep` now has class methods for setting and getting whether the user's account plan is paid
+- `pdm run docs` script as shortcut to the corresponding docs maker for the current OS. Use with `pdm run docs html`, etc.
+
+### Changed
+- `DataProviderInterface._request_data()` now has special handling for 402 Payment Required errors
+- `FinancialModelingPrep` fundamental data methods now handle "The values for 'limit' must be between 0 and 5 based on your current subscription" 402 Payment Required errors
+- `data_curator.main()` now handles uncaught `DataProviderPaymentError` exceptions
+
+
 ## [0.41.0] - 2025-07-02
 ### Added
 - `DataColumn.__hash__` method for hashing DataColumns

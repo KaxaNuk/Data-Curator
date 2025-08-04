@@ -18,7 +18,9 @@ ENV PYTHONUNBUFFERED=1
 RUN \
   # Install dependencies
   apt-get update \
-  && apt-get install -y --no-install-recommends unzip \
+  && apt-get install -y --no-install-recommends \
+    make \
+    unzip \
   # update pip
   && pip install --upgrade pip \
   # remove unneeded libs

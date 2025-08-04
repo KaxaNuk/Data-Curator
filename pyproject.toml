@@ -97,6 +97,15 @@ data = [
 debug = [
     "pydevd-pycharm>=243.23654.177"
 ]
+docs = [
+    "myst-parser>=4.0.0",
+    "pydata-sphinx-theme>=0.16.1",
+    "sphinx>=8.1.3",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx_design>=0.6.1",
+    "sphinxcontrib.mermaid>=1.0.0",
+    "sphinx-click>=1.0.0",
+]
 lint = [
     "ruff>=0.10",
 ]
@@ -110,13 +119,11 @@ typing = [
     "types-openpyxl>=3.1.5",
     "pandas-stubs>=2.2.3",
 ]
-docs = [
-    "sphinx>=8.1.3",
-    "myst-parser>=4.0.0",
-]
 
 [tool.pdm.scripts]
 # Run these with pdm run <script_name>
+docs.cmd = "python -c \"import os, sys; os.system(('make.bat' if sys.platform == 'win32' else 'make') + ' ' + ' '.join(sys.argv[1:]))\""
+docs.working_dir = "docs"
 install_dev = "pdm install --dev --no-lock --project ."
 lint = "ruff check"
 test = "pytest --cov=src --cov=tests --cov-report=term-missing:skip-covered tests"
