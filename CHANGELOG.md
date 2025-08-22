@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## Unreleased
+### Changed
+- Improved README file
+
 ### Fixed
 - DataCulumn division between int columns should return float column
 

@@ -6,10 +6,18 @@
 | [![Build Status](https://github.com/KaxaNuk/Data-Curator/actions/workflows/main.yml/badge.svg)](https://github.com/KaxaNuk/Data-Curator/actions/workflows/main.yml) [![Read the Docs](https://app.readthedocs.org/projects/kaxanuk-data-curator/badge/?version=stable)](https://kaxanuk-data-curator.readthedocs.io/en/stable/)                                                |
 | [![PyPI - Version](https://img.shields.io/pypi/v/kaxanuk.data-curator?logo=pypi)](https://pypi.org/project/kaxanuk.data-curator) [![PyPI Downloads](https://static.pepy.tech/badge/kaxanuk-data-curator)](https://pepy.tech/projects/kaxanuk-data-curator) [![Powered by KaxaNuk](https://img.shields.io/badge/powered%20by-KaxaNuk-orange?colorB=orange)](https://kaxanuk.mx) |
 
-Tool for building a structured database for market, fundamental and alternative data obtained
-from different financial data provider web services.
+Component library for downloading, validating, homogenizing, and combining financial stocks' data from different data providers.
+Can be run in standalone mode, configurable in Excel, or as a component of a larger Python-based system. 
 
-Allows for easy creation of additional calculated feature functions.
+Features:
+* **Configurable** from an Excel file, or directly in a Python script. Docker image also available.
+* Fully readable and specific **tag names**, homogenized between data providers, based on the US GAAP taxonomy. Switch between data providers without changing your code.
+* Automatically validates market and fundamental data, discarding datasets that make no sense (like high price below low, etc.) or can't guarantee point-in-time validity (like amended statements).
+* Easily create your own **calculated feature functions** without need for Numpy or Pandas (though you can also use those if you want to).
+* **Output** to CSV or Parquet files, or to in-memory PyArrow tables for further processing.
+* Completely **extensible architecture**: implement your own data providers, feature combinations, and output handlers on top of clear, stable interfaces.
+* Readable, well-documented, and tested **code**.
+
 
 ## Documentation
 Full documentation is available at [kaxanuk-data-curator.readthedocs.io](https://kaxanuk-data-curator.readthedocs.io/en/stable/).
