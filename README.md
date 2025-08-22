@@ -14,7 +14,7 @@ Features:
 * Fully readable and specific **tag names**, homogenized between data providers, based on the US GAAP taxonomy. Switch between data providers without changing your code.
 * Automatically validates market and fundamental data, discarding datasets that make no sense (like high price below low, etc.) or can't guarantee point-in-time validity (like amended statements).
 * Easily create your own **calculated feature functions** without need for Numpy or Pandas (though you can also use those if you want to).
-* **Output** to CSV or Parquet files, or to in-memory PyArrow tables for further processing.
+* **Output** to CSV or Parquet files, or to in-memory Pandas Dataframes for further processing.
 * Completely **extensible architecture**: implement your own data providers, feature combinations, and output handlers on top of clear, stable interfaces.
 * Readable, well-documented, and tested **code**.
 
