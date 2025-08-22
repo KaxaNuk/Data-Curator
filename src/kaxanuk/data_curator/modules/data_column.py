@@ -854,7 +854,10 @@ class DataColumn:
             pyarrow.types.is_decimal(self.type)
             or (
                 pyarrow.types.is_integer(self.type)
-                and isinstance(divisor, decimal.Decimal)
+                and (
+                    isinstance(divisor, decimal.Decimal)
+                    or pyarrow.types.is_integer(divisor.type)
+                )
             )
         ):
             dividend = self.array.cast(
