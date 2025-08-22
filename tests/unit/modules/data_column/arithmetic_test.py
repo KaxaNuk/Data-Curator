@@ -951,6 +951,17 @@ class TestDunderRtruediv:
 
         assert pyarrow.types.is_floating(result.type)
 
+    def test_int_divided_by_int_returns_float(self):
+        column1 = DataColumn.load(
+            [6, 7, 8]
+        )
+        column2 = DataColumn.load(
+            [1, 2, 3]
+        )
+        result = column1 / column2
+
+        assert pyarrow.types.is_floating(result.type)
+
 
 # noinspection DuplicatedCode
 class TestDunderSub:
