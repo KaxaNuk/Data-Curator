@@ -38,8 +38,7 @@ requires-python = ">=3.12,<3.14"
 
 [project.urls]
 Homepage = "https://kaxanuk.mx"
-# @todo: add the follwing:
-#Documentation = "https://readthedocs.org"
+Documentation = "https://kaxanuk-data-curator.readthedocs.io/en/stable/api_reference/index.html"
 Repository = "https://github.com/KaxaNuk/Data-Curator"
 Issues = "https://github.com/KaxaNuk/Data-Curator/issues"
 Changelog = "https://github.com/KaxaNuk/Data-Curator/blob/main/CHANGELOG.md"
