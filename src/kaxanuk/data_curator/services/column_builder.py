@@ -17,6 +17,14 @@ from kaxanuk.data_curator.entities import (
     MarketDataDailyRow,
     SplitData,
 )
+from kaxanuk.data_curator.entities.dividend_data_row import (
+    DIVIDEND_DATE_FIELDS,
+    DIVIDEND_FACTOR_FIELDS,
+)
+from kaxanuk.data_curator.entities.split_data_row import (
+    SPLIT_DATE_FIELDS,
+    SPLIT_FACTOR_FIELDS,
+)
 from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCircularDependenciesError,
     ColumnBuilderCustomFunctionNotFoundError,
@@ -53,25 +61,6 @@ class ColumnBuilder:
     # the names of fields generated from combining columns, like in dividends and splits, will go here:
     _COMBINED_COLUMN_FIELD_NAMES : typing.ClassVar = {}
 
-    # @todo: these should probably be in dividend_data instead of here:
-    _DIVIDEND_DATE_FIELDS = (
-        'declaration_date',
-        'ex_dividend_date',
-        'record_date',
-        'payment_date',
-    )
-    _DIVIDEND_FACTOR_FIELDS = (
-        'dividend',
-        'dividend_split_adjusted',
-    )
-    _SPLIT_DATE_FIELDS = (
-        'split_date',
-    )
-    _SPLIT_FACTOR_FIELDS = (
-        'numerator',
-        'denominator',
-    )
-
     def __init__(
         self,
         *,
@@ -107,8 +96,8 @@ class ColumnBuilder:
 
         self.expanded_dividend_data_rows = self._expand_dated_factors(
             iter(market_data.daily_rows.keys()),
-            self._DIVIDEND_DATE_FIELDS,
-            self._DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELDS,
+            DIVIDEND_FACTOR_FIELDS,
             dividend_data.rows
         )
 
@@ -117,8 +106,8 @@ class ColumnBuilder:
 
         self.expanded_split_data_rows = self._expand_dated_factors(
             iter(market_data.daily_rows.keys()),
-            self._SPLIT_DATE_FIELDS,
-            self._SPLIT_FACTOR_FIELDS,
+            SPLIT_DATE_FIELDS,
+            SPLIT_FACTOR_FIELDS,
             split_data.rows
         )
 
@@ -646,8 +635,8 @@ class ColumnBuilder:
                 case 'd':       # dividends
                     if column_name not in cls._get_combined_field_column_names(
                         'dividend',
-                        cls._DIVIDEND_DATE_FIELDS,
-                        cls._DIVIDEND_FACTOR_FIELDS
+                        DIVIDEND_DATE_FIELDS,
+                        DIVIDEND_FACTOR_FIELDS
                     ):
                         msg = f"Column not available in dividend data: {column}"
                         raise ColumnBuilderUnavailableEntityFieldError(msg)
@@ -729,8 +718,8 @@ class ColumnBuilder:
                 case 's':       # splits
                     if column_name not in cls._get_combined_field_column_names(
                         'split',
-                        cls._SPLIT_DATE_FIELDS,
-                        cls._SPLIT_FACTOR_FIELDS
+                        SPLIT_DATE_FIELDS,
+                        SPLIT_FACTOR_FIELDS
                     ):
                         msg = f"Column not available in split data: {column}"
                         raise ColumnBuilderUnavailableEntityFieldError(msg)

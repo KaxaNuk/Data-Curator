@@ -38,4 +38,3 @@ class SplitData:
             for row in self.rows.values()
         ):
             raise EntityValueError("Incorrect data in SplitData.rows")
-

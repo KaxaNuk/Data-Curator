@@ -38,4 +38,3 @@ class DividendData:
             for row in self.rows.values()
         ):
             raise EntityValueError("Incorrect data in DividendData.rows")
-

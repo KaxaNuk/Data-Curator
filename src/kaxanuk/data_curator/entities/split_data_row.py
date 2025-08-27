@@ -7,6 +7,15 @@ from kaxanuk.data_curator.exceptions import (
 from kaxanuk.data_curator.services import entity_helper
 
 
+SPLIT_DATE_FIELDS = (
+    'split_date',
+)
+SPLIT_FACTOR_FIELDS = (
+    'numerator',
+    'denominator',
+)
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class SplitDataRow:
     split_date: datetime.date
