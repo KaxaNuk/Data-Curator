@@ -4,6 +4,7 @@ import enum
 import json
 import logging
 import types
+import typing
 
 from kaxanuk.data_curator.entities import (
     Configuration,
@@ -66,6 +67,10 @@ class FinancialModelingPrep(DataProviderInterface):
         SEARCH_TICKER = 'https://financialmodelingprep.com/stable/search-symbol'
         STOCK_DIVIDEND = 'https://financialmodelingprep.com/stable/dividends'
         STOCK_SPLIT = 'https://financialmodelingprep.com/stable/splits'
+
+    class DataMappingField(typing.NamedTuple):
+        field_name: str
+        preprocessors: tuple[typing.Callable, ...] = ()
 
     _is_paid_account_plan = None
 
@@ -228,7 +233,7 @@ class FinancialModelingPrep(DataProviderInterface):
         'close_split_adjusted': None,
         'volume_split_adjusted': None,
         'vwap_split_adjusted': None,
-        'open_dividend_and_split_adjusted': 'adjOpen',
+        'open_dividend_and_split_adjusted': DataMappingField('adjOpen'),
         'high_dividend_and_split_adjusted': 'adjHigh',
         'low_dividend_and_split_adjusted': 'adjLow',
         'close_dividend_and_split_adjusted': 'adjClose',
@@ -256,6 +261,41 @@ class FinancialModelingPrep(DataProviderInterface):
         'volume_dividend_and_split_adjusted': None,
         'vwap_dividend_and_split_adjusted': None,
     })
+
+
+    _market_data_endpoint_map = types.MappingProxyType({
+        Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED.name: {
+            'date': MarketDataDailyRow.date,
+            'adjOpen': MarketDataDailyRow.open,
+            'adjHigh': MarketDataDailyRow.high,
+            'adjLow': MarketDataDailyRow.low,
+            'adjClose': MarketDataDailyRow.close,
+            'volume': MarketDataDailyRow.volume,
+        },
+        Endpoints.MARKET_DATA_DAILY_SPLIT_ADJUSTED.name: {
+            'date': 'MarketDataDailyRow.date',
+            'open': MarketDataDailyRow.open_split_adjusted,
+            'high': MarketDataDailyRow.high_split_adjusted,
+            'low': MarketDataDailyRow.low_split_adjusted,
+            'close': MarketDataDailyRow.close_split_adjusted,
+            'volume': MarketDataDailyRow.volume_split_adjusted,
+            'vwap': MarketDataDailyRow.vwap_split_adjusted,
+        },
+        Endpoints.MARKET_DATA_DAILY_UNADJUSTED.name: {
+            'date': MarketDataDailyRow.date,
+            'adjOpen': MarketDataDailyRow.open_dividend_and_split_adjusted,
+            'adjHigh': MarketDataDailyRow.high_dividend_and_split_adjusted,
+            'adjLow': MarketDataDailyRow.low_dividend_and_split_adjusted,
+            'adjClose': MarketDataDailyRow.close_dividend_and_split_adjusted,
+            'volume': MarketDataDailyRow.volume_dividend_and_split_adjusted,
+        },
+    })
+
+    _fundamental_data_endpoint_map = types.MappingProxyType({
+
+    })
+
+
     _fields_market_data_daily_rows_unadjusted = types.MappingProxyType({
         'date': 'date',
         'open': 'adjOpen',
@@ -545,12 +585,20 @@ class FinancialModelingPrep(DataProviderInterface):
             },
         )
 
-        return self._create_market_data_from_raw_stock_response(
-            main_identifier,
-            market_raw_unadjusted_data,
-            market_raw_split_adjusted_data,
-            market_raw_dividend_and_split_adjusted_data,
-        )
+        try:
+            market_data = self._create_market_data_from_raw_stock_response(
+                main_identifier,
+                market_raw_unadjusted_data,
+                market_raw_split_adjusted_data,
+                market_raw_dividend_and_split_adjusted_data,
+            )
+        except (
+            MarketDataEmptyError,
+            MarketDataRowError
+        ) as error:
+            raise EntityProcessingError("Market data processing error") from error
+
+        return market_data
 
     def get_split_data(
         self,
@@ -1021,119 +1069,114 @@ class FinancialModelingPrep(DataProviderInterface):
 
         Raises
         ------
-        EntityProcessingError
+        MarketDataEmptyError
+        MarketDataRowError
         """
         market_data_rows = {}
-        try:
+        if (
+            raw_unadjusted_response is None
+            or raw_unadjusted_response == '[]'
+        ):
+            raise MarketDataEmptyError("No data returned by unadjusted market data endpoint")
+        if (
+            raw_split_adjusted_response is None
+            or raw_split_adjusted_response == '[]'
+        ):
+            raise MarketDataEmptyError("No data returned by split adjusted market data endpoint")
+        if (
+            raw_dividend_and_split_adjusted_response is None
+            or raw_dividend_and_split_adjusted_response == '[]'
+        ):
+            raise MarketDataEmptyError("No data returned by dividend and split adjusted market data endpoint")
+
+        unadjusted_data_list = json.loads(raw_unadjusted_response)
+        unadjusted_data_by_date = {
+            i[cls._fields_market_data_daily_rows_unadjusted['date']]: i
+            for i in unadjusted_data_list
+        }
+        split_adjusted_data_list = json.loads(raw_split_adjusted_response)
+        split_adjusted_data_by_date = {
+            i[cls._fields_market_data_daily_rows_split_adjusted['date']]: i
+            for i in split_adjusted_data_list
+        }
+        dividend_and_split_adjusted_data_list = json.loads(raw_dividend_and_split_adjusted_response)
+        dividend_and_split_adjusted_data_by_date = {
+            i[cls._fields_market_data_daily_rows_dividend_and_split_adjusted['date']]: i
+            for i in dividend_and_split_adjusted_data_list
+        }
+
+        # stock_data = sorted(raw_stock_data, key=lambda x: x['date'])
+        raw_dates = sorted(
+            unadjusted_data_by_date.keys()
+        )
+        field_equivalences_unadjusted = dict(cls._fields_market_data_daily_rows_unadjusted)
+        field_equivalences_split_adjusted = dict(cls._fields_market_data_daily_rows_split_adjusted)
+        field_equivalences_dividend_and_split_adjusted = dict(
+            cls._fields_market_data_daily_rows_dividend_and_split_adjusted
+        )
+        min_date = None
+        max_date = None
+        for raw_date in raw_dates:
+            date = datetime.date.fromisoformat(raw_date)
+            try:
+                unadjusted_fields = entity_helper.convert_data_row_into_entity_fields(
+                    unadjusted_data_by_date[raw_date],
+                    field_equivalences_unadjusted,
+                    MarketDataDailyRow
+                )
+                split_adjusted_fields = entity_helper.convert_data_row_into_entity_fields(
+                    split_adjusted_data_by_date[raw_date],
+                    field_equivalences_split_adjusted,
+                    MarketDataDailyRow
+                )
+                dividend_and_split_adjusted_fields = entity_helper.convert_data_row_into_entity_fields(
+                    dividend_and_split_adjusted_data_by_date[raw_date],
+                    field_equivalences_dividend_and_split_adjusted,
+                    MarketDataDailyRow
+                )
+                nonempty_split_adjusted_fields = {
+                    k: v
+                    for k, v in split_adjusted_fields.items()
+                    if v is not None
+                }
+                nonempty_dividend_and_split_adjusted_fields = {
+                    k: v
+                    for k, v in dividend_and_split_adjusted_fields.items()
+                    if v is not None
+                }
+                fields_chain = collections.ChainMap(
+                    nonempty_dividend_and_split_adjusted_fields,
+                    nonempty_split_adjusted_fields,
+                    unadjusted_fields,
+                )
+                market_data_rows[raw_date] = MarketDataDailyRow(
+                    **fields_chain
+                )
+            except (
+                EntityFieldTypeError,
+                EntityTypeError,
+                EntityValueError,
+            ) as error:
+                msg = f"date: {date}"
+                raise MarketDataRowError(msg) from error
+
             if (
-                raw_unadjusted_response is None
-                or raw_unadjusted_response == '[]'
+                min_date is None
+                or date < min_date
             ):
-                raise MarketDataEmptyError("No data returned by unadjusted market data endpoint")
+                min_date = date
             if (
-                raw_split_adjusted_response is None
-                or raw_split_adjusted_response == '[]'
+                max_date is None
+                or date > max_date
             ):
-                raise MarketDataEmptyError("No data returned by split adjusted market data endpoint")
-            if (
-                raw_dividend_and_split_adjusted_response is None
-                or raw_dividend_and_split_adjusted_response == '[]'
-            ):
-                raise MarketDataEmptyError("No data returned by dividend and split adjusted market data endpoint")
+                max_date = date
 
-            unadjusted_data_list = json.loads(raw_unadjusted_response)
-            unadjusted_data_by_date = {
-                i[cls._fields_market_data_daily_rows_unadjusted['date']]: i
-                for i in unadjusted_data_list
-            }
-            split_adjusted_data_list = json.loads(raw_split_adjusted_response)
-            split_adjusted_data_by_date = {
-                i[cls._fields_market_data_daily_rows_split_adjusted['date']]: i
-                for i in split_adjusted_data_list
-            }
-            dividend_and_split_adjusted_data_list = json.loads(raw_dividend_and_split_adjusted_response)
-            dividend_and_split_adjusted_data_by_date = {
-                i[cls._fields_market_data_daily_rows_dividend_and_split_adjusted['date']]: i
-                for i in dividend_and_split_adjusted_data_list
-            }
-
-            # stock_data = sorted(raw_stock_data, key=lambda x: x['date'])
-            raw_dates = sorted(
-                unadjusted_data_by_date.keys()
-            )
-            field_equivalences_unadjusted = dict(cls._fields_market_data_daily_rows_unadjusted)
-            field_equivalences_split_adjusted = dict(cls._fields_market_data_daily_rows_split_adjusted)
-            field_equivalences_dividend_and_split_adjusted = dict(
-                cls._fields_market_data_daily_rows_dividend_and_split_adjusted
-            )
-            min_date = None
-            max_date = None
-            for raw_date in raw_dates:
-                date = datetime.date.fromisoformat(raw_date)
-                try:
-                    unadjusted_fields = entity_helper.convert_data_row_into_entity_fields(
-                        unadjusted_data_by_date[raw_date],
-                        field_equivalences_unadjusted,
-                        MarketDataDailyRow
-                    )
-                    split_adjusted_fields = entity_helper.convert_data_row_into_entity_fields(
-                        split_adjusted_data_by_date[raw_date],
-                        field_equivalences_split_adjusted,
-                        MarketDataDailyRow
-                    )
-                    dividend_and_split_adjusted_fields = entity_helper.convert_data_row_into_entity_fields(
-                        dividend_and_split_adjusted_data_by_date[raw_date],
-                        field_equivalences_dividend_and_split_adjusted,
-                        MarketDataDailyRow
-                    )
-                    nonempty_split_adjusted_fields = {
-                        k: v
-                        for k, v in split_adjusted_fields.items()
-                        if v is not None
-                    }
-                    nonempty_dividend_and_split_adjusted_fields = {
-                        k: v
-                        for k, v in dividend_and_split_adjusted_fields.items()
-                        if v is not None
-                    }
-                    fields_chain = collections.ChainMap(
-                        nonempty_dividend_and_split_adjusted_fields,
-                        nonempty_split_adjusted_fields,
-                        unadjusted_fields,
-                    )
-                    market_data_rows[raw_date] = MarketDataDailyRow(
-                        **fields_chain
-                    )
-                except (
-                    EntityFieldTypeError,
-                    EntityTypeError,
-                    EntityValueError,
-                ) as error:
-                    msg = f"date: {date}"
-                    raise MarketDataRowError(msg) from error
-
-                if (
-                    min_date is None
-                    or date < min_date
-                ):
-                    min_date = date
-                if (
-                    max_date is None
-                    or date > max_date
-                ):
-                    max_date = date
-
-            market_data = MarketData(
-                start_date=min_date,
-                end_date=max_date,
-                main_identifier=MainIdentifier(ticker),
-                daily_rows=market_data_rows
-            )
-        except (
-            MarketDataEmptyError,
-            MarketDataRowError
-        ) as error:
-            raise EntityProcessingError("Market data processing error") from error
+        market_data = MarketData(
+            start_date=min_date,
+            end_date=max_date,
+            main_identifier=MainIdentifier(ticker),
+            daily_rows=market_data_rows
+        )
 
         return market_data
 
