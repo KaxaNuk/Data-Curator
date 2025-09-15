@@ -4,7 +4,7 @@ Interface for classes creating Configuration entities and related dependencies.
 
 import abc
 import logging
-import types
+import typing
 
 from kaxanuk.data_curator.entities import Configuration
 from kaxanuk.data_curator.data_providers import DataProviderInterface
@@ -32,13 +32,14 @@ class ConfiguratorInterface(metaclass=abc.ABCMeta):
     def get_output_handler(self) -> OutputHandlerInterface:
         ...
 
-    CONFIGURATION_LOGGER_LEVELS = types.MappingProxyType({
+    # @todo: make enum
+    CONFIGURATION_LOGGER_LEVELS : typing.Final = {
         'debug': logging.DEBUG,
         'info': logging.INFO,
         'warning': logging.WARNING,
         'error': logging.ERROR,
         'critical': logging.CRITICAL,
-    })
+    }
     CONFIGURATION_PROVIDER_NONE = 'none'
     CONFIGURATION_PROVIDERS_FUNDAMENTAL = (
         'financial_modeling_prep',

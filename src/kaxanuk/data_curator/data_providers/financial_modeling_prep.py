@@ -3,7 +3,6 @@ import datetime
 import enum
 import json
 import logging
-import types
 import typing
 
 from kaxanuk.data_curator.entities import (
@@ -74,15 +73,15 @@ class FinancialModelingPrep(DataProviderInterface):
 
     _is_paid_account_plan = None
 
-    _fields_dividend_data_rows = types.MappingProxyType({
+    _fields_dividend_data_rows : typing.Final = {
         'declaration_date': 'declarationDate',
         'ex_dividend_date': 'date',
         'record_date': 'recordDate',
         'payment_date': 'paymentDate',
         'dividend': 'dividend',
         'dividend_split_adjusted': 'adjDividend',
-    })
-    _fields_fundamental_balance_sheet_data_rows = types.MappingProxyType({
+    }
+    _fields_fundamental_balance_sheet_data_rows : typing.Final = {
         'filing_date': 'fillingDate',
         'accumulated_other_comprehensive_income_after_tax': 'accumulatedOtherComprehensiveIncomeLoss',
         'additional_paid_in_capital': 'additionalPaidInCapital',
@@ -137,8 +136,8 @@ class FinancialModelingPrep(DataProviderInterface):
         'total_liabilities_and_equity': 'totalLiabilitiesAndTotalEquity',
         'total_payables_current_and_noncurrent': 'totalPayables',
         'treasury_stock_value': 'treasuryStock',
-    })
-    _fields_fundamental_cash_flow_data_rows = types.MappingProxyType({
+    }
+    _fields_fundamental_cash_flow_data_rows : typing.Final = {
         'accounts_payable_change': 'accountsPayables',
         'accounts_receivable_change': 'accountsReceivables',
         'capital_expenditure': 'capitalExpenditure',
@@ -177,16 +176,16 @@ class FinancialModelingPrep(DataProviderInterface):
         'property_plant_and_equipment_purchase': 'investmentsInPropertyPlantAndEquipment',
         'stock_based_compensation': 'stockBasedCompensation',
         'working_capital_change': 'changeInWorkingCapital',
-    })
-    _fields_fundamental_common_data_rows = types.MappingProxyType({
+    }
+    _fields_fundamental_common_data_rows : typing.Final = {
         'accepted_date': 'acceptedDate',
         'filing_date': 'filingDate',
         'fiscal_period': 'period',
         'fiscal_year': 'fiscalYear',
         'period_end_date': 'date',
         'reported_currency': 'reportedCurrency',
-    })
-    _fields_fundamental_income_data_rows = types.MappingProxyType({
+    }
+    _fields_fundamental_income_data_rows : typing.Final = {
         'basic_earnings_per_share': 'eps',
         'basic_net_income_available_to_common_stockholders': 'bottomLineNetIncome',
         'continuing_operations_income_after_tax': 'netIncomeFromContinuingOperations',
@@ -218,8 +217,8 @@ class FinancialModelingPrep(DataProviderInterface):
         'selling_general_and_administrative_expense': 'sellingGeneralAndAdministrativeExpenses',
         'weighted_average_basic_shares_outstanding': 'weightedAverageShsOut',
         'weighted_average_diluted_shares_outstanding': 'weightedAverageShsOutDil',
-    })
-    _fields_market_data_daily_rows_dividend_and_split_adjusted = types.MappingProxyType({
+    }
+    _fields_market_data_daily_rows_dividend_and_split_adjusted : typing.Final = {
         'date': 'date',
         'open': None,
         'high': None,
@@ -239,8 +238,8 @@ class FinancialModelingPrep(DataProviderInterface):
         'close_dividend_and_split_adjusted': 'adjClose',
         'volume_dividend_and_split_adjusted': 'volume',
         'vwap_dividend_and_split_adjusted': None,
-    })
-    _fields_market_data_daily_rows_split_adjusted = types.MappingProxyType({
+    }
+    _fields_market_data_daily_rows_split_adjusted : typing.Final = {
         'date': 'date',
         'open': None,
         'high': None,
@@ -260,10 +259,10 @@ class FinancialModelingPrep(DataProviderInterface):
         'close_dividend_and_split_adjusted': None,
         'volume_dividend_and_split_adjusted': None,
         'vwap_dividend_and_split_adjusted': None,
-    })
+    }
 
 
-    _market_data_endpoint_map = types.MappingProxyType({
+    _market_data_endpoint_map : typing.Final = {
         Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED.name: {
             'date': MarketDataDailyRow.date,
             'adjOpen': MarketDataDailyRow.open,
@@ -289,14 +288,14 @@ class FinancialModelingPrep(DataProviderInterface):
             'adjClose': MarketDataDailyRow.close_dividend_and_split_adjusted,
             'volume': MarketDataDailyRow.volume_dividend_and_split_adjusted,
         },
-    })
+    }
 
-    _fundamental_data_endpoint_map = types.MappingProxyType({
+    _fundamental_data_endpoint_map : typing.Final = {
 
-    })
+    }
 
 
-    _fields_market_data_daily_rows_unadjusted = types.MappingProxyType({
+    _fields_market_data_daily_rows_unadjusted : typing.Final = {
         'date': 'date',
         'open': 'adjOpen',
         'high': 'adjHigh',
@@ -316,16 +315,17 @@ class FinancialModelingPrep(DataProviderInterface):
         'close_dividend_and_split_adjusted': None,
         'volume_dividend_and_split_adjusted': None,
         'vwap_dividend_and_split_adjusted': None,
-    })
-    _fields_split_data_rows = types.MappingProxyType({
+    }
+    _fields_split_data_rows : typing.Final = {
         'split_date': 'date',
         'numerator': 'numerator',
         'denominator': 'denominator',
-    })
-    _periods = types.MappingProxyType({
+    }
+    # @todo: make enum
+    _periods : typing.Final = {
         'annual': 'annual',
         'quarterly': 'quarter'
-    })
+    }
 
     def __init__(
         self,

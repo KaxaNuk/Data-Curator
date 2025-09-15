@@ -10,7 +10,6 @@ init:
 import logging
 import pathlib
 import sys
-import types
 import typing
 
 import openpyxl
@@ -40,7 +39,7 @@ class ExcelConfigurator(ConfiguratorInterface):
         'fundamental'
     )
     NONE_DATA_PROVIDER = 'none'
-    SHEET_KEY_VALUES = types.MappingProxyType({
+    SHEET_KEY_VALUES : typing.Final = {
         'General': (
             'market_data_provider',
             'fundamental_data_provider',
@@ -51,15 +50,15 @@ class ExcelConfigurator(ConfiguratorInterface):
             'output_format',
             'parameters_format_version'
         ),
-    })
-    SHEET_COLUMNS = types.MappingProxyType({
+    }
+    SHEET_COLUMNS : typing.Final = {
         'Identifiers': (
             'main_identifier',
         ),
         'Output_Columns': (
             'columns',
         ),
-    })
+    }
 
     def __init__(
         self,
