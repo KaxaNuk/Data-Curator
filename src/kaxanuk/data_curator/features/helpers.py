@@ -350,11 +350,12 @@ def replace_infinite_with_none(column) -> DataColumn:
     DataColumn
         A new DataColumn object with -inf and inf values replaced by None.
     """
-    column = column.to_pyarrow()
-    finite_mask = pyarrow.compute.is_finite(column)
+    array = column.to_pyarrow()
+    finite_mask = pyarrow.compute.is_finite(array)
     if pyarrow.compute.all(finite_mask).as_py():
         return column
-    result = pyarrow.compute.if_else(finite_mask, column, pyarrow.scalar(None))
+
+    result = pyarrow.compute.if_else(finite_mask, array, pyarrow.scalar(None))
     return DataColumn.load(result)
 
 
