@@ -1,12 +1,13 @@
 import dataclasses
 import decimal
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import EntityTypeError
 from kaxanuk.data_curator.services import entity_helper
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class FundamentalDataRowBalanceSheet:
+class FundamentalDataRowBalanceSheet(BaseDataEntity):
     accumulated_other_comprehensive_income_after_tax: decimal.Decimal | None
     additional_paid_in_capital: decimal.Decimal | None
     assets: decimal.Decimal | None

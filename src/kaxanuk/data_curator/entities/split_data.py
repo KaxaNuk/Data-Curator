@@ -1,5 +1,6 @@
 import dataclasses
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.entities.split_data_row import SplitDataRow
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
@@ -13,7 +14,7 @@ from kaxanuk.data_curator.services import (
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class SplitData:
+class SplitData(BaseDataEntity):
     main_identifier: MainIdentifier
     rows: dict[str, SplitDataRow]
 

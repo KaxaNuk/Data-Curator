@@ -20,6 +20,7 @@ classifiers = [
 ]
 dependencies = [    # dev dependencies are in the [tool.pdm.dev-dependencies] section
     "click>=8.1.7",
+    "networkx>=3.5",
     "openpyxl>=3.1.5",
     "packaging>=24.2",
     "pandas>=2.2.3",

@@ -57,7 +57,31 @@ class DataProviderConnectionError(DataCuratorError):
     pass
 
 
+class DataProviderIncorrectMappingTypeError(DataCuratorError):
+    pass
+
+
+class DataProviderMultiEndpointCommonDataDiscrepancyError(DataCuratorError):
+    pass
+
+
+class DataProviderParsingError(DataCuratorError):
+    pass
+
+
 class DataProviderPaymentError(DataProviderConnectionError):
+    pass
+
+
+class DataProviderToolkitError(DataCuratorError):
+    pass
+
+
+class DataProviderToolkitArgumentError(DataProviderToolkitError):
+    pass
+
+
+class DataProviderToolkitRuntimeError(DataProviderToolkitError):
     pass
 
 

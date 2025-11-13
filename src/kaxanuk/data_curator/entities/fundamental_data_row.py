@@ -2,6 +2,7 @@ import dataclasses
 import datetime
 import re
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.entities.fundamental_data_row_balance_sheet import FundamentalDataRowBalanceSheet
 from kaxanuk.data_curator.entities.fundamental_data_row_cash_flow import FundamentalDataRowCashFlow
 from kaxanuk.data_curator.entities.fundamental_data_row_income_statement import FundamentalDataRowIncomeStatement
@@ -10,6 +11,10 @@ from kaxanuk.data_curator.exceptions import (
     EntityValueError,
 )
 from kaxanuk.data_curator.services import entity_helper
+
+
+CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
+FISCAL_YEAR_PATTERN = re.compile(r"^[0-9]{4}$")
 
 FUNDAMENTAL_DATA_ROW_PERIODS = [
     'FY',
@@ -21,7 +26,7 @@ FUNDAMENTAL_DATA_ROW_PERIODS = [
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class FundamentalDataRow:
+class FundamentalDataRow(BaseDataEntity):
     accepted_date: datetime.datetime | None
     balance_sheet: FundamentalDataRowBalanceSheet | None
     cash_flow: FundamentalDataRowCashFlow | None
@@ -42,12 +47,10 @@ class FundamentalDataRow:
 
             raise EntityTypeError(msg)
 
-        currency_pattern = re.compile(r"^[A-Z]{3}$")
-        if not currency_pattern.fullmatch(self.reported_currency):
+        if not CURRENCY_PATTERN.fullmatch(self.reported_currency):
             raise EntityValueError("Incorrect data in FundamentalDataRow.currency")
 
-        fiscal_year_pattern = re.compile(r"^[0-9]{4}$")
-        if not fiscal_year_pattern.fullmatch(str(self.fiscal_year)):
+        if not FISCAL_YEAR_PATTERN.fullmatch(str(self.fiscal_year)):
             raise EntityValueError("Incorrect data in FundamentalDataRow.fiscal_year")
 
         if self.fiscal_period not in FUNDAMENTAL_DATA_ROW_PERIODS:

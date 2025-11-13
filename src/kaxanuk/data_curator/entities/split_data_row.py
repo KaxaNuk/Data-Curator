@@ -1,6 +1,7 @@
 import dataclasses
 import datetime
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
 )
@@ -17,7 +18,7 @@ SPLIT_FACTOR_FIELDS = (
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class SplitDataRow:
+class SplitDataRow(BaseDataEntity):
     split_date: datetime.date
     numerator: float
     denominator: float

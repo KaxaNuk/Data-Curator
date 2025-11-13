@@ -2,6 +2,7 @@ import dataclasses
 import datetime
 import decimal
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
 )
@@ -21,7 +22,7 @@ DIVIDEND_FACTOR_FIELDS = (
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class DividendDataRow:
+class DividendDataRow(BaseDataEntity):
     declaration_date: datetime.date | None
     ex_dividend_date: datetime.date
     record_date: datetime.date | None

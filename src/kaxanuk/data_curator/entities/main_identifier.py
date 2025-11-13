@@ -1,5 +1,5 @@
 """
-Main identifier value object for use in all entities and aggregates.
+Main identifier value object for use in all identifier-based entities and aggregates.
 """
 
 import dataclasses

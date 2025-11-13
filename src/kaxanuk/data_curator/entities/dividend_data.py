@@ -1,5 +1,6 @@
 import dataclasses
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.entities.dividend_data_row import DividendDataRow
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
@@ -13,7 +14,7 @@ from kaxanuk.data_curator.services import (
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class DividendData:
+class DividendData(BaseDataEntity):
     main_identifier: MainIdentifier
     rows: dict[str, DividendDataRow]
 

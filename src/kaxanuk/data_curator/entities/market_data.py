@@ -1,6 +1,7 @@
 import dataclasses
 import datetime
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.entities.market_data_daily_row import MarketDataDailyRow
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
@@ -14,7 +15,7 @@ from kaxanuk.data_curator.services import (
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class MarketData:
+class MarketData(BaseDataEntity):
     start_date: datetime.date
     end_date: datetime.date
     main_identifier: MainIdentifier

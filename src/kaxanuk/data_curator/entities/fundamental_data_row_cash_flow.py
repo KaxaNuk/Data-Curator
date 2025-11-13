@@ -1,12 +1,13 @@
 import dataclasses
 import decimal
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import EntityTypeError
 from kaxanuk.data_curator.services import entity_helper
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class FundamentalDataRowCashFlow:
+class FundamentalDataRowCashFlow(BaseDataEntity):
     accounts_payable_change: decimal.Decimal | None
     accounts_receivable_change: decimal.Decimal | None
     capital_expenditure: decimal.Decimal | None

@@ -1,6 +1,7 @@
 import dataclasses
 import decimal
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
     EntityValueError
@@ -9,7 +10,7 @@ from kaxanuk.data_curator.services import entity_helper
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class FundamentalDataRowIncomeStatement:
+class FundamentalDataRowIncomeStatement(BaseDataEntity):
     basic_earnings_per_share: float | None
     basic_net_income_available_to_common_stockholders: decimal.Decimal | None
     continuing_operations_income_after_tax: decimal.Decimal | None
