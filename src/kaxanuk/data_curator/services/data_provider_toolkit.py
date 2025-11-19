@@ -1,7 +1,7 @@
 import dataclasses
 import enum
 import io
-import types
+import re
 import typing
 
 import networkx
@@ -11,7 +11,9 @@ import pyarrow.json
 
 from kaxanuk.data_curator.data_blocks.base_data_block import (
     BaseDataBlock,
+    ConsolidatedFieldsTable,
     EntityBuildingTables,
+    EntityField,
 )
 from kaxanuk.data_curator.entities import (
     BaseDataEntity,
@@ -27,9 +29,7 @@ from kaxanuk.data_curator.modules.data_column import DataColumn
 
 
 type ColumnRemap = str   # new entity.field or entity.field$tag column name
-type ConsolidatedFieldsTable = pyarrow.Table    # table with consolidated data from all endpoints of a data block
 type Endpoint = enum.StrEnum    # identifier of a particular endpoint
-type EntityField = types.MemberDescriptorType   # entity field
 type PrimaryKeyTable = pyarrow.Table     # table with primary key columns for table merges
 type TagName = str  # name of the data provider tag
 
@@ -93,21 +93,21 @@ class DataProviderFieldPreprocessors:
         return column * 1_000_000
 
 
-class DataProviderToolkitPlugin:
+class DataProviderToolkit:
     # endpoint column remaps cache
     _data_block_endpoint_column_remaps: dict[
         type[BaseDataBlock],
         EndpointColumnRemaps
-    ]
+    ] = {}
     # endpoint field preprocessors cache
     _data_block_endpoint_field_preprocessors: dict[
         type[BaseDataBlock],
         EndpointFieldPreprocessors
-    ]
+    ] = {}
     _data_block_entity_class_name_map: dict[
         type[BaseDataBlock],
         EntityClassNameMap
-    ]
+    ] = {}
 
     @classmethod
     def consolidate_endpoint_tables(
@@ -171,6 +171,7 @@ class DataProviderToolkitPlugin:
             for (endpoint, json_string) in endpoint_json_strings.items()
         }
 
+    # @todo remove as data blocks do this
     @classmethod
     def create_entity_tables_from_consolidated_table(
         cls,
@@ -285,7 +286,7 @@ class DataProviderToolkitPlugin:
 
             raise DataProviderToolkitRuntimeError(msg)
 
-        merged_pk_table = DataProviderToolkitPlugin._merge_primary_key_subsets_preserving_order(
+        merged_pk_table = DataProviderToolkit._merge_primary_key_subsets_preserving_order(
             primary_key_subsets,
             predominant_order_descending=predominant_order_descending,
         )
@@ -449,17 +450,27 @@ class DataProviderToolkitPlugin:
 
     @staticmethod
     def _create_table_from_json_string(json_string: str):
+        # PyArrow expects newline-delimited JSON, not JSON arrays
+        # Convert JSON array to NDJSON with simple text transformation
+        json_string_stripped = json_string.strip()
+
+        if json_string_stripped.startswith('[') and json_string_stripped.endswith(']'):
+            # Remove outer array brackets
+            json_string_stripped = json_string_stripped[1:-1].strip()
+            # Replace pattern of }\n  { or },\n  { with }\n{
+            json_string_stripped = re.sub(r'\}\s*,\s*\{', '}\n{', json_string_stripped)
+
         # Convert string to bytes and create a buffer
-        json_bytes = json_string.encode('utf-8')
+        json_bytes = json_string_stripped.encode('utf-8')
         buffer = io.BytesIO(json_bytes)
 
         # Read into PyArrow table
         try:
             table = pyarrow.json.read_json(
                 buffer,
-                pyarrow.json.ParseOptions(
-                    newlines_in_values=True
-                )
+                parse_options=pyarrow.json.ParseOptions(
+                    newlines_in_values=True,
+                ),
             )
         except pyarrow.ArrowInvalid as error:
             msg = f"Error parsing JSON string: {error}"
@@ -688,6 +699,7 @@ class DataProviderToolkitPlugin:
 
         return remapped_tables
 
+    # @todo remove as data blocks do this
     @staticmethod
     def _split_consolidated_table_into_entity_tables(
         table: ConsolidatedFieldsTable,

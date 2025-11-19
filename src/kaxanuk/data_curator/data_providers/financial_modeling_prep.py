@@ -5,7 +5,10 @@ import json
 import logging
 import typing
 
+from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
+from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
 from kaxanuk.data_curator.entities import (
+    BaseDataEntity,
     Configuration,
     DividendData,
     DividendDataRow,
@@ -16,6 +19,7 @@ from kaxanuk.data_curator.entities import (
     FundamentalDataRowIncomeStatement,
     MarketData,
     MarketDataDailyRow,
+    MarketInstrumentIdentifier,
     SplitData,
     SplitDataRow,
     MainIdentifier,
@@ -39,10 +43,16 @@ from kaxanuk.data_curator.exceptions import (
 )
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
 from kaxanuk.data_curator.services import entity_helper
+from kaxanuk.data_curator.services.data_provider_toolkit import (
+    PreprocessedFieldMapping,
+    DataProviderToolkit,
+    EndpointFieldMap,
+)
 
 
-
-class FinancialModelingPrep(DataProviderInterface):
+class FinancialModelingPrep(
+    DataProviderInterface,      # this is the interface all data providers have to implement
+):
     CONNECTION_VALIDATION_TICKER = 'AAPL'   # will be used to validate we can connect
     MAX_RECORDS_DOWNLOAD_LIMIT = 1000
     MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT = 5
@@ -66,10 +76,6 @@ class FinancialModelingPrep(DataProviderInterface):
         SEARCH_TICKER = 'https://financialmodelingprep.com/stable/search-symbol'
         STOCK_DIVIDEND = 'https://financialmodelingprep.com/stable/dividends'
         STOCK_SPLIT = 'https://financialmodelingprep.com/stable/splits'
-
-    class DataMappingField(typing.NamedTuple):
-        field_name: str
-        preprocessors: tuple[typing.Callable, ...] = ()
 
     _is_paid_account_plan = None
 
@@ -232,7 +238,7 @@ class FinancialModelingPrep(DataProviderInterface):
         'close_split_adjusted': None,
         'volume_split_adjusted': None,
         'vwap_split_adjusted': None,
-        'open_dividend_and_split_adjusted': DataMappingField('adjOpen'),
+        'open_dividend_and_split_adjusted': PreprocessedFieldMapping(['adjOpen'], []),
         'high_dividend_and_split_adjusted': 'adjHigh',
         'low_dividend_and_split_adjusted': 'adjLow',
         'close_dividend_and_split_adjusted': 'adjClose',
@@ -261,8 +267,186 @@ class FinancialModelingPrep(DataProviderInterface):
         'vwap_dividend_and_split_adjusted': None,
     }
 
+    _market_data_endpoint_map: typing.Final[EndpointFieldMap] = {
+        Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED: {
+            MarketDataDailyRow.date: 'date',
+            MarketDataDailyRow.open: 'adjOpen',
+            MarketDataDailyRow.high: 'adjHigh',
+            MarketDataDailyRow.low: 'adjLow',
+            MarketDataDailyRow.close: 'adjClose',
+            MarketDataDailyRow.volume: 'volume',
+        },
+        Endpoints.MARKET_DATA_DAILY_SPLIT_ADJUSTED: {
+            MarketDataDailyRow.date: 'date',
+            MarketDataDailyRow.open_split_adjusted: 'open',
+            MarketDataDailyRow.high_split_adjusted: 'high',
+            MarketDataDailyRow.low_split_adjusted: 'low',
+            MarketDataDailyRow.close_split_adjusted: 'close',
+            MarketDataDailyRow.volume_split_adjusted: 'volume',
+            MarketDataDailyRow.vwap_split_adjusted: 'vwap',
+        },
+        Endpoints.MARKET_DATA_DAILY_UNADJUSTED: {
+            MarketDataDailyRow.date: 'date',
+            MarketDataDailyRow.open_dividend_and_split_adjusted: 'adjOpen',
+            MarketDataDailyRow.high_dividend_and_split_adjusted: 'adjHigh',
+            MarketDataDailyRow.low_dividend_and_split_adjusted: 'adjLow',
+            MarketDataDailyRow.close_dividend_and_split_adjusted: 'adjClose',
+            MarketDataDailyRow.volume_dividend_and_split_adjusted: 'volume',
+        },
+    }
 
-    _market_data_endpoint_map : typing.Final = {
+
+    _fundamental_data_endpoint_map : typing.Final[EndpointFieldMap] = {
+        Endpoints.BALANCE_SHEET_STATEMENT: {
+            FundamentalDataRow.accepted_date: 'acceptedDate',
+            FundamentalDataRow.filing_date: 'filingDate',
+            FundamentalDataRow.fiscal_period: 'period',
+            FundamentalDataRow.fiscal_year: 'fiscalYear',
+            FundamentalDataRow.period_end_date: 'date',
+            FundamentalDataRow.reported_currency: 'reportedCurrency',
+            FundamentalDataRowBalanceSheet.accumulated_other_comprehensive_income_after_tax: 'accumulatedOtherComprehensiveIncomeLoss',
+            FundamentalDataRowBalanceSheet.additional_paid_in_capital: 'additionalPaidInCapital',
+            FundamentalDataRowBalanceSheet.assets: 'totalAssets',
+            FundamentalDataRowBalanceSheet.capital_lease_obligations: 'capitalLeaseObligations',
+            FundamentalDataRowBalanceSheet.cash_and_cash_equivalents: 'cashAndCashEquivalents',
+            FundamentalDataRowBalanceSheet.cash_and_shortterm_investments: 'cashAndShortTermInvestments',
+            FundamentalDataRowBalanceSheet.common_stock_value: 'commonStock',
+            FundamentalDataRowBalanceSheet.current_accounts_payable: 'accountPayables',
+            FundamentalDataRowBalanceSheet.current_accounts_receivable_after_doubtful_accounts: 'accountsReceivables',
+            FundamentalDataRowBalanceSheet.current_accrued_expenses: 'accruedExpenses',
+            FundamentalDataRowBalanceSheet.current_assets: 'totalCurrentAssets',
+            FundamentalDataRowBalanceSheet.current_capital_lease_obligations: 'capitalLeaseObligationsCurrent',
+            FundamentalDataRowBalanceSheet.current_liabilities: 'totalCurrentLiabilities',
+            FundamentalDataRowBalanceSheet.current_net_receivables: 'netReceivables',
+            FundamentalDataRowBalanceSheet.current_tax_payables: 'taxPayables',
+            FundamentalDataRowBalanceSheet.deferred_revenue: 'deferredRevenue',
+            FundamentalDataRowBalanceSheet.goodwill: 'goodwill',
+            FundamentalDataRowBalanceSheet.investments: 'totalInvestments',
+            FundamentalDataRowBalanceSheet.liabilities: 'totalLiabilities',
+            FundamentalDataRowBalanceSheet.longterm_debt: 'longTermDebt',
+            FundamentalDataRowBalanceSheet.longterm_investments: 'longTermInvestments',
+            FundamentalDataRowBalanceSheet.net_debt: 'netDebt',
+            FundamentalDataRowBalanceSheet.net_intangible_assets_excluding_goodwill: 'intangibleAssets',
+            FundamentalDataRowBalanceSheet.net_intangible_assets_including_goodwill: 'goodwillAndIntangibleAssets',
+            FundamentalDataRowBalanceSheet.net_inventory: 'inventory',
+            FundamentalDataRowBalanceSheet.net_property_plant_and_equipment: 'propertyPlantEquipmentNet',
+            FundamentalDataRowBalanceSheet.noncontrolling_interest: 'minorityInterest',
+            FundamentalDataRowBalanceSheet.noncurrent_assets: 'totalNonCurrentAssets',
+            FundamentalDataRowBalanceSheet.noncurrent_capital_lease_obligations: 'capitalLeaseObligationsNonCurrent',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_revenue: 'deferredRevenueNonCurrent',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_tax_assets: 'taxAssets',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_tax_liabilities: 'deferredTaxLiabilitiesNonCurrent',
+            FundamentalDataRowBalanceSheet.noncurrent_liabilities: 'totalNonCurrentLiabilities',
+            FundamentalDataRowBalanceSheet.other_assets: 'otherAssets',
+            FundamentalDataRowBalanceSheet.other_current_assets: 'otherCurrentAssets',
+            FundamentalDataRowBalanceSheet.other_current_liabilities: 'otherCurrentLiabilities',
+            FundamentalDataRowBalanceSheet.other_liabilities: 'otherLiabilities',
+            FundamentalDataRowBalanceSheet.other_noncurrent_assets: 'otherNonCurrentAssets',
+            FundamentalDataRowBalanceSheet.other_noncurrent_liabilities: 'otherNonCurrentLiabilities',
+            FundamentalDataRowBalanceSheet.other_payables: 'otherPayables',
+            FundamentalDataRowBalanceSheet.other_receivables: 'otherReceivables',
+            FundamentalDataRowBalanceSheet.other_stockholder_equity: 'otherTotalStockholdersEquity',
+            FundamentalDataRowBalanceSheet.preferred_stock_value: 'preferredStock',
+            FundamentalDataRowBalanceSheet.prepaid_expenses: 'prepaids',
+            FundamentalDataRowBalanceSheet.retained_earnings: 'retainedEarnings',
+            FundamentalDataRowBalanceSheet.shortterm_debt: 'shortTermDebt',
+            FundamentalDataRowBalanceSheet.shortterm_investments: 'shortTermInvestments',
+            FundamentalDataRowBalanceSheet.stockholder_equity: 'totalStockholdersEquity',
+            FundamentalDataRowBalanceSheet.total_debt_including_capital_lease_obligations: 'totalDebt',
+            FundamentalDataRowBalanceSheet.total_equity_including_noncontrolling_interest: 'totalEquity',
+            FundamentalDataRowBalanceSheet.total_liabilities_and_equity: 'totalLiabilitiesAndTotalEquity',
+            FundamentalDataRowBalanceSheet.total_payables_current_and_noncurrent: 'totalPayables',
+            FundamentalDataRowBalanceSheet.treasury_stock_value: 'treasuryStock',
+        },
+        Endpoints.CASH_FLOW_STATEMENT: {
+            FundamentalDataRow.accepted_date: 'acceptedDate',
+            FundamentalDataRow.filing_date: 'filingDate',
+            FundamentalDataRow.fiscal_period: 'period',
+            FundamentalDataRow.fiscal_year: 'fiscalYear',
+            FundamentalDataRow.period_end_date: 'date',
+            FundamentalDataRow.reported_currency: 'reportedCurrency',
+            FundamentalDataRowCashFlow.accounts_payable_change: 'accountsPayables',
+            FundamentalDataRowCashFlow.accounts_receivable_change: 'accountsReceivables',
+            FundamentalDataRowCashFlow.capital_expenditure: 'capitalExpenditure',
+            FundamentalDataRowCashFlow.cash_and_cash_equivalents_change: 'netChangeInCash',
+            FundamentalDataRowCashFlow.cash_exchange_rate_effect: 'effectOfForexChangesOnCash',
+            FundamentalDataRowCashFlow.common_stock_dividend_payments: 'commonDividendsPaid',
+            FundamentalDataRowCashFlow.common_stock_issuance_proceeds: 'commonStockIssuance',
+            FundamentalDataRowCashFlow.common_stock_repurchase: 'commonStockRepurchased',
+            FundamentalDataRowCashFlow.deferred_income_tax: 'deferredIncomeTax',
+            FundamentalDataRowCashFlow.depreciation_and_amortization: 'depreciationAndAmortization',
+            FundamentalDataRowCashFlow.dividend_payments: 'netDividendsPaid',
+            FundamentalDataRowCashFlow.free_cash_flow: 'freeCashFlow',
+            FundamentalDataRowCashFlow.interest_payments: 'interestPaid',
+            FundamentalDataRowCashFlow.inventory_change: 'inventory',
+            FundamentalDataRowCashFlow.investment_sales_maturities_and_collections_proceeds: 'salesMaturitiesOfInvestments',
+            FundamentalDataRowCashFlow.investments_purchase: 'purchasesOfInvestments',
+            FundamentalDataRowCashFlow.net_business_acquisition_payments: 'acquisitionsNet',
+            FundamentalDataRowCashFlow.net_cash_from_operating_activities: 'netCashProvidedByOperatingActivities',
+            FundamentalDataRowCashFlow.net_cash_from_investing_activites: 'netCashProvidedByInvestingActivities',
+            FundamentalDataRowCashFlow.net_cash_from_financing_activities: 'netCashProvidedByFinancingActivities',
+            FundamentalDataRowCashFlow.net_common_stock_issuance_proceeds: 'netCommonStockIssuance',
+            FundamentalDataRowCashFlow.net_debt_issuance_proceeds: 'netDebtIssuance',
+            FundamentalDataRowCashFlow.net_income: 'netIncome',
+            FundamentalDataRowCashFlow.net_income_tax_payments: 'incomeTaxesPaid',
+            FundamentalDataRowCashFlow.net_longterm_debt_issuance_proceeds: 'longTermNetDebtIssuance',
+            FundamentalDataRowCashFlow.net_shortterm_debt_issuance_proceeds: 'shortTermNetDebtIssuance',
+            FundamentalDataRowCashFlow.net_stock_issuance_proceeds: 'netStockIssuance',
+            FundamentalDataRowCashFlow.other_financing_activities: 'otherFinancingActivities',
+            FundamentalDataRowCashFlow.other_investing_activities: 'otherInvestingActivities',
+            FundamentalDataRowCashFlow.other_noncash_items: 'otherNonCashItems',
+            FundamentalDataRowCashFlow.other_working_capital: 'otherWorkingCapital',
+            FundamentalDataRowCashFlow.period_end_cash: 'cashAtEndOfPeriod',
+            FundamentalDataRowCashFlow.period_start_cash: 'cashAtBeginningOfPeriod',
+            FundamentalDataRowCashFlow.preferred_stock_dividend_payments: 'preferredDividendsPaid',
+            FundamentalDataRowCashFlow.preferred_stock_issuance_proceeds: 'netPreferredStockIssuance',
+            FundamentalDataRowCashFlow.property_plant_and_equipment_purchase: 'investmentsInPropertyPlantAndEquipment',
+            FundamentalDataRowCashFlow.stock_based_compensation: 'stockBasedCompensation',
+            FundamentalDataRowCashFlow.working_capital_change: 'changeInWorkingCapital',
+        },
+        Endpoints.INCOME_STATEMENT: {
+            FundamentalDataRow.accepted_date: 'acceptedDate',
+            FundamentalDataRow.filing_date: 'filingDate',
+            FundamentalDataRow.fiscal_period: 'period',
+            FundamentalDataRow.fiscal_year: 'fiscalYear',
+            FundamentalDataRow.period_end_date: 'date',
+            FundamentalDataRow.reported_currency: 'reportedCurrency',
+            FundamentalDataRowIncomeStatement.basic_earnings_per_share: 'eps',
+            FundamentalDataRowIncomeStatement.basic_net_income_available_to_common_stockholders: 'bottomLineNetIncome',
+            FundamentalDataRowIncomeStatement.continuing_operations_income_after_tax: 'netIncomeFromContinuingOperations',
+            FundamentalDataRowIncomeStatement.costs_and_expenses: 'costAndExpenses',
+            FundamentalDataRowIncomeStatement.cost_of_revenue: 'costOfRevenue',
+            FundamentalDataRowIncomeStatement.depreciation_and_amortization: 'depreciationAndAmortization',
+            FundamentalDataRowIncomeStatement.diluted_earnings_per_share: 'epsDiluted',
+            FundamentalDataRowIncomeStatement.discontinued_operations_income_after_tax: 'netIncomeFromDiscontinuedOperations',
+            FundamentalDataRowIncomeStatement.earnings_before_interest_and_tax: 'ebit',
+            FundamentalDataRowIncomeStatement.earnings_before_interest_tax_depreciation_and_amortization: 'ebitda',
+            FundamentalDataRowIncomeStatement.general_and_administrative_expense: 'generalAndAdministrativeExpenses',
+            FundamentalDataRowIncomeStatement.gross_profit: 'grossProfit',
+            FundamentalDataRowIncomeStatement.income_before_tax: 'incomeBeforeTax',
+            FundamentalDataRowIncomeStatement.income_tax_expense: 'incomeTaxExpense',
+            FundamentalDataRowIncomeStatement.interest_expense: 'interestExpense',
+            FundamentalDataRowIncomeStatement.interest_income: 'interestIncome',
+            FundamentalDataRowIncomeStatement.net_income: 'netIncome',
+            FundamentalDataRowIncomeStatement.net_income_deductions: 'netIncomeDeductions',
+            FundamentalDataRowIncomeStatement.net_interest_income: 'netInterestIncome',
+            FundamentalDataRowIncomeStatement.net_total_other_income: 'totalOtherIncomeExpensesNet',
+            FundamentalDataRowIncomeStatement.nonoperating_income_excluding_interest: 'nonOperatingIncomeExcludingInterest',
+            FundamentalDataRowIncomeStatement.operating_expenses: 'operatingExpenses',
+            FundamentalDataRowIncomeStatement.operating_income: 'operatingIncome',
+            FundamentalDataRowIncomeStatement.other_expenses: 'otherExpenses',
+            FundamentalDataRowIncomeStatement.other_net_income_adjustments: 'otherAdjustmentsToNetIncome',
+            FundamentalDataRowIncomeStatement.research_and_development_expense: 'researchAndDevelopmentExpenses',
+            FundamentalDataRowIncomeStatement.revenues: 'revenue',
+            FundamentalDataRowIncomeStatement.selling_and_marketing_expense: 'sellingAndMarketingExpenses',
+            FundamentalDataRowIncomeStatement.selling_general_and_administrative_expense: 'sellingGeneralAndAdministrativeExpenses',
+            FundamentalDataRowIncomeStatement.weighted_average_basic_shares_outstanding: 'weightedAverageShsOut',
+            FundamentalDataRowIncomeStatement.weighted_average_diluted_shares_outstanding: 'weightedAverageShsOutDil',
+        },
+    }
+
+
+    _market_data_endpoint_map2 : typing.Final = {
         Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED.name: {
             'date': MarketDataDailyRow.date,
             'adjOpen': MarketDataDailyRow.open,
@@ -288,10 +472,6 @@ class FinancialModelingPrep(DataProviderInterface):
             'adjClose': MarketDataDailyRow.close_dividend_and_split_adjusted,
             'volume': MarketDataDailyRow.volume_dividend_and_split_adjusted,
         },
-    }
-
-    _fundamental_data_endpoint_map : typing.Final = {
-
     }
 
 
@@ -515,14 +695,45 @@ class FinancialModelingPrep(DataProviderInterface):
             }
         )
 
-        return self._create_fundamental_data_from_raw_stock_response(
-            main_identifier,
-            start_date,
-            end_date,
-            fundamental_balance_sheet_raw_data,
-            fundamental_cash_flow_raw_data,
-            fundamental_income_raw_data
+        endpoint_tables = DataProviderToolkit.create_endpoint_tables_from_json_mapping({
+            self.Endpoints.BALANCE_SHEET_STATEMENT:
+                fundamental_balance_sheet_raw_data,
+            self.Endpoints.CASH_FLOW_STATEMENT:
+                fundamental_cash_flow_raw_data,
+            self.Endpoints.INCOME_STATEMENT:
+                fundamental_income_raw_data,
+        })
+
+        consolidated_fundamental_data_descending = DataProviderToolkit.consolidate_endpoint_tables(
+            data_block=FundamentalsDataBlock,
+            endpoint_field_map=self._fundamental_data_endpoint_map,
+            endpoint_tables=endpoint_tables,
+            endpoint_table_merge_fields=[
+                FundamentalDataRow.period_end_date,
+            ],
+            predominant_order_descending=True
         )
+        consolidated_fundamental_data = consolidated_fundamental_data_descending[::-1]
+        # @todo filter ammendments
+        fundamental_data = FundamentalsDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_fundamental_data,
+            common_field_data={
+                FundamentalData: {
+                    FundamentalData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return fundamental_data
+
+        # return self._create_fundamental_data_from_raw_stock_response(
+        #     main_identifier,
+        #     start_date,
+        #     end_date,
+        #     fundamental_balance_sheet_raw_data,
+        #     fundamental_cash_flow_raw_data,
+        #     fundamental_income_raw_data
+        # )
 
     def get_market_data(
             self,
@@ -584,6 +795,33 @@ class FinancialModelingPrep(DataProviderInterface):
                 'to': end_date.strftime("%Y-%m-%d"),
             },
         )
+        endpoint_tables = DataProviderToolkit.create_endpoint_tables_from_json_mapping({
+            self.Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED:
+                market_raw_dividend_and_split_adjusted_data,
+            self.Endpoints.MARKET_DATA_DAILY_SPLIT_ADJUSTED:
+                market_raw_split_adjusted_data,
+            self.Endpoints.MARKET_DATA_DAILY_UNADJUSTED:
+                market_raw_unadjusted_data,
+        })
+
+        consolidated_market_data_descending = DataProviderToolkit.consolidate_endpoint_tables(
+            data_block=MarketDailyDataBlock,
+            endpoint_field_map=self._market_data_endpoint_map,
+            endpoint_tables=endpoint_tables,
+            endpoint_table_merge_fields=[MarketDataDailyRow.date],
+            predominant_order_descending=True
+        )
+        consolidated_market_data = consolidated_market_data_descending[::-1]
+        market_data = MarketDailyDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_market_data,
+            common_field_data={
+                MarketData: {
+                    MarketData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return market_data
 
         try:
             market_data = self._create_market_data_from_raw_stock_response(
@@ -633,13 +871,6 @@ class FinancialModelingPrep(DataProviderInterface):
             max_records_download_limit = self.MAX_RECORDS_DOWNLOAD_LIMIT
 
         endpoint_id = self.Endpoints.STOCK_SPLIT.name
-
-        if self._get_paid_account_status() is False:
-            max_records_download_limit = self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT
-        else:
-            max_records_download_limit = self.MAX_RECORDS_DOWNLOAD_LIMIT
-
-        endpoint_id = self.Endpoints.STOCK_DIVIDEND.name
 
         try:
             # Attempt to download the data, possibly with a paid account download limit
@@ -1293,3 +1524,10 @@ class FinancialModelingPrep(DataProviderInterface):
         if not cls._is_paid_account_plan:
             msg = "Free FMP account plan limitation: fundamental data is only available for the most recent periods."
             logging.getLogger(__name__).warning(msg)
+
+
+
+
+
+
+

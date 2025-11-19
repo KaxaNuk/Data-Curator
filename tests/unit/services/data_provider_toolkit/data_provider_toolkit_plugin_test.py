@@ -1,3 +1,6 @@
+import datetime
+import pathlib
+
 import pyarrow
 import pytest
 
@@ -6,7 +9,7 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderMultiEndpointCommonDataDiscrepancyError,
     DataProviderToolkitRuntimeError,
 )
-from kaxanuk.data_curator.services.data_provider_toolkit import DataProviderToolkitPlugin
+from kaxanuk.data_curator.services.data_provider_toolkit import DataProviderToolkit
 from .fixtures import (
     endpoint_maps,
     entity_columns,
@@ -16,7 +19,7 @@ from .fixtures import (
 
 @pytest.fixture(scope="function")
 def mixin_instance():
-    return DataProviderToolkitPlugin()
+    return DataProviderToolkit()
 
 
 def check_if_table_preserves_row_order(
@@ -169,6 +172,31 @@ class TestPrivateConsolidateProcessedEndpointTables:
                 entity_tables.ENDPOINT_TABLES_INCONSISTENT_WITH_NONE,
                 [entity_tables.MiniFundamentalRow.filing_date]
             )
+
+
+class TestPrivateCreateTableFromJsonString:
+    def test_create_table_from_json_string(self, mixin_instance):
+        base_dir = pathlib.Path(__file__).parent
+        relative_path = f'{base_dir}/fixtures/market_daily.json'
+        json = pathlib.Path(relative_path).read_text()
+        result = mixin_instance._create_table_from_json_string(json)
+        expected = pyarrow.table({
+            'symbol': pyarrow.array(['NVDA', 'NVDA']),
+            'date': pyarrow.array(
+                [
+                    datetime.datetime.fromisoformat('2025-11-14'),
+                    datetime.datetime.fromisoformat('2025-11-13')
+                ],
+                type=pyarrow.timestamp('s')
+            ),
+            'adjOpen': pyarrow.array([182.86, 191.05]),
+            'adjHigh': pyarrow.array([190.68, 191.44]),
+            'adjLow': pyarrow.array([180.58, 183.85]),
+            'adjClose': pyarrow.array([189.42, 186.86]),
+            'volume': pyarrow.array([130626834, 206750700])
+            })
+
+        assert result.equals(expected)
 
 
 class TestPrivateMergeArraySubsetsPreservingOrder:
@@ -334,67 +362,3 @@ class TestPrivateRemapEndpointTableColumns:
                 expected[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT]
             )
         )
-
-class TestSplitConsolidatedTableIntoEntityTables:
-    def test_split_consolidated_table_into_entity_tables(self, mixin_instance):
-        result = mixin_instance._split_consolidated_table_into_entity_tables(
-            entity_tables.CONSOLIDATED_TABLE,
-            {
-                'MiniFundamentalRow': entity_tables.MiniFundamentalRow,
-                'MiniFundamentalRowBalanceSheet': entity_tables.MiniFundamentalRowBalanceSheet,
-                'MiniFundamentalRowCashFlow': entity_tables.MiniFundamentalRowCashFlow,
-                'MiniFundamentalRowIncomeStatement': entity_tables.MiniFundamentalRowIncomeStatement,
-            }
-        )
-        expected = entity_tables.ENTITY_TABLES
-
-        assert (
-            result[entity_tables.MiniFundamentalRow].equals(
-                expected[entity_tables.MiniFundamentalRow]
-            )
-            and result[entity_tables.MiniFundamentalRowBalanceSheet].equals(
-                expected[entity_tables.MiniFundamentalRowBalanceSheet]
-            )
-            and result[entity_tables.MiniFundamentalRowCashFlow].equals(
-                expected[entity_tables.MiniFundamentalRowCashFlow]
-            )
-            and result[entity_tables.MiniFundamentalRowIncomeStatement].equals(
-                expected[entity_tables.MiniFundamentalRowIncomeStatement]
-            )
-        )
-    
-    def test_split_table_inexistent_entity_fails(self, mixin_instance):
-        with pytest.raises(DataProviderIncorrectMappingTypeError):
-            mixin_instance._split_consolidated_table_into_entity_tables(
-                entity_tables.INEXISTENT_ENTITY_KEYS_TABLE,
-                {
-                    'MiniFundamentalRow': entity_tables.MiniFundamentalRow,
-                    'MiniFundamentalRowBalanceSheet': entity_tables.MiniFundamentalRowBalanceSheet,
-                    'MiniFundamentalRowCashFlow': entity_tables.MiniFundamentalRowCashFlow,
-                    'MiniFundamentalRowIncomeStatement': entity_tables.MiniFundamentalRowIncomeStatement,
-                }
-            )
-
-    def test_split_table_inexistent_entity_field_fails(self, mixin_instance):
-        with pytest.raises(DataProviderIncorrectMappingTypeError):
-            mixin_instance._split_consolidated_table_into_entity_tables(
-                entity_tables.INEXISTENT_ENTITY_FIELD_KEYS_TABLE,
-                {
-                    'MiniFundamentalRow': entity_tables.MiniFundamentalRow,
-                    'MiniFundamentalRowBalanceSheet': entity_tables.MiniFundamentalRowBalanceSheet,
-                    'MiniFundamentalRowCashFlow': entity_tables.MiniFundamentalRowCashFlow,
-                    'MiniFundamentalRowIncomeStatement': entity_tables.MiniFundamentalRowIncomeStatement,
-                }
-            )
-
-    def test_split_table_non_entity_field_key_fails(self, mixin_instance):
-        with pytest.raises(DataProviderIncorrectMappingTypeError):
-            mixin_instance._split_consolidated_table_into_entity_tables(
-                entity_tables.NON_ENTITY_FIELD_KEYS_TABLE,
-                {
-                    'MiniFundamentalRow': entity_tables.MiniFundamentalRow,
-                    'MiniFundamentalRowBalanceSheet': entity_tables.MiniFundamentalRowBalanceSheet,
-                    'MiniFundamentalRowCashFlow': entity_tables.MiniFundamentalRowCashFlow,
-                    'MiniFundamentalRowIncomeStatement': entity_tables.MiniFundamentalRowIncomeStatement,
-                }
-            )

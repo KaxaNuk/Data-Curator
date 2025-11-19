@@ -4,7 +4,11 @@ Package containing all our custom Exceptions.
 
 
 class DataCuratorError(Exception):
-    pass
+    """ Base class for all Data Curator exceptions """
+
+
+class DataCuratorUnhandledError(DataCuratorError):
+    """ Base class for exceptions that are not meant to be handled, but should crash the system """
 
 
 class ApiEndpointError(DataCuratorError):
@@ -39,6 +43,65 @@ class ConfigurationError(DataCuratorError):
 
 class ConfigurationHandlerError(DataCuratorError):
     pass
+
+
+class DataBlockEmptyError(DataCuratorError):
+    pass
+
+
+class DataBlockError(DataCuratorError):
+    pass
+
+
+class DataBlockIncorrectMappingTypeError(DataCuratorError):
+    pass
+
+
+class DataBlockEntityPackingError(DataCuratorUnhandledError):
+    def __init__(
+        self,
+        entity_name,
+        clock_sync_value,
+    ):
+        self.entity_name = entity_name
+        self.clock_sync_value = clock_sync_value
+        super().__init__(
+            f"Error during entity packing for {entity_name} @ {clock_sync_value}"
+        )
+
+
+class DataBlockIncorrectPackingStructureError(DataCuratorUnhandledError):
+    pass
+
+
+class DataBlockTypeConversionError(DataCuratorError):
+    pass
+
+
+class DataBlockTypeConversionRuntimeError(DataCuratorError):
+    def __init__(
+        self,
+        conversion_type,
+        original_value
+    ):
+        self.conversion_type = conversion_type
+        self.original_value = original_value
+        super().__init__(
+            f"Error during value -> type conversion for {original_value} -> {conversion_type}"
+        )
+
+
+class DataBlockTypeConversionNotImplementedError(DataBlockTypeConversionError):
+    def __init__(
+        self,
+        conversion_type,
+        original_value
+    ):
+        self.conversion_type = conversion_type
+        self.original_value = original_value
+        super().__init__(
+            f"Unsupported value -> type conversion for {original_value} -> {conversion_type}"
+        )
 
 
 class DataColumnError(DataCuratorError):
@@ -171,4 +234,12 @@ class SplitDataEmptyError(DataCuratorError):
 
 
 class SplitDataRowError(DataCuratorError):
+    pass
+
+
+class DataCuratorErrorGroup(ExceptionGroup):
+    pass
+
+
+class DataBlockRowEntityErrorGroup(DataCuratorErrorGroup):
     pass
