@@ -2,6 +2,8 @@
 Package containing all our custom Exceptions.
 """
 
+import pyarrow
+
 
 class DataCuratorError(Exception):
     """ Base class for all Data Curator exceptions """
@@ -125,6 +127,21 @@ class DataProviderIncorrectMappingTypeError(DataCuratorError):
 
 
 class DataProviderMultiEndpointCommonDataDiscrepancyError(DataCuratorError):
+    def __init__(
+        self,
+        discrepant_columns: set[str],
+        discrepancies_table: pyarrow.Table,
+        key_column_names: list[str],
+    ):
+        self.discrepant_columns = discrepant_columns
+        self.discrepancies_table = discrepancies_table
+        self.key_column_names = key_column_names
+        super().__init__(
+            f"Discrepancies found between common columns across multiple endpoints."
+        )
+
+
+class DataProviderMultiEndpointCommonDataOrderError(DataCuratorError):
     pass
 
 
@@ -141,6 +158,10 @@ class DataProviderToolkitError(DataCuratorError):
 
 
 class DataProviderToolkitArgumentError(DataProviderToolkitError):
+    pass
+
+
+class DataProviderToolkitNoDataError(DataProviderToolkitError):
     pass
 
 

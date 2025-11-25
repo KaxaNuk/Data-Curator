@@ -59,6 +59,9 @@ filing_dates = pyarrow.array([
     datetime.date(2023, 1, 15),
     datetime.date(2023, 1, 17),
 ])
+filing_dates_reversed = filing_dates.take(
+    pyarrow.array(range(len(filing_dates) - 1, -1, -1))
+)
 filing_dates_subset = pyarrow.array([
     # 2023-01-02 to 2023-01-05
     None,
@@ -76,6 +79,9 @@ filing_dates_subset = pyarrow.array([
     datetime.date(2023, 1, 15),
     datetime.date(2023, 1, 17),
 ])
+filing_dates_subset_reversed = filing_dates_subset.take(
+    pyarrow.array(range(len(filing_dates_subset) - 1, -1, -1))
+)
 filing_dates_shifted = pyarrow.array([
     # 2023-01-03 to 2023-01-06
     datetime.date(2023, 1, 3),
@@ -93,6 +99,9 @@ filing_dates_shifted = pyarrow.array([
     datetime.date(2023, 1, 17),
     datetime.date(2023, 1, 18),
 ])
+filing_dates_shifted_reversed = filing_dates_shifted.take(
+    pyarrow.array(range(len(filing_dates_shifted) - 1, -1, -1))
+)
 filing_dates_all = pyarrow.array([
     datetime.date(2023, 1, 2),
     datetime.date(2023, 1, 3),
@@ -112,6 +121,9 @@ filing_dates_all = pyarrow.array([
     datetime.date(2023, 1, 17),
     datetime.date(2023, 1, 18),
 ])
+filing_dates_all_reversed = filing_dates_all.take(
+    pyarrow.array(range(len(filing_dates_all) - 1, -1, -1))
+)
 filing_dates_inconsistent = pyarrow.array([
     # 2023-01-02 to 2023-01-05
     datetime.date(2023, 1, 2),
@@ -146,6 +158,9 @@ accepted_dates = pyarrow.array([
     datetime.datetime(2023, 11, 25, 17, 30, 0),
     datetime.datetime(2023, 12, 30, 23, 59, 59),
 ])
+accepted_dates_reversed = accepted_dates.take(
+    pyarrow.array(range(len(accepted_dates) - 1, -1, -1))
+)
 accepted_dates_inconsistent = pyarrow.array([
     datetime.datetime(2023, 1, 15, 9, 30, 0),
     datetime.datetime(2023, 2, 14, 10, 0, 0),
@@ -194,6 +209,9 @@ accepted_dates_subset = pyarrow.array([
     datetime.datetime(2023, 11, 25, 17, 30, 0),
     datetime.datetime(2023, 12, 30, 23, 59, 59),
 ])
+accepted_dates_subset_reversed = accepted_dates_subset.take(
+    pyarrow.array(range(len(accepted_dates_subset) - 1, -1, -1))
+)
 accepted_dates_shifted = pyarrow.array([
     datetime.datetime(2023, 2, 14, 10, 0, 0),
     datetime.datetime(2023, 3, 20, 14, 15, 30),
@@ -210,6 +228,9 @@ accepted_dates_shifted = pyarrow.array([
     datetime.datetime(2023, 12, 30, 23, 59, 59),
     datetime.datetime(2023, 12, 31, 12, 10, 0),
 ])
+accepted_dates_shifted_reversed = accepted_dates_shifted.take(
+    pyarrow.array(range(len(accepted_dates_shifted) - 1, -1, -1))
+)
 accepted_dates_all = pyarrow.array([
     datetime.datetime(2023, 1, 15, 9, 30, 0),
     datetime.datetime(2023, 2, 14, 10, 0, 0),
@@ -229,6 +250,9 @@ accepted_dates_all = pyarrow.array([
     datetime.datetime(2023, 12, 30, 23, 59, 59),
     datetime.datetime(2023, 12, 31, 12, 10, 0),
 ])
+accepted_dates_all_reversed = accepted_dates_all.take(
+    pyarrow.array(range(len(accepted_dates_all) - 1, -1, -1))
+)
 assets_subset = pyarrow.array([
     None,
     None,
@@ -245,6 +269,9 @@ assets_subset = pyarrow.array([
     320000,
     840000,
 ])
+assets_subset_reversed = assets_subset.take(
+    pyarrow.array(range(len(assets_subset) - 1, -1, -1))
+)
 assets_all = pyarrow.array([
     None,
     None,
@@ -264,6 +291,9 @@ assets_all = pyarrow.array([
     840000,
     None,
 ])
+assets_all_reversed = assets_all.take(
+    pyarrow.array(range(len(assets_all) - 1, -1, -1))
+)
 cash_and_cash_equivalents_subset = pyarrow.array([
     None,
     None,
@@ -280,6 +310,9 @@ cash_and_cash_equivalents_subset = pyarrow.array([
     12500,
     84000,
 ])
+cash_and_cash_equivalents_subset_reversed = cash_and_cash_equivalents_subset.take(
+    pyarrow.array(range(len(cash_and_cash_equivalents_subset) - 1, -1, -1))
+)
 cash_and_cash_equivalents_all = pyarrow.array([
     None,
     None,
@@ -299,6 +332,9 @@ cash_and_cash_equivalents_all = pyarrow.array([
     84000,
     None,
 ])
+cash_and_cash_equivalents_all_reversed = cash_and_cash_equivalents_all.take(
+    pyarrow.array(range(len(cash_and_cash_equivalents_all) - 1, -1, -1))
+)
 net_income = pyarrow.array([
     56000,
     15000,
@@ -315,6 +351,9 @@ net_income = pyarrow.array([
     6000,
     620000,
 ])
+net_income_reversed = net_income.take(
+    pyarrow.array(range(len(net_income) - 1, -1, -1))
+)
 net_income_shifted = pyarrow.array([
     15000,
     12000,
@@ -331,6 +370,9 @@ net_income_shifted = pyarrow.array([
     620000,
     105000,
 ])
+net_income_shifted_reversed = net_income_shifted.take(
+    pyarrow.array(range(len(net_income_shifted) - 1, -1, -1))
+)
 net_income_all = pyarrow.array([
     56000,
     15000,
@@ -350,6 +392,9 @@ net_income_all = pyarrow.array([
     620000,
     105000,
 ])
+net_income_all_reversed = net_income_all.take(
+    pyarrow.array(range(len(net_income_all) - 1, -1, -1))
+)
 net_income_tax_payments_shifted = pyarrow.array([
     1500,
     1200,
@@ -366,6 +411,9 @@ net_income_tax_payments_shifted = pyarrow.array([
     62000,
     10500,
 ])
+net_income_tax_payments_shifted_reversed = net_income_tax_payments_shifted.take(
+    pyarrow.array(range(len(net_income_tax_payments_shifted) - 1, -1, -1))
+)
 net_income_tax_payments_all = pyarrow.array([
     None,
     1500,
@@ -385,6 +433,9 @@ net_income_tax_payments_all = pyarrow.array([
     62000,
     10500,
 ])
+net_income_tax_payments_all_reversed = net_income_tax_payments_all.take(
+    pyarrow.array(range(len(net_income_tax_payments_all) - 1, -1, -1))
+)
 
 cost_of_revenue = pyarrow.array([
     2000,
@@ -402,6 +453,9 @@ cost_of_revenue = pyarrow.array([
     2000,
     1000,
 ])
+cost_of_revenue_reversed = cost_of_revenue.take(
+    pyarrow.array(range(len(cost_of_revenue) - 1, -1, -1))
+)
 cost_of_revenue_all = pyarrow.array([
     2000,
     1000,
@@ -421,6 +475,9 @@ cost_of_revenue_all = pyarrow.array([
     1000,
     None,
 ])
+cost_of_revenue_all_reversed = cost_of_revenue_all.take(
+    pyarrow.array(range(len(cost_of_revenue_all) - 1, -1, -1))
+)
 
 custom_order_subset1 = pyarrow.array([
     7,
@@ -598,6 +655,27 @@ ENDPOINT_TABLES_CONSISTENT = {
     }),
 }
 
+ENDPOINT_TABLES_CONSISTENT_REVERSED = {
+    Endpoints.BALANCE_SHEET_STATEMENT: pyarrow.table({
+        'MiniFundamentalRow.filing_date': filing_dates_subset_reversed,
+        'MiniFundamentalRow.accepted_date': accepted_dates_subset_reversed,
+        'MiniFundamentalRowBalanceSheet.assets': assets_subset_reversed,
+        'MiniFundamentalRowBalanceSheet.cash_and_cash_equivalents': cash_and_cash_equivalents_subset_reversed,
+    }),
+    Endpoints.CASH_FLOW_STATEMENT: pyarrow.table({
+        'MiniFundamentalRow.filing_date': filing_dates_shifted_reversed,
+        'MiniFundamentalRow.accepted_date': accepted_dates_shifted_reversed,
+        'MiniFundamentalRowCashFlow.net_income': net_income_shifted_reversed,
+        'MiniFundamentalRowCashFlow.net_income_tax_payments': net_income_tax_payments_shifted_reversed,
+    }),
+    Endpoints.INCOME_STATEMENT: pyarrow.table({
+        'MiniFundamentalRow.filing_date': filing_dates_reversed,
+        'MiniFundamentalRow.accepted_date': accepted_dates_reversed,
+        'MiniFundamentalRowIncomeStatement.cost_of_revenue': cost_of_revenue_reversed,
+        'MiniFundamentalRowIncomeStatement.net_income': net_income_reversed,
+    }),
+}
+
 ENDPOINT_TABLES_INCONSISTENT = {
     Endpoints.BALANCE_SHEET_STATEMENT: pyarrow.table({
         'MiniFundamentalRow.filing_date': filing_dates_subset,
@@ -656,6 +734,16 @@ CONSOLIDATED_TABLE = pyarrow.table({
     'MiniFundamentalRowCashFlow.net_income_tax_payments': net_income_tax_payments_all,
     'MiniFundamentalRowIncomeStatement.cost_of_revenue': cost_of_revenue_all,
     'MiniFundamentalRowIncomeStatement.net_income': net_income_all,
+})
+CONSOLIDATED_TABLE_REVERSED = pyarrow.table({
+    'MiniFundamentalRow.filing_date': filing_dates_all_reversed,
+    'MiniFundamentalRow.accepted_date': accepted_dates_all_reversed,
+    'MiniFundamentalRowBalanceSheet.assets': assets_all_reversed,
+    'MiniFundamentalRowBalanceSheet.cash_and_cash_equivalents': cash_and_cash_equivalents_all_reversed,
+    'MiniFundamentalRowCashFlow.net_income': net_income_all_reversed,
+    'MiniFundamentalRowCashFlow.net_income_tax_payments': net_income_tax_payments_all_reversed,
+    'MiniFundamentalRowIncomeStatement.cost_of_revenue': cost_of_revenue_all_reversed,
+    'MiniFundamentalRowIncomeStatement.net_income': net_income_all_reversed,
 })
 NON_ENTITY_FIELD_KEYS_TABLE = pyarrow.table({
     'MiniFundamentalRow.filing_date': filing_dates_all,

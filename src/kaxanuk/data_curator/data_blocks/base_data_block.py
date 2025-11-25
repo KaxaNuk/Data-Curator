@@ -155,6 +155,20 @@ class BaseDataBlock:
     def get_entity_class_name_map(cls) -> EntityToClassNameMap:
         return cls._entity_class_name_map
 
+    # @todo unit tests
+    @staticmethod
+    def get_field_qualified_name(field: EntityField) -> str:
+        if (
+            not hasattr(field, '__objclass__')
+            or not hasattr(field, '__name__')
+        ):
+            # @todo raise specific error
+            raise ValueError(
+                f"Field descriptor is missing required attributes '__objclass__' or '__name__'"
+            )
+
+        return f"{field.__objclass__.__name__}.{field.__name__}"
+
     @classmethod
     def pack_rows_entities_from_consolidated_table(
         cls,
@@ -282,6 +296,7 @@ class BaseDataBlock:
 
         return result
 
+    # @todo unit tests
     @classmethod
     def _pack_entity_hierarchy_rows(
         cls,
@@ -327,10 +342,28 @@ class BaseDataBlock:
                 - column_names
                 - dependency_field_names
             )
+            non_key_common_field_names = (
+                row_field_names
+                - dependency_field_names
+                - missing_field_names
+                - {clock_sync_field.__name__}
+            )
 
             for (index, row) in enumerate(
                 table.to_pylist()
             ):
+                # if whole field data in row is None, pack empty entity
+                if all(
+                    row[field_name] is None
+                    for field_name in non_key_common_field_names
+                ):
+                    if clock_sync_field.__objclass__ is entity:
+                        date = row[clock_sync_field.__name__].isoformat()
+                        master_rows[date] = None
+                    else:
+                        dependency_rows[entity].append(None)
+                    continue
+
                 typed_row = {
                     name: None
                     for name in missing_field_names
@@ -342,6 +375,12 @@ class BaseDataBlock:
                             entity.__annotations__[name]
                         )
                 except DataBlockTypeConversionError as error:
+                    raise DataBlockEntityPackingError(
+                        entity.__name__,
+                        clock_column[index].as_py()
+                    ) from error
+                except DataBlockTypeConversionRuntimeError as error:
+                    # @todo add more specific error info if problem is None value in non-nullable field
                     raise DataBlockEntityPackingError(
                         entity.__name__,
                         clock_column[index].as_py()
@@ -361,21 +400,8 @@ class BaseDataBlock:
 
                     continue
 
-                if (clock_sync_field.__objclass__ is entity):
-                    if clock_type is datetime.datetime:
-                        date = row[clock_sync_field.__name__].isoformat()
-                    elif clock_type is datetime.date:
-                        date = row[clock_sync_field.__name__].date().isoformat()
-                    elif clock_type is datetime.time:
-                        date = row[clock_sync_field.__name__].time().isoformat()
-                    else:
-                        msg = "_".join([
-                            f"Clock sync field '{clock_sync_field.__name__}' of entity '{entity.__name__}'",
-                            f"is not a datetime, date, or time object"
-                        ])
-
-                        raise DataBlockIncorrectPackingStructureError(msg)
-
+                if clock_sync_field.__objclass__ is entity:
+                    date = row[clock_sync_field.__name__].isoformat()
                     master_rows[date] = row_entity
                 else:
                     dependency_rows[entity].append(row_entity)
@@ -515,6 +541,7 @@ class BaseDataBlock:
 
         return entity_tables
 
+    # @todo unit tests
     @staticmethod
     def _unwrap_dict_value_type(
         type_hint: type

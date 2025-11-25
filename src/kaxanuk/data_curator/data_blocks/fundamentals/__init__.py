@@ -37,7 +37,6 @@ class FundamentalsDataBlock(BaseDataBlock):
     def assemble_entities_from_consolidated_table(
         cls,
         *,
-        # entity_tables: EntityBuildingTables # @todo receive consolidated table instead
         consolidated_table: ConsolidatedFieldsTable,
         common_field_data: FieldValueToEntityMap,
     ) -> FundamentalData:
@@ -73,7 +72,6 @@ class FundamentalsDataBlock(BaseDataBlock):
             raise EntityProcessingError(msg) from error
 
         return data_entity
-
 
 
 __all__ = [

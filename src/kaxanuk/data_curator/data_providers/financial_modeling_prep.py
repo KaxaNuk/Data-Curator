@@ -5,6 +5,10 @@ import json
 import logging
 import typing
 
+import numpy
+import pandas
+import pyarrow
+
 from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
 from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
 from kaxanuk.data_curator.entities import (
@@ -26,7 +30,11 @@ from kaxanuk.data_curator.entities import (
 )
 from kaxanuk.data_curator.exceptions import (
     DataProviderMissingKeyError,
+    DataProviderMultiEndpointCommonDataOrderError,
+    DataProviderMultiEndpointCommonDataDiscrepancyError,
     DataProviderPaymentError,
+    DataProviderToolkitNoDataError,
+    DataProviderToolkitRuntimeError,
     DividendDataEmptyError,
     DividendDataRowError,
     EntityFieldTypeError,
@@ -44,9 +52,10 @@ from kaxanuk.data_curator.exceptions import (
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
 from kaxanuk.data_curator.services import entity_helper
 from kaxanuk.data_curator.services.data_provider_toolkit import (
-    PreprocessedFieldMapping,
-    DataProviderToolkit,
     EndpointFieldMap,
+    DataProviderFieldPreprocessors,
+    DataProviderToolkit,
+    PreprocessedFieldMapping,
 )
 
 
@@ -269,7 +278,10 @@ class FinancialModelingPrep(
 
     _market_data_endpoint_map: typing.Final[EndpointFieldMap] = {
         Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED: {
-            MarketDataDailyRow.date: 'date',
+            MarketDataDailyRow.date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             MarketDataDailyRow.open: 'adjOpen',
             MarketDataDailyRow.high: 'adjHigh',
             MarketDataDailyRow.low: 'adjLow',
@@ -277,7 +289,10 @@ class FinancialModelingPrep(
             MarketDataDailyRow.volume: 'volume',
         },
         Endpoints.MARKET_DATA_DAILY_SPLIT_ADJUSTED: {
-            MarketDataDailyRow.date: 'date',
+            MarketDataDailyRow.date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             MarketDataDailyRow.open_split_adjusted: 'open',
             MarketDataDailyRow.high_split_adjusted: 'high',
             MarketDataDailyRow.low_split_adjusted: 'low',
@@ -286,7 +301,10 @@ class FinancialModelingPrep(
             MarketDataDailyRow.vwap_split_adjusted: 'vwap',
         },
         Endpoints.MARKET_DATA_DAILY_UNADJUSTED: {
-            MarketDataDailyRow.date: 'date',
+            MarketDataDailyRow.date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             MarketDataDailyRow.open_dividend_and_split_adjusted: 'adjOpen',
             MarketDataDailyRow.high_dividend_and_split_adjusted: 'adjHigh',
             MarketDataDailyRow.low_dividend_and_split_adjusted: 'adjLow',
@@ -299,10 +317,16 @@ class FinancialModelingPrep(
     _fundamental_data_endpoint_map : typing.Final[EndpointFieldMap] = {
         Endpoints.BALANCE_SHEET_STATEMENT: {
             FundamentalDataRow.accepted_date: 'acceptedDate',
-            FundamentalDataRow.filing_date: 'filingDate',
+            FundamentalDataRow.filing_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['filingDate'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             FundamentalDataRow.fiscal_period: 'period',
             FundamentalDataRow.fiscal_year: 'fiscalYear',
-            FundamentalDataRow.period_end_date: 'date',
+            FundamentalDataRow.period_end_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             FundamentalDataRow.reported_currency: 'reportedCurrency',
             FundamentalDataRowBalanceSheet.accumulated_other_comprehensive_income_after_tax: 'accumulatedOtherComprehensiveIncomeLoss',
             FundamentalDataRowBalanceSheet.additional_paid_in_capital: 'additionalPaidInCapital',
@@ -360,10 +384,16 @@ class FinancialModelingPrep(
         },
         Endpoints.CASH_FLOW_STATEMENT: {
             FundamentalDataRow.accepted_date: 'acceptedDate',
-            FundamentalDataRow.filing_date: 'filingDate',
+            FundamentalDataRow.filing_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['filingDate'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             FundamentalDataRow.fiscal_period: 'period',
             FundamentalDataRow.fiscal_year: 'fiscalYear',
-            FundamentalDataRow.period_end_date: 'date',
+            FundamentalDataRow.period_end_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             FundamentalDataRow.reported_currency: 'reportedCurrency',
             FundamentalDataRowCashFlow.accounts_payable_change: 'accountsPayables',
             FundamentalDataRowCashFlow.accounts_receivable_change: 'accountsReceivables',
@@ -406,10 +436,16 @@ class FinancialModelingPrep(
         },
         Endpoints.INCOME_STATEMENT: {
             FundamentalDataRow.accepted_date: 'acceptedDate',
-            FundamentalDataRow.filing_date: 'filingDate',
+            FundamentalDataRow.filing_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['filingDate'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             FundamentalDataRow.fiscal_period: 'period',
             FundamentalDataRow.fiscal_year: 'fiscalYear',
-            FundamentalDataRow.period_end_date: 'date',
+            FundamentalDataRow.period_end_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
             FundamentalDataRow.reported_currency: 'reportedCurrency',
             FundamentalDataRowIncomeStatement.basic_earnings_per_share: 'eps',
             FundamentalDataRowIncomeStatement.basic_net_income_available_to_common_stockholders: 'bottomLineNetIncome',
@@ -704,17 +740,81 @@ class FinancialModelingPrep(
                 fundamental_income_raw_data,
         })
 
-        consolidated_fundamental_data_descending = DataProviderToolkit.consolidate_endpoint_tables(
-            data_block=FundamentalsDataBlock,
-            endpoint_field_map=self._fundamental_data_endpoint_map,
-            endpoint_tables=endpoint_tables,
-            endpoint_table_merge_fields=[
-                FundamentalDataRow.period_end_date,
-            ],
-            predominant_order_descending=True
+        empty_fundamental_data = FundamentalData(
+            main_identifier=MarketInstrumentIdentifier(main_identifier),
+            rows={}
         )
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=FundamentalsDataBlock,
+                endpoint_field_map=self._fundamental_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError:
+            msg = f"{main_identifier} fundamental data endpoints returned no data"
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_fundamental_data
+
+
+        # @todo put this try catch logic in a context manager ??
+        try:
+            consolidated_fundamental_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+                processed_endpoint_tables=processed_endpoint_tables,
+                table_merge_fields=[
+                    FundamentalsDataBlock.clock_sync_field,
+                    FundamentalDataRow.period_end_date,
+                ],
+                predominant_order_descending=True
+            )
+
+        except DataProviderToolkitRuntimeError as error:
+            # @todo handle
+            raise
+
+        except DataProviderMultiEndpointCommonDataOrderError:
+            msg = "\n".join([
+                f"{main_identifier} fundamental data endpoints have inconsistent filing_date order for common data,",
+                "omitting its fundamental data"
+            ])
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_fundamental_data
+
+        except DataProviderMultiEndpointCommonDataDiscrepancyError as error:
+            msg = "\n".join([
+                f"{main_identifier} fundamental data endpoints present discrepancies between common columns:",
+                ", ".join(error.discrepant_columns),
+                "Omitting fundamental data for the dates corresponding to the following discrepancies:",
+                DataProviderToolkit.format_endpoint_discrepancy_table_for_output(
+                    data_block=FundamentalsDataBlock,
+                    discrepancy_table=error.discrepancies_table,
+                    endpoints_enum=self.Endpoints,
+                    endpoint_field_map=self._fundamental_data_endpoint_map,
+                )
+            ])
+            logging.getLogger(__name__).warning(msg)
+
+            # fill the conflicting rows with None and retry
+            no_discrepancy_processed_tables = DataProviderToolkit.clear_discrepant_processed_endpoint_tables_rows(
+                discrepancy_table=error.discrepancies_table,
+                processed_endpoint_tables=processed_endpoint_tables,
+                key_column_names=error.key_column_names,
+                preserved_column_names=[
+                    FundamentalsDataBlock.get_field_qualified_name(FundamentalsDataBlock.clock_sync_field),
+                ]
+            )
+            consolidated_fundamental_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+                processed_endpoint_tables=no_discrepancy_processed_tables,
+                table_merge_fields=[
+                    FundamentalsDataBlock.clock_sync_field,
+                    FundamentalDataRow.period_end_date,
+                ],
+                predominant_order_descending=True
+            )
+
         consolidated_fundamental_data = consolidated_fundamental_data_descending[::-1]
-        # @todo filter ammendments
+        # @todo filter ammendments & duplicate period end dates
         fundamental_data = FundamentalsDataBlock.assemble_entities_from_consolidated_table(
             consolidated_table=consolidated_fundamental_data,
             common_field_data={
@@ -804,11 +904,14 @@ class FinancialModelingPrep(
                 market_raw_unadjusted_data,
         })
 
-        consolidated_market_data_descending = DataProviderToolkit.consolidate_endpoint_tables(
+        processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
             data_block=MarketDailyDataBlock,
             endpoint_field_map=self._market_data_endpoint_map,
             endpoint_tables=endpoint_tables,
-            endpoint_table_merge_fields=[MarketDataDailyRow.date],
+        )
+        consolidated_market_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+            processed_endpoint_tables=processed_endpoint_tables,
+            table_merge_fields=[MarketDailyDataBlock.clock_sync_field],
             predominant_order_descending=True
         )
         consolidated_market_data = consolidated_market_data_descending[::-1]

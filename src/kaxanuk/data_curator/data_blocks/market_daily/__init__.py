@@ -34,24 +34,13 @@ class MarketDailyDataBlock(BaseDataBlock):
     def assemble_entities_from_consolidated_table(
         cls,
         *,
-        # entity_tables: EntityBuildingTables # @todo receive consolidated table instead
         consolidated_table: ConsolidatedFieldsTable,
         common_field_data: FieldValueToEntityMap,
     ) -> MarketData:
         # @todo throw error if not sorted by date asc
 
-        # package row entities
-        # entity_tables = cls.create_entity_tables_from_consolidated_table(consolidated_table)
-        # package into MArketData
-        # error handling
-        # return
-        # market_daily_table = entity_tables[MarketDataDailyRow]
         common_market_fields = common_field_data[MarketData]
         identifier = common_market_fields[MarketData.main_identifier]
-        # market_daily_column_names = set(market_daily_table.column_names)
-        # row_field_names = {field.name for field in dataclasses.fields(MarketDataDailyRow)}
-        # missing_field_names = row_field_names - market_daily_column_names
-        # daily_rows = {}
 
         try:
             daily_rows = cls.pack_rows_entities_from_consolidated_table(
