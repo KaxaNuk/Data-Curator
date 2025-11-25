@@ -95,7 +95,7 @@ data = [
 
 [tool.pdm.dev-dependencies]
 debug = [
-    "pydevd-pycharm>=243.23654.177"
+    "pydevd-pycharm>=252.26830.99"
 ]
 docs = [
     "myst-parser>=4.0.0",
