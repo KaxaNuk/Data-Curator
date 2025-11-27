@@ -313,7 +313,7 @@ class FinancialModelingPrep(
             SplitDataRow.denominator: 'denominator',
         },
     }
-    
+
     # @todo: make enum
     _periods : typing.Final = {
         'annual': 'annual',

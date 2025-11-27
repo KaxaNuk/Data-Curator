@@ -197,14 +197,6 @@ class BaseDataBlock:
         return row_entities
 
     @staticmethod
-    def _calculate_entity_relations(
-        main_entity: type[BaseDataEntity]
-    ) -> EntityRelationsHierarchy:
-        nested_relations = BaseDataBlock._process_entity_relations(main_entity)
-
-        return {(None, main_entity): nested_relations}
-
-    @staticmethod
     def _calculate_ordered_entity_relation_map(
         main_entity: type[BaseDataEntity]
     ) -> OrderedEntityRelationMap:
@@ -424,80 +416,6 @@ class BaseDataBlock:
             raise DataBlockIncorrectPackingStructureError(msg)
 
         return master_rows
-
-
-    @staticmethod
-    def _process_entity_relations(
-        entity_class: type[BaseDataEntity]
-    ) -> EntityRelationsHierarchy | None:
-        """Process a single entity class and return its relations."""
-        if not dataclasses.is_dataclass(entity_class):
-            return None
-
-        relations = {}
-        fields = dataclasses.fields(entity_class)
-
-        for field in fields:
-            field_type = BaseDataBlock._unwrap_optional_type(field.type)
-            inner_type = BaseDataBlock._unwrap_list_type(field_type)
-
-            if (
-                not isinstance(inner_type, type)
-                or not issubclass(inner_type, BaseDataEntity)
-            ):
-                continue
-
-            field_descriptor = getattr(entity_class, field.name)
-            # Recursively process the inner entity
-            nested_relations = BaseDataBlock._process_entity_relations(inner_type)
-
-            # is_list = (field_type != inner_type)
-            # if is_list:
-            #     relations[
-            #         (field_descriptor, list[inner_type])
-            #     ] = nested_relations
-            # else:
-            relations[
-                (field_descriptor, inner_type)
-            ] = nested_relations
-
-        return relations if relations else None
-
-    @staticmethod
-    def _sort_entities_by_hierarchichal_dependency(
-        entity_hierarchy: EntityRelationsHierarchy
-    ) -> list[type[BaseDataEntity]]:
-        # get the list of entities in topological order so dependencies are before their dependant entities
-        result: list[type[BaseDataEntity]] = []
-        seen: set[type[BaseDataEntity]] = set()
-
-        # Stack-based approach: (hierarchy_to_process, is_processed)
-        # We need to process hierarchies in post-order (children before parents)
-        stack: list[tuple[EntityRelationsHierarchy, bool]] = [(entity_hierarchy, False)]
-
-        while stack:
-            (current_hierarchy, is_processed) = stack.pop()
-
-            if current_hierarchy is None:
-                continue
-
-            if is_processed:
-                # Second visit: add entities after their dependencies have been processed
-                for ((_, entity_class), _) in current_hierarchy.items():
-                    if entity_class not in seen:
-                        result.append(entity_class)
-                        seen.add(entity_class)
-            else:
-                # First visit: mark for re-processing and add children to stack
-                stack.append((current_hierarchy, True))
-
-                # Add nested hierarchies in reverse order to maintain original order
-                items = list(current_hierarchy.items())
-                for ((_, _), nested_hierarchy) in reversed(items):
-                    if nested_hierarchy is not None:
-                        stack.append((nested_hierarchy, False))
-
-        return result
 
     @staticmethod
     def _split_consolidated_table_into_entity_tables(

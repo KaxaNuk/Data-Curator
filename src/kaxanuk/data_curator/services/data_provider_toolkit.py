@@ -147,6 +147,261 @@ class DataProviderToolkit:
 
         return output_tables
 
+    @staticmethod
+    def consolidate_processed_endpoint_tables(
+        *,
+        processed_endpoint_tables: ProcessedEndpointTables,
+        table_merge_fields: list[EntityField],
+        predominant_order_descending: bool = False,
+    ) -> pyarrow.Table:
+        # if single table, return it
+        if not processed_endpoint_tables:
+            return pyarrow.table({})
+
+        if len(processed_endpoint_tables) == 1:
+            return next(iter(processed_endpoint_tables.values()))
+
+        # get primary key ordering using _merge_primary_key_subsets_preserving_order
+        key_column_names = [
+            f"{field.__objclass__.__name__}.{field.__name__}"
+            for field in table_merge_fields
+        ]
+        primary_key_subsets = [
+            table.select(key_column_names)
+            for table in processed_endpoint_tables.values()
+            if all(
+                pk in table.column_names
+                for pk in key_column_names
+            )
+        ]
+        if not primary_key_subsets:
+            msg = "None of the provided tables contain the required primary key columns for merging."
+
+            raise DataProviderToolkitRuntimeError(msg)
+
+        merged_key_table = DataProviderToolkit._merge_primary_key_subsets_preserving_order(
+            primary_key_subsets,
+            predominant_order_descending=predominant_order_descending,
+        )
+
+        order_col_name = "__order_col"
+        key_table_with_order = merged_key_table.add_column(
+            0,
+            order_col_name,
+            pyarrow.array(range(merged_key_table.num_rows))
+        )
+
+        # Align all tables to the master primary key list and create validity masks in one pass
+        aligned_tables = []
+        validity_masks = {}
+        indicator_col = '__indicator_for_validity'
+
+        for (endpoint, original_table) in processed_endpoint_tables.items():
+            has_pk_cols = all(
+                key in original_table.column_names
+                for key in key_column_names
+            )
+
+            if not has_pk_cols:
+                validity_masks[endpoint] = pyarrow.array(
+                    [False] * len(merged_key_table),
+                    type=pyarrow.bool_()
+                )
+                aligned_tables.append(
+                    pyarrow.table({})   # Empty placeholder
+                )
+
+                continue
+
+            # Join and sort once
+            table_with_indicator = original_table.append_column(
+                indicator_col,
+                pyarrow.array([True] * len(original_table))
+            )
+            aligned_table_with_helpers = key_table_with_order.join(
+                table_with_indicator,
+                keys=key_column_names,
+                join_type="left outer"
+            ).sort_by(order_col_name)
+
+            # Extract validity mask from the aligned table
+            validity_masks[endpoint] = aligned_table_with_helpers[indicator_col].is_valid()
+
+            final_cols = [
+                col
+                for col in aligned_table_with_helpers.column_names
+                if col not in [order_col_name, indicator_col]
+            ]
+            aligned_tables.append(
+                aligned_table_with_helpers.select(final_cols)
+            )
+
+        endpoints = list(processed_endpoint_tables.keys())
+
+        # Build column index for efficient lookup: col_name -> list of (table_idx, has_col)
+        col_to_tables = {}
+        for (index, col_name) in (
+            (i, col)
+            for (i, table) in enumerate(aligned_tables)
+            for col in table.column_names
+            if col not in key_column_names
+        ):
+            if col_name not in col_to_tables:
+                col_to_tables[col_name] = []
+
+            col_to_tables[col_name].append(index)
+
+        discrepant_columns = set()
+        discrepant_rows_mask = None
+
+        # Check for discrepancies only on common columns between table pairs
+        for (col_name, table_indices) in col_to_tables.items():
+            if len(table_indices) < 2:
+                # No overlap, no discrepancy possible
+
+                continue
+
+            # Check all pairs that share this column
+            for (idx, jdx) in (
+                (i, j)
+                for i in range(len(table_indices))
+                for j in range(i + 1, len(table_indices))
+            ):
+                index = table_indices[idx]
+                j = table_indices[jdx]
+
+                endpoint1 = endpoints[index]
+                endpoint2 = endpoints[j]
+
+                common_rows_mask = pyarrow.compute.and_(
+                    validity_masks[endpoint1],
+                    validity_masks[endpoint2]
+                )
+
+                if not pyarrow.compute.any(common_rows_mask).as_py():
+                    # no common rows, no discrepancy possible
+
+                    continue
+
+                col1_common = aligned_tables[index].column(col_name).filter(common_rows_mask)
+                col2_common = aligned_tables[j].column(col_name).filter(common_rows_mask)
+
+                are_equal = pyarrow.compute.equal(
+                    col1_common,
+                    col2_common
+                ).fill_null(False)
+                both_null = pyarrow.compute.and_(
+                    pyarrow.compute.is_null(col1_common),
+                    pyarrow.compute.is_null(col2_common)
+                )
+                no_discrepancy_mask = pyarrow.compute.or_(are_equal, both_null)
+
+                if not pyarrow.compute.all(no_discrepancy_mask).as_py():
+                    # handle discrepancy
+                    discrepancy_mask = pyarrow.compute.invert(no_discrepancy_mask)
+
+                    # Track this column as discrepant
+                    discrepant_columns.add(col_name)
+
+                    # Expand discrepancy_mask from common rows back to full table size
+                    # Start with all False
+                    full_size_discrepancy = pyarrow.array(
+                        [False] * len(merged_key_table)
+                    )
+
+                    # Set to True where common_rows_mask is True AND discrepancy_mask is True
+                    # replace_with_mask replaces values where mask is True with values from the replacement array
+                    # Convert both masks to Array if they are ChunkedArrays
+                    if isinstance(common_rows_mask, pyarrow.ChunkedArray):
+                        common_rows_mask = common_rows_mask.combine_chunks()
+                    if isinstance(discrepancy_mask, pyarrow.ChunkedArray):
+                        discrepancy_mask = discrepancy_mask.combine_chunks()
+
+                    full_size_discrepancy = pyarrow.compute.replace_with_mask(
+                        full_size_discrepancy,
+                        common_rows_mask,
+                        discrepancy_mask
+                    )
+
+                    # Combine with master mask
+                    if discrepant_rows_mask is None:
+                        discrepant_rows_mask = full_size_discrepancy
+                    else:
+                        discrepant_rows_mask = pyarrow.compute.or_(
+                            discrepant_rows_mask,
+                            full_size_discrepancy
+                        )
+
+        # Create debug table with all discrepant rows and columns
+        if discrepant_columns:
+            discrepancy_table = DataProviderToolkit._calculate_common_column_discrepancies(
+                discrepant_columns=discrepant_columns,
+                discrepant_rows_mask=discrepant_rows_mask,
+                primary_keys_table=merged_key_table,
+                key_column_names=key_column_names,
+                aligned_tables=aligned_tables,
+                endpoints=endpoints,
+            )
+
+            raise DataProviderMultiEndpointCommonDataDiscrepancyError(
+                discrepant_columns=discrepant_columns,
+                discrepancies_table=discrepancy_table,
+                key_column_names=key_column_names,
+            )
+
+        # Build consolidated table efficiently
+        # Start with primary keys
+        consolidated_columns = {
+            name: merged_key_table[name]
+            for name in key_column_names
+        }
+
+        # Group columns by field name (without entity prefix)
+        field_to_full_names = {}
+        all_col_names = sorted(col_to_tables.keys())
+
+        for full_name in all_col_names:
+            field = full_name.split('.', 1)[1]
+            if field not in field_to_full_names:
+                field_to_full_names[field] = []
+
+            field_to_full_names[field].append(full_name)
+
+        # Process each field group
+        for (field, full_names) in sorted(field_to_full_names.items()):
+            # Collect unique arrays for this field (deduplicate using id() for efficiency)
+            seen_array_ids = set()
+            arrays_to_coalesce = []
+
+            for full_name in full_names:
+                for table_idx in col_to_tables[full_name]:
+                    arr = aligned_tables[table_idx][full_name]
+                    arr_id = id(arr)
+
+                    # Only add if not seen (by object identity first, then equality)
+                    if arr_id not in seen_array_ids:
+                        # Check equality against already collected arrays
+                        is_duplicate = any(
+                            arr.equals(unique_arr)
+                            for unique_arr in arrays_to_coalesce
+                        )
+                        if not is_duplicate:
+                            arrays_to_coalesce.append(arr)
+                            seen_array_ids.add(arr_id)
+
+            if arrays_to_coalesce:
+                merged_column = pyarrow.compute.coalesce(*arrays_to_coalesce)
+                for full_name in full_names:
+                    consolidated_columns[full_name] = merged_column
+
+        # Build final table with correct column order
+        final_column_order = [*key_column_names, *all_col_names]
+
+        return pyarrow.table({
+            name: consolidated_columns[name]
+            for name in final_column_order
+        })
+
     @classmethod
     def create_endpoint_tables_from_json_mapping(
         cls,
@@ -455,280 +710,6 @@ class DataProviderToolkit:
                 new_columns[col_name] = new_col
 
         return pyarrow.Table.from_pydict(new_columns)
-
-    @staticmethod
-    def consolidate_processed_endpoint_tables(
-        *,
-        processed_endpoint_tables: ProcessedEndpointTables,
-        table_merge_fields: list[EntityField],
-        predominant_order_descending: bool = False,
-    ) -> pyarrow.Table:
-        # if single table, return it
-        if not processed_endpoint_tables:
-            return pyarrow.table({})
-
-        if len(processed_endpoint_tables) == 1:
-            return next(iter(processed_endpoint_tables.values()))
-
-        # get primary key ordering using _merge_primary_key_subsets_preserving_order
-        key_column_names = [
-            f"{field.__objclass__.__name__}.{field.__name__}"
-            for field in table_merge_fields
-        ]
-        primary_key_subsets = [
-            table.select(key_column_names)
-            for table in processed_endpoint_tables.values()
-            if all(
-                pk in table.column_names
-                for pk in key_column_names
-            )
-        ]
-        if not primary_key_subsets:
-            msg = "None of the provided tables contain the required primary key columns for merging."
-
-            raise DataProviderToolkitRuntimeError(msg)
-
-        merged_key_table = DataProviderToolkit._merge_primary_key_subsets_preserving_order(
-            primary_key_subsets,
-            predominant_order_descending=predominant_order_descending,
-        )
-
-        order_col_name = "__order_col"
-        key_table_with_order = merged_key_table.add_column(
-            0,
-            order_col_name,
-            pyarrow.array(range(merged_key_table.num_rows))
-        )
-
-        # Align all tables to the master primary key list and create validity masks in one pass
-        aligned_tables = []
-        validity_masks = {}
-        indicator_col = '__indicator_for_validity'
-
-        for (endpoint, original_table) in processed_endpoint_tables.items():
-            has_pk_cols = all(
-                key in original_table.column_names
-                for key in key_column_names
-            )
-
-            if not has_pk_cols:
-                validity_masks[endpoint] = pyarrow.array(
-                    [False] * len(merged_key_table),
-                    type=pyarrow.bool_()
-                )
-                aligned_tables.append(
-                    pyarrow.table({})   # Empty placeholder
-                )
-
-                continue
-
-            # Join and sort once
-            table_with_indicator = original_table.append_column(
-                indicator_col,
-                pyarrow.array([True] * len(original_table))
-            )
-            aligned_table_with_helpers = key_table_with_order.join(
-                table_with_indicator,
-                keys=key_column_names,
-                join_type="left outer"
-            ).sort_by(order_col_name)
-
-            # Extract validity mask from the aligned table
-            validity_masks[endpoint] = aligned_table_with_helpers[indicator_col].is_valid()
-
-            final_cols = [
-                col
-                for col in aligned_table_with_helpers.column_names
-                if col not in [order_col_name, indicator_col]
-            ]
-            aligned_tables.append(
-                aligned_table_with_helpers.select(final_cols)
-            )
-
-        endpoints = list(processed_endpoint_tables.keys())
-
-        # Build column index for efficient lookup: col_name -> list of (table_idx, has_col)
-        col_to_tables = {}
-        for (index, col_name) in (
-            (i, col)
-            for (i, table) in enumerate(aligned_tables)
-            for col in table.column_names
-            if col not in key_column_names
-        ):
-            if col_name not in col_to_tables:
-                col_to_tables[col_name] = []
-
-            col_to_tables[col_name].append(index)
-
-        discrepant_columns = set()
-        discrepant_rows_mask = None
-
-        # Check for discrepancies only on common columns between table pairs
-        for (col_name, table_indices) in col_to_tables.items():
-            if len(table_indices) < 2:
-                # No overlap, no discrepancy possible
-
-                continue
-
-            # Check all pairs that share this column
-            for (idx, jdx) in (
-                (i, j)
-                for i in range(len(table_indices))
-                for j in range(i + 1, len(table_indices))
-            ):
-                index = table_indices[idx]
-                j = table_indices[jdx]
-
-                endpoint1 = endpoints[index]
-                endpoint2 = endpoints[j]
-
-                common_rows_mask = pyarrow.compute.and_(
-                    validity_masks[endpoint1],
-                    validity_masks[endpoint2]
-                )
-
-                if not pyarrow.compute.any(common_rows_mask).as_py():
-                    # no common rows, no discrepancy possible
-
-                    continue
-
-                col1_common = aligned_tables[index].column(col_name).filter(common_rows_mask)
-                col2_common = aligned_tables[j].column(col_name).filter(common_rows_mask)
-
-                are_equal = pyarrow.compute.equal(
-                    col1_common,
-                    col2_common
-                ).fill_null(False)
-                both_null = pyarrow.compute.and_(
-                    pyarrow.compute.is_null(col1_common),
-                    pyarrow.compute.is_null(col2_common)
-                )
-                no_discrepancy_mask = pyarrow.compute.or_(are_equal, both_null)
-
-                if not pyarrow.compute.all(no_discrepancy_mask).as_py():
-                    # handle discrepancy
-                    discrepancy_mask = pyarrow.compute.invert(no_discrepancy_mask)
-
-                    # Track this column as discrepant
-                    discrepant_columns.add(col_name)
-
-                    # Expand discrepancy_mask from common rows back to full table size
-                    # Start with all False
-                    full_size_discrepancy = pyarrow.array(
-                        [False] * len(merged_key_table)
-                    )
-
-                    # Set to True where common_rows_mask is True AND discrepancy_mask is True
-                    # replace_with_mask replaces values where mask is True with values from the replacement array
-                    # Convert both masks to Array if they are ChunkedArrays
-                    if isinstance(common_rows_mask, pyarrow.ChunkedArray):
-                        common_rows_mask = common_rows_mask.combine_chunks()
-                    if isinstance(discrepancy_mask, pyarrow.ChunkedArray):
-                        discrepancy_mask = discrepancy_mask.combine_chunks()
-                    
-                    full_size_discrepancy = pyarrow.compute.replace_with_mask(
-                        full_size_discrepancy,
-                        common_rows_mask,
-                        discrepancy_mask
-                    )
-
-                    # Combine with master mask
-                    if discrepant_rows_mask is None:
-                        discrepant_rows_mask = full_size_discrepancy
-                    else:
-                        discrepant_rows_mask = pyarrow.compute.or_(
-                            discrepant_rows_mask,
-                            full_size_discrepancy
-                        )
-
-        # Create debug table with all discrepant rows and columns
-        if discrepant_columns:
-            discrepancy_table = DataProviderToolkit._calculate_common_column_discrepancies(
-                discrepant_columns=discrepant_columns,
-                discrepant_rows_mask=discrepant_rows_mask,
-                primary_keys_table=merged_key_table,
-                key_column_names=key_column_names,
-                aligned_tables=aligned_tables,
-                endpoints=endpoints,
-            )
-
-            raise DataProviderMultiEndpointCommonDataDiscrepancyError(
-                discrepant_columns=discrepant_columns,
-                discrepancies_table=discrepancy_table,
-                key_column_names=key_column_names,
-            )
-
-        # Build consolidated table efficiently
-        # Start with primary keys
-        consolidated_columns = {
-            name: merged_key_table[name]
-            for name in key_column_names
-        }
-
-        # Group columns by field name (without entity prefix)
-        field_to_full_names = {}
-        all_col_names = sorted(col_to_tables.keys())
-
-        for full_name in all_col_names:
-            field = full_name.split('.', 1)[1]
-            if field not in field_to_full_names:
-                field_to_full_names[field] = []
-
-            field_to_full_names[field].append(full_name)
-
-        # Process each field group
-        for (field, full_names) in sorted(field_to_full_names.items()):
-            # Collect unique arrays for this field (deduplicate using id() for efficiency)
-            seen_array_ids = set()
-            arrays_to_coalesce = []
-
-            for full_name in full_names:
-                for table_idx in col_to_tables[full_name]:
-                    arr = aligned_tables[table_idx][full_name]
-                    arr_id = id(arr)
-
-                    # Only add if not seen (by object identity first, then equality)
-                    if arr_id not in seen_array_ids:
-                        # Check equality against already collected arrays
-                        is_duplicate = any(
-                            arr.equals(unique_arr)
-                            for unique_arr in arrays_to_coalesce
-                        )
-                        if not is_duplicate:
-                            arrays_to_coalesce.append(arr)
-                            seen_array_ids.add(arr_id)
-
-            if arrays_to_coalesce:
-                merged_column = pyarrow.compute.coalesce(*arrays_to_coalesce)
-                for full_name in full_names:
-                    consolidated_columns[full_name] = merged_column
-
-        # Build final table with correct column order
-        final_column_order = [*key_column_names, *all_col_names]
-
-        return pyarrow.table({
-            name: consolidated_columns[name]
-            for name in final_column_order
-        })
-
-    @staticmethod
-    def _convert_table_to_pandas_preserving_time_data(
-        table: pyarrow.Table,
-    ) -> pandas.DataFrame:
-        """
-        Convert table to pandas preserving time data.
-
-        Pandas is stupid and converts datetimes with time "00:00:00" to a plain date. This function fixes that.
-
-        Returns
-        -------
-        A properly converted pandas DataFrame.
-        """
-        # Convert to pandas with timestamps as Python datetime objects
-        # This prevents pandas from "optimizing" the display format
-        df = table.to_pandas(timestamp_as_object=True)
-
-        return df
 
     @staticmethod
     def _create_table_from_json_string(json_string: str):

@@ -15,9 +15,8 @@ from kaxanuk.data_curator.exceptions import (
 
 # Protocol for type-checking dataclasses
 @typing.runtime_checkable
-@dataclasses.dataclass
 class DataclassProtocol(typing.Protocol):
-    ...
+    __dataclass_fields__: dict
 
 
 def detect_field_type_errors(
@@ -37,6 +36,7 @@ def detect_field_type_errors(
         List of field type errors found
     """
     errors = []
+    # @todo: replace with dataclasses.fields(dataclass_entity) or typing.get_type_hints(dataclass_entity)
     for field_name, field_type in dataclass_entity.__annotations__.items():
         is_nullable = False
         if (                                                # for a nullable type, get the non-null type

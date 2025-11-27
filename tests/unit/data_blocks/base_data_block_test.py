@@ -11,23 +11,6 @@ from ..services.data_provider_toolkit.fixtures import (
     entity_tables,
 )
 
-
-class TestCalculateEntityRelations:
-    def test_calculate_entity_relations_nested(self):
-        result = BaseDataBlock._calculate_entity_relations(
-            entities.ExampleNestedEntity
-        )
-
-        assert result == entities.EXAMPLE_NESTED_ENTITY_RELATIONS
-
-    def test_calculate_entity_relations_nonnested(self):
-        result = BaseDataBlock._calculate_entity_relations(
-            entities.ExampleEntity
-        )
-
-        assert result == entities.EXAMPLE_ENTITY_RELATIONS
-
-
 class TestPrivateCalculateOrderedEntityRelationMap:
     def test_calculate_ordered_entity_relations(self):
         result = BaseDataBlock._calculate_ordered_entity_relation_map(
@@ -42,24 +25,6 @@ class TestPrivateCalculateOrderedEntityRelationMap:
         )
 
         assert result == entities.EXAMPLE_NESTED_ENTITY_RELATIONS_LINEAR_SORT
-
-
-class TestPrivateSortEntitiesByHierarchichalDependency:
-    def test_sort_entities_by_hierarchichal_dependency(self):
-        result = BaseDataBlock._sort_entities_by_hierarchichal_dependency(
-            entities.EXAMPLE_NESTED_ENTITY_RELATIONS
-        )
-        expected = entities.EXAMPLE_NESTED_ENTITY_SORT
-
-        assert result == expected
-
-    def test_sort_entities_by_hierarchichal_dependency_with_duplicate_subentities(self):
-        result = BaseDataBlock._sort_entities_by_hierarchichal_dependency(
-            entities.EXAMPLE_NESTED_ENTITY_RELATIONS_WITH_DUPLICATES
-        )
-        expected = entities.EXAMPLE_NESTED_ENTITY_WITH_DUPLICATES_SORT
-
-        assert result == expected
 
 
 class TestSplitConsolidatedTableIntoEntityTables:

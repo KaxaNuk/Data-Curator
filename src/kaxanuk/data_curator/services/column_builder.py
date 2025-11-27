@@ -520,6 +520,7 @@ class ColumnBuilder:
         if len(data_rows) < 1:
             return dict.fromkeys(dates)
 
+        # @todo save each repeating date's data as a separate Array, all consolidated inside a ChunkedArray
         infilled_data = {}
         data_row_dates = iter(data_rows.keys())
         previous_data_row_date = None
