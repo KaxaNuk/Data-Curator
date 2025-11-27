@@ -2,7 +2,7 @@ import dataclasses
 
 from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
 from kaxanuk.data_curator.entities.fundamental_data_row import FundamentalDataRow
-from kaxanuk.data_curator.entities.market_instrument_identifier import MarketInstrumentIdentifier
+from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
     EntityValueError,
@@ -16,7 +16,7 @@ from kaxanuk.data_curator.services import (
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class FundamentalData(BaseDataEntity):
-    main_identifier: MarketInstrumentIdentifier
+    main_identifier: MainIdentifier
     rows: dict[str, FundamentalDataRow | None]
 
     def __post_init__(self):

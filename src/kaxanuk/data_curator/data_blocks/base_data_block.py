@@ -109,12 +109,15 @@ class BaseDataBlock:
                 else:
                     to_type = to_type.__args__[0]
 
-            if isinstance(original_value, to_type):
+            if type(original_value) is to_type:
                 return original_value
 
             match to_type.__name__:
                 case 'date':
-                    return datetime.date.fromisoformat(original_value)
+                    if isinstance(original_value, datetime.datetime):
+                        return original_value.date()
+                    else:
+                        return datetime.date.fromisoformat(original_value)
                 case 'Decimal':
                     return decimal.Decimal(
                         str(original_value)

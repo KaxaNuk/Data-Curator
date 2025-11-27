@@ -148,6 +148,80 @@ class DataProviderToolkit:
         return output_tables
 
     @classmethod
+    def create_endpoint_tables_from_json_mapping(
+        cls,
+        /,
+        endpoint_json_strings: dict[Endpoint, str],
+    ) -> EndpointTables:
+        return {
+            endpoint: cls._create_table_from_json_string(json_string)
+            for (endpoint, json_string) in endpoint_json_strings.items()
+        }
+
+    @staticmethod
+    def format_consolidated_discrepancy_table_for_output(
+        *,
+        discrepancy_table: pyarrow.Table,
+        output_column_renames: list[str] | dict[str, str],
+        csv_separator: str = "|",
+    ) -> str:
+        renamed_table = discrepancy_table.rename_columns(output_column_renames)
+
+        # convert to pandas, preserving all datetime settings
+        return (
+            renamed_table
+            .to_pandas(timestamp_as_object=True)
+            .to_csv(sep=csv_separator, index=False)
+        )
+
+
+    @classmethod
+    def format_endpoint_discrepancy_table_for_output(
+        cls,
+        *,
+        data_block: type[BaseDataBlock],
+        discrepancy_table: EndpointDiscrepanciesTable,
+        endpoints_enum: enum.StrEnum,
+        endpoint_field_map: EndpointFieldMap,
+        csv_separator: str = "|",
+    ):
+        # get map from tags to remapped columns
+        # if data_block not in cls._data_block_endpoint_column_remaps:
+        #     cls._data_block_endpoint_column_remaps[data_block] = cls._calculate_endpoint_column_remaps(
+        #         endpoint_field_map
+        #     )
+        # endpoint_column_remaps = cls._data_block_endpoint_column_remaps[data_block]
+        column_names = discrepancy_table.column_names
+        column_new_names = []
+        # @todo handle errors
+        # find mapping from column names to "endpoint.tag" format
+        for column_name in column_names:
+            if '$' in column_name:
+                (endpoint_name, rest) = column_name.split('$', 1)
+                (entity_name, field_name) = rest.split('.', 1)
+            else:
+                (entity_name, field_name) = column_name.split('.', 1)
+                endpoint_name = None
+
+            entity = data_block.get_entity_class_name_map()[entity_name]
+            field = getattr(entity, field_name)
+
+            if endpoint_name is not None:
+                endpoint = endpoints_enum[endpoint_name]
+                tag_name = endpoint_field_map[endpoint][field]
+                if isinstance(tag_name, PreprocessedFieldMapping): # PreprocessedFieldMapping
+                    tag_name = "+".join(tag_name.tags)
+                column_new_names.append(f"{endpoint.value}.{tag_name}")
+            else:
+                column_new_names.append(field_name)
+
+        return cls.format_consolidated_discrepancy_table_for_output(
+            discrepancy_table=discrepancy_table,
+            output_column_renames=column_new_names,
+            csv_separator=csv_separator,
+        )
+
+    @classmethod
     def process_endpoint_tables(
         cls,
         *,
@@ -190,6 +264,7 @@ class DataProviderToolkit:
         )
 
         # run processors
+        # @todo catch pyarrow.lib.ArrowInvalid
         processed_endpoint_tables = cls._process_remapped_endpoint_tables(
             endpoint_field_preprocessors,
             remapped_endpoint_tables,
@@ -197,72 +272,10 @@ class DataProviderToolkit:
 
         return processed_endpoint_tables
 
-
-    @classmethod
-    def create_endpoint_tables_from_json_mapping(
-        cls,
-        /,
-        endpoint_json_strings: dict[Endpoint, str],
-    ) -> EndpointTables:
-        return {
-            endpoint: cls._create_table_from_json_string(json_string)
-            for (endpoint, json_string) in endpoint_json_strings.items()
-        }
-
-    @classmethod
-    def format_endpoint_discrepancy_table_for_output(
-        cls,
-        *,
-        data_block: type[BaseDataBlock],
-        discrepancy_table: EndpointDiscrepanciesTable,
-        endpoints_enum: enum.StrEnum,
-        endpoint_field_map: EndpointFieldMap,
-        csv_separator: str = "|",
-    ):
-        # get map from tags to remapped columns
-        # if data_block not in cls._data_block_endpoint_column_remaps:
-        #     cls._data_block_endpoint_column_remaps[data_block] = cls._calculate_endpoint_column_remaps(
-        #         endpoint_field_map
-        #     )
-        # endpoint_column_remaps = cls._data_block_endpoint_column_remaps[data_block]
-        column_names = discrepancy_table.column_names
-        column_new_names = []
-        # @todo handle errors
-        # find mapping from column names to "endpoint.tag" format
-        for column_name in column_names:
-            if '$' in column_name:
-                (endpoint_name, rest) = column_name.split('$', 1)
-                (entity_name, field_name) = rest.split('.', 1)
-            else:
-                (entity_name, field_name) = column_name.split('.', 1)
-                endpoint_name = None
-
-            entity = data_block.get_entity_class_name_map()[entity_name]
-            field = getattr(entity, field_name)
-
-            if endpoint_name is not None:
-                endpoint = endpoints_enum[endpoint_name]
-                tag_name = endpoint_field_map[endpoint][field]
-                if isinstance(tag_name, PreprocessedFieldMapping): # PreprocessedFieldMapping
-                    tag_name = "+".join(tag_name.tags)
-                column_new_names.append(f"{endpoint.value}.{tag_name}")
-            else:
-                column_new_names.append(field_name)
-
-        # rename columns
-        renamed_table = discrepancy_table.rename_columns(column_new_names)
-        # convert to pandas, preserving all datetime settings
-
-        return (
-            renamed_table
-            .to_pandas(timestamp_as_object=True)
-            .to_csv(sep=csv_separator, index=False)
-        )
-
     @staticmethod
     def _calculate_common_column_discrepancies(
         discrepant_columns: set[str],
-        discrepant_rows_mask: pyarrow.Array,
+        discrepant_rows_mask: pyarrow.BooleanArray,
         primary_keys_table: PrimaryKeyTable,
         key_column_names: list[str],
         aligned_tables: list[pyarrow.Table],
