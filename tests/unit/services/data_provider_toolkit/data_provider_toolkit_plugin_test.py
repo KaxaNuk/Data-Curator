@@ -386,8 +386,7 @@ class TestPrivateClearTableRowsByPrimaryKey:
             )
 
 
-# @todo no longer private
-class TestPrivateConsolidateProcessedEndpointTables:
+class TestConsolidateProcessedEndpointTables:
     def test_consolidate_processed_endpoint_tables(self):
         result = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=entity_tables.ENDPOINT_TABLES_CONSISTENT,

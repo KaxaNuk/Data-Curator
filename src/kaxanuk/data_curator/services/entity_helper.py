@@ -7,6 +7,7 @@ import datetime
 import decimal
 import types
 import typing
+import warnings
 
 from kaxanuk.data_curator.exceptions import (
     EntityFieldTypeError
@@ -36,31 +37,36 @@ def detect_field_type_errors(
         List of field type errors found
     """
     errors = []
-    # @todo: replace with dataclasses.fields(dataclass_entity) or typing.get_type_hints(dataclass_entity)
-    for field_name, field_type in dataclass_entity.__annotations__.items():
-        is_nullable = False
-        if (                                                # for a nullable type, get the non-null type
+    for field in dataclasses.fields(dataclass_entity):
+        field_name = field.name
+        field_type = field.type
+        is_nullable = (
             isinstance(field_type, types.UnionType)
             and len(field_type.__args__) == 2
             and field_type.__args__[1] == types.NoneType
-        ):
+        )
+        if is_nullable:
+            # for a nullable type, get the non-null type
             base_field_type = field_type.__args__[0]
-            is_nullable = True
-        elif isinstance(field_type, types.GenericAlias):    # skip check of non-simple types
+        elif isinstance(field_type, types.GenericAlias):
+            # skip check of non-simple types
+
             continue
         else:
             base_field_type = field_type
 
         field_value = getattr(dataclass_entity, field_name)
-        if (
-            not isinstance(field_value, base_field_type)
-            and (
-                not is_nullable
-                or field_value is not None
-            )
-        ):
+
+        if isinstance(field_value, base_field_type):
+            continue
+
+        if field_value is not None:
             errors.append(
                 f"Incorrect {field_name} type, expecting {base_field_type}, got {type(field_value)}"
+            )
+        elif not is_nullable:
+            errors.append(
+                f"Empty value received for non-nullable {field_name}"
             )
 
     return errors
@@ -93,6 +99,11 @@ def convert_data_row_into_entity_fields(
     dict[str, typing.Any]
         a dictionary with the field_correspondences as keys, and the converted fields as values
     """
+    warnings.warn(
+        "entity_helper.convert_data_row_into_entity_fields is deprecated and will be removed in a future version",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return {
         item[0]: _convert_to_type(
             item[0],

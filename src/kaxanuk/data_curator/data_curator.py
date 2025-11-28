@@ -26,6 +26,7 @@ from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCircularDependenciesError,
     ColumnBuilderCustomFunctionNotFoundError,
     ColumnBuilderUnavailableEntityFieldError,
+    DataBlockRowEntityErrorGroup,
     DataProviderPaymentError,
     EntityProcessingError,
     InjectedDependencyError,
@@ -191,11 +192,21 @@ def main(
                     f"{main_identifier} skipping output as it presented the following data provider error:",
                     str(error)
                 ])
-
                 logging.getLogger(__name__).error(msg)
 
                 continue
+            except DataBlockRowEntityErrorGroup as error_group:
+                msg = "\n  ".join([
+                    f"{main_identifier} skipping output as it presented the following errors during data assembly:",
+                    str(error_group),
+                    *[
+                        str(error)
+                        for error in error_group.exceptions
+                    ]
+                ])
+                logging.getLogger(__name__).error(msg)
 
+                continue
 
             column_builder = ColumnBuilder(
                 calculation_modules=calculation_modules,

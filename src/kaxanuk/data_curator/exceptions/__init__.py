@@ -59,7 +59,7 @@ class DataBlockIncorrectMappingTypeError(DataCuratorError):
     pass
 
 
-class DataBlockEntityPackingError(DataCuratorUnhandledError):
+class DataBlockEntityPackingError(DataCuratorError):
     def __init__(
         self,
         entity_name,

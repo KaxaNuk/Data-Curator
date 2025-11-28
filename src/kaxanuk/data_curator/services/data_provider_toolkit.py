@@ -5,7 +5,6 @@ import re
 import typing
 
 import networkx
-import pandas
 import pyarrow
 import pyarrow.compute
 import pyarrow.json
@@ -161,7 +160,7 @@ class DataProviderToolkit:
         if len(processed_endpoint_tables) == 1:
             return next(iter(processed_endpoint_tables.values()))
 
-        # get primary key ordering using _merge_primary_key_subsets_preserving_order
+        # get primary key ordering
         key_column_names = [
             f"{field.__objclass__.__name__}.{field.__name__}"
             for field in table_merge_fields
@@ -413,6 +412,79 @@ class DataProviderToolkit:
             for (endpoint, json_string) in endpoint_json_strings.items()
         }
 
+    # @todo unit tests!!!
+    @staticmethod
+    def find_common_table_missing_rows_mask(
+        common_rows_table: pyarrow.Table,
+        subset_rows_table: pyarrow.Table,
+    ) -> pyarrow.BooleanArray | None:
+        """ joins by column position, not name """
+        if common_rows_table.num_columns != subset_rows_table.num_columns:
+            # @todo fix
+            raise ValueError(
+                f"Tables have different number of columns: "
+            )
+
+        if common_rows_table.num_rows == 0:
+            return None
+
+        column_names = common_rows_table.column_names
+
+        if subset_rows_table.num_rows == 0:
+            return pyarrow.array(
+                [True] * common_rows_table.num_rows,
+                type=pyarrow.bool_()
+            )
+
+        # Ensure both tables have matching schemas for the key columns
+        subset_renamed = subset_rows_table.rename_columns(column_names)
+
+        # Cast subset columns to match common_rows_table schema
+        cast_columns = {}
+        for col_name in column_names:
+            common_col_type = common_rows_table.schema.field(col_name).type
+            subset_col = subset_renamed[col_name]
+            if subset_col.type != common_col_type:
+                cast_columns[col_name] = subset_col.cast(common_col_type)
+            else:
+                cast_columns[col_name] = subset_col
+
+        subset_with_matching_types = pyarrow.table(cast_columns)
+
+        # Add an order column to preserve original row order
+        order_col_name = "__order_col__"
+        common_with_order = common_rows_table.add_column(
+            0,
+            order_col_name,
+            pyarrow.array(range(common_rows_table.num_rows))
+        )
+
+        indicator_col = "__indicator_for_mask__"
+        subset_with_indicator = subset_with_matching_types.append_column(
+            indicator_col,
+            pyarrow.array(
+                [False] * subset_with_matching_types.num_rows,
+                type=pyarrow.bool_()
+            )
+        )
+
+        joined_table = common_with_order.join(
+            subset_with_indicator,
+            keys=column_names,
+            join_type="left outer"
+        ).sort_by(order_col_name)
+
+        indicator_column = joined_table.column(indicator_col)
+        mask = pyarrow.compute.is_null(indicator_column)
+
+        if isinstance(mask, pyarrow.ChunkedArray):
+            mask = mask.combine_chunks()
+
+        if pyarrow.compute.any(mask).as_py():
+            return mask
+        else:
+            return None
+
     @staticmethod
     def format_consolidated_discrepancy_table_for_output(
         *,
@@ -428,7 +500,6 @@ class DataProviderToolkit:
             .to_pandas(timestamp_as_object=True)
             .to_csv(sep=csv_separator, index=False)
         )
-
 
     @classmethod
     def format_endpoint_discrepancy_table_for_output(

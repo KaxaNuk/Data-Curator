@@ -646,13 +646,50 @@ class FinancialModelingPrep(
 
         # @todo filter rows where filing date is before period end date
 
+        # catch empty income statement rows
+
+        missing_income_statement_rows_mask = DataProviderToolkit.find_common_table_missing_rows_mask(
+            consolidated_fundamental_table.select([
+                    FundamentalsDataBlock.get_field_qualified_name(
+                        FundamentalsDataBlock.clock_sync_field
+                    )
+                ]
+            ),
+            processed_endpoint_tables[self.Endpoints.INCOME_STATEMENT].select([
+                FundamentalsDataBlock.get_field_qualified_name(
+                    FundamentalsDataBlock.clock_sync_field
+                )
+            ]),
+        )
+        if missing_income_statement_rows_mask is not None:
+            missing_income_statement_rows_table = (
+                consolidated_fundamental_table
+                .select(warning_output_columns_map.keys())
+                .filter(missing_income_statement_rows_mask)
+            )
+            discrepancy_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=missing_income_statement_rows_table,
+                output_column_renames=warning_output_columns_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} has balance sheet or cash flow statements with no corresponding income statement.",
+                "Omitting fundamental data for the periods corresponding to the following filings:",
+                discrepancy_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            full_income_rows_mask = pyarrow.compute.invert(missing_income_statement_rows_mask)
+            full_income_fundamental_table = consolidated_fundamental_table.filter(full_income_rows_mask)
+        else:
+            full_income_fundamental_table = consolidated_fundamental_table
+
         # filter ammendments
         irregular_rows_mask = FundamentalsDataBlock.find_consolidated_table_irregular_filing_rows(
-            consolidated_table=consolidated_fundamental_table
+            consolidated_table=full_income_fundamental_table
         )
         if irregular_rows_mask is not None:
             irregular_rows_table = (
-                consolidated_fundamental_table
+                full_income_fundamental_table
                 .select(warning_output_columns_map.keys())
                 .filter(irregular_rows_mask)
             )
@@ -668,9 +705,9 @@ class FinancialModelingPrep(
             logging.getLogger(__name__).warning(msg)
 
             regular_rows_mask = pyarrow.compute.invert(irregular_rows_mask)
-            regularized_fundamental_table = consolidated_fundamental_table.filter(regular_rows_mask)
+            regularized_fundamental_table = full_income_fundamental_table.filter(regular_rows_mask)
         else:
-            regularized_fundamental_table = consolidated_fundamental_table
+            regularized_fundamental_table = full_income_fundamental_table
 
         fundamental_data = FundamentalsDataBlock.assemble_entities_from_consolidated_table(
             consolidated_table=regularized_fundamental_table,

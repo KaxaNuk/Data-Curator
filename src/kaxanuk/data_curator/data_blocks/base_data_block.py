@@ -19,7 +19,7 @@ from kaxanuk.data_curator.exceptions import (
     DataBlockTypeConversionRuntimeError,
     EntityProcessingError,
     EntityTypeError,
-    EntityValueError,
+    EntityValueError, DataCuratorUnhandledError,
 )
 
 
@@ -98,13 +98,15 @@ class BaseDataBlock:
         to_type: typing.Any
     ) -> typing.Any:
         try:
-            # if type is nullable with empty value, return None
-            if (
+            type_is_nullable = (
                 isinstance(to_type, types.UnionType)
                 and len(to_type.__args__) == 2
                 and to_type.__args__[1] == types.NoneType
-            ):
+            )
+            if type_is_nullable:
                 if original_value in [None, '']:
+                    # if type is nullable with empty value, return None
+
                     return None
                 else:
                     to_type = to_type.__args__[0]
