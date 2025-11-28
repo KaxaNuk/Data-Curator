@@ -341,6 +341,15 @@ class FinancialModelingPrep(
 
         self.api_key = api_key
 
+    @classmethod
+    def get_data_block_endpoint_tag_map(cls):
+        return {
+            DividendsDataBlock: cls._dividend_data_endpoint_map,
+            FundamentalsDataBlock: cls._fundamental_data_endpoint_map,
+            MarketDailyDataBlock: cls._market_data_endpoint_map,
+            SplitsDataBlock: cls._split_data_endpoint_map,
+        }
+
     def get_dividend_data(
         self,
         *,
