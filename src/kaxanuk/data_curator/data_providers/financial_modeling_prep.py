@@ -33,19 +33,6 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderPaymentError,
     DataProviderToolkitNoDataError,
     DataProviderToolkitRuntimeError,
-    DividendDataEmptyError,
-    DividendDataRowError,
-    EntityFieldTypeError,
-    EntityProcessingError,
-    EntityTypeError,
-    EntityValueError,
-    FundamentalDataNoIncomeError,
-    FundamentalDataNonChronologicalStatementWithoutOriginalDateError,
-    FundamentalDataUnsortedRowDatesError,
-    MarketDataEmptyError,
-    MarketDataRowError,
-    SplitDataEmptyError,
-    SplitDataRowError,
 )
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
 from kaxanuk.data_curator.services.data_provider_toolkit import (
@@ -114,7 +101,8 @@ class FinancialModelingPrep(
                 [DataProviderFieldPreprocessors.cast_datetime_to_date]
             ),
             FundamentalDataRow.reported_currency: 'reportedCurrency',
-            FundamentalDataRowBalanceSheet.accumulated_other_comprehensive_income_after_tax: 'accumulatedOtherComprehensiveIncomeLoss',
+            FundamentalDataRowBalanceSheet.accumulated_other_comprehensive_income_after_tax:
+                'accumulatedOtherComprehensiveIncomeLoss',
             FundamentalDataRowBalanceSheet.additional_paid_in_capital: 'additionalPaidInCapital',
             FundamentalDataRowBalanceSheet.assets: 'totalAssets',
             FundamentalDataRowBalanceSheet.capital_lease_obligations: 'capitalLeaseObligations',
@@ -195,7 +183,8 @@ class FinancialModelingPrep(
             FundamentalDataRowCashFlow.free_cash_flow: 'freeCashFlow',
             FundamentalDataRowCashFlow.interest_payments: 'interestPaid',
             FundamentalDataRowCashFlow.inventory_change: 'inventory',
-            FundamentalDataRowCashFlow.investment_sales_maturities_and_collections_proceeds: 'salesMaturitiesOfInvestments',
+            FundamentalDataRowCashFlow.investment_sales_maturities_and_collections_proceeds:
+                'salesMaturitiesOfInvestments',
             FundamentalDataRowCashFlow.investments_purchase: 'purchasesOfInvestments',
             FundamentalDataRowCashFlow.net_business_acquisition_payments: 'acquisitionsNet',
             FundamentalDataRowCashFlow.net_cash_from_operating_activities: 'netCashProvidedByOperatingActivities',
@@ -235,12 +224,14 @@ class FinancialModelingPrep(
             FundamentalDataRow.reported_currency: 'reportedCurrency',
             FundamentalDataRowIncomeStatement.basic_earnings_per_share: 'eps',
             FundamentalDataRowIncomeStatement.basic_net_income_available_to_common_stockholders: 'bottomLineNetIncome',
-            FundamentalDataRowIncomeStatement.continuing_operations_income_after_tax: 'netIncomeFromContinuingOperations',
+            FundamentalDataRowIncomeStatement.continuing_operations_income_after_tax:
+                'netIncomeFromContinuingOperations',
             FundamentalDataRowIncomeStatement.costs_and_expenses: 'costAndExpenses',
             FundamentalDataRowIncomeStatement.cost_of_revenue: 'costOfRevenue',
             FundamentalDataRowIncomeStatement.depreciation_and_amortization: 'depreciationAndAmortization',
             FundamentalDataRowIncomeStatement.diluted_earnings_per_share: 'epsDiluted',
-            FundamentalDataRowIncomeStatement.discontinued_operations_income_after_tax: 'netIncomeFromDiscontinuedOperations',
+            FundamentalDataRowIncomeStatement.discontinued_operations_income_after_tax:
+                'netIncomeFromDiscontinuedOperations',
             FundamentalDataRowIncomeStatement.earnings_before_interest_and_tax: 'ebit',
             FundamentalDataRowIncomeStatement.earnings_before_interest_tax_depreciation_and_amortization: 'ebitda',
             FundamentalDataRowIncomeStatement.general_and_administrative_expense: 'generalAndAdministrativeExpenses',
@@ -253,7 +244,8 @@ class FinancialModelingPrep(
             FundamentalDataRowIncomeStatement.net_income_deductions: 'netIncomeDeductions',
             FundamentalDataRowIncomeStatement.net_interest_income: 'netInterestIncome',
             FundamentalDataRowIncomeStatement.net_total_other_income: 'totalOtherIncomeExpensesNet',
-            FundamentalDataRowIncomeStatement.nonoperating_income_excluding_interest: 'nonOperatingIncomeExcludingInterest',
+            FundamentalDataRowIncomeStatement.nonoperating_income_excluding_interest:
+                'nonOperatingIncomeExcludingInterest',
             FundamentalDataRowIncomeStatement.operating_expenses: 'operatingExpenses',
             FundamentalDataRowIncomeStatement.operating_income: 'operatingIncome',
             FundamentalDataRowIncomeStatement.other_expenses: 'otherExpenses',
@@ -261,7 +253,8 @@ class FinancialModelingPrep(
             FundamentalDataRowIncomeStatement.research_and_development_expense: 'researchAndDevelopmentExpenses',
             FundamentalDataRowIncomeStatement.revenues: 'revenue',
             FundamentalDataRowIncomeStatement.selling_and_marketing_expense: 'sellingAndMarketingExpenses',
-            FundamentalDataRowIncomeStatement.selling_general_and_administrative_expense: 'sellingGeneralAndAdministrativeExpenses',
+            FundamentalDataRowIncomeStatement.selling_general_and_administrative_expense:
+                'sellingGeneralAndAdministrativeExpenses',
             FundamentalDataRowIncomeStatement.weighted_average_basic_shares_outstanding: 'weightedAverageShsOut',
             FundamentalDataRowIncomeStatement.weighted_average_diluted_shares_outstanding: 'weightedAverageShsOutDil',
         },
@@ -316,7 +309,7 @@ class FinancialModelingPrep(
     }
 
     # @todo: make enum
-    _periods : typing.Final = {
+    _periods: typing.Final = {
         'annual': 'annual',
         'quarterly': 'quarter'
     }
@@ -459,7 +452,7 @@ class FinancialModelingPrep(
             }
         )
 
-        return dividend_data
+        return dividend_data    # noqa: RET504
 
     def get_fundamental_data(
         self,
@@ -734,7 +727,7 @@ class FinancialModelingPrep(
             }
         )
 
-        return fundamental_data
+        return fundamental_data     # noqa: RET504
 
     def get_market_data(
             self,
@@ -825,7 +818,7 @@ class FinancialModelingPrep(
             }
         )
 
-        return market_data
+        return market_data  # noqa: RET504
 
     def get_split_data(
         self,
@@ -935,7 +928,7 @@ class FinancialModelingPrep(
             }
         )
 
-        return split_data
+        return split_data   # noqa: RET504
 
     def initialize(
         self,

@@ -247,12 +247,14 @@ ignore = [
 ]
 "tests/**" = [
     "ANN",      # Tests don't need to be annotated
+    "DTZ001",   # Don't care about test datetime specifics
     "FBT003",   # Multiple external libraries require boolean positional arguments
     "D",        # Tests don't need to follow strict documentation requirements
     "PLR2004",  # No problem if magic values are usen in tests
     "RET",      # No need for return strictness in tests
     "S101",     # Permit use of pytest assert
     "SLF",      # Tests need private member access
+    "TID252",   # Don't care about relative imports in tests
 ]
 "tests/unit/modules/data_column/equality_test.py" = [
     "A001", #  Variable `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface

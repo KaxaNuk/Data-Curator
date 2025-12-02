@@ -16,4 +16,3 @@ class BaseDataEntity:
     ...     some_other_field: float
 
     """
-    ...

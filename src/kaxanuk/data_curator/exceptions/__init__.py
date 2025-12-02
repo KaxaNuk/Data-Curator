@@ -137,7 +137,7 @@ class DataProviderMultiEndpointCommonDataDiscrepancyError(DataCuratorError):
         self.discrepancies_table = discrepancies_table
         self.key_column_names = key_column_names
         super().__init__(
-            f"Discrepancies found between common columns across multiple endpoints."
+            "Discrepancies found between common columns across multiple endpoints."
         )
 
 

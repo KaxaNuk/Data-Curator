@@ -1,3 +1,5 @@
+import typing
+
 import pyarrow
 import pyarrow.compute
 
@@ -29,7 +31,7 @@ class FundamentalsDataBlock(BaseDataBlock):
     grouping_identifier_field = FundamentalData.main_identifier
     main_entity = FundamentalData
     # main_prefix = 'f'
-    prefix_to_entity_map = {
+    prefix_to_entity_map: typing.Final = {
         'f': FundamentalDataRow,
         'fbs': FundamentalDataRowBalanceSheet,
         'fcf': FundamentalDataRowCashFlow,
@@ -115,7 +117,7 @@ class FundamentalsDataBlock(BaseDataBlock):
             ]
         )
         sorted_table = consolidated_table.take(sort_indices)
-        
+
         # Set filing dates to null where period end date is null
         period_end_dates = sorted_table[period_end_date_column_name]
         filing_dates = sorted_table[filing_date_column_name]
@@ -141,10 +143,13 @@ class FundamentalsDataBlock(BaseDataBlock):
             irregular_min_dates_mask,
             posterior_duplicates_mask
         )
-        
+
         # Fill None values with False
-        mask_filled = pyarrow.compute.fill_null(mask_with_nones, False)
-        
+        mask_filled = pyarrow.compute.fill_null(
+            mask_with_nones,
+            fill_value=False
+        )
+
         resort_order = pyarrow.compute.sort_indices(sort_indices)
         reordered_mask = mask_filled.take(resort_order)
 

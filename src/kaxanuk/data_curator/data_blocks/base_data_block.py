@@ -10,16 +10,14 @@ import pyarrow.types
 from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     DataBlockIncorrectMappingTypeError,
-    DataBlockEmptyError,
     DataBlockEntityPackingError,
     DataBlockIncorrectPackingStructureError,
     DataBlockRowEntityErrorGroup,
     DataBlockTypeConversionError,
     DataBlockTypeConversionNotImplementedError,
     DataBlockTypeConversionRuntimeError,
-    EntityProcessingError,
     EntityTypeError,
-    EntityValueError, DataCuratorUnhandledError,
+    EntityValueError,
 )
 
 
@@ -95,7 +93,7 @@ class BaseDataBlock:
         try:
             type_is_nullable = (
                 isinstance(to_type, types.UnionType)
-                and len(to_type.__args__) == 2
+                and len(to_type.__args__) == 2  # noqa: PLR2004
                 and to_type.__args__[1] == types.NoneType
             )
             if type_is_nullable:
@@ -164,7 +162,7 @@ class BaseDataBlock:
         ):
             # @todo raise specific error
             raise ValueError(
-                f"Field descriptor is missing required attributes '__objclass__' or '__name__'"
+                "Field descriptor is missing required attributes '__objclass__' or '__name__'"
             )
 
         return f"{field.__objclass__.__name__}.{field.__name__}"
@@ -185,11 +183,19 @@ class BaseDataBlock:
             table=table,
         )
 
-        row_entities = cls._pack_entity_hierarchy_rows(
-            clock_sync_field=cls.clock_sync_field,
-            ordered_entities=ordered_entities,
-            entity_table_map=entity_table_map,
-        )
+        try:
+            row_entities = cls._pack_entity_hierarchy_rows(
+                clock_sync_field=cls.clock_sync_field,
+                ordered_entities=ordered_entities,
+                entity_table_map=entity_table_map,
+            )
+        except (
+            DataBlockEntityPackingError,
+            DataBlockIncorrectPackingStructureError,
+        ):
+            raise
+        except DataBlockRowEntityErrorGroup:
+            raise
 
         return row_entities
 
@@ -317,15 +323,15 @@ class BaseDataBlock:
         ordered_entities: OrderedEntityRelationMap,
         entity_table_map: EntityBuildingTables,
     ):
-        clock_type = BaseDataBlock._unwrap_optional_type(
-            clock_sync_field.__objclass__.__annotations__[clock_sync_field.__name__]
-        )
+        # clock_type = BaseDataBlock._unwrap_optional_type(
+        #     clock_sync_field.__objclass__.__annotations__[clock_sync_field.__name__]
+        # )
         clock_column = entity_table_map[clock_sync_field.__objclass__].column(
             clock_sync_field.__name__
         )
         dependency_rows = {
             entity: []
-            for entity in ordered_entities.keys()
+            for entity in ordered_entities
         }
         master_rows = {}
         entity_creation_exceptions = []
@@ -377,10 +383,7 @@ class BaseDataBlock:
                         dependency_rows[entity].append(None)
                     continue
 
-                typed_row = {
-                    name: None
-                    for name in missing_field_names
-                }
+                typed_row = dict.fromkeys(missing_field_names)
                 try:
                     for (name, value) in row.items():
                         typed_row[name] = cls.convert_value_to_type(
@@ -489,7 +492,7 @@ class BaseDataBlock:
         origin_type = typing.get_origin(type_hint)
         if origin_type is dict:
             args = typing.get_args(type_hint)
-            if args and len(args) >= 2:
+            if args and len(args) > 1:
                 # Return the second argument (value type)
                 return args[1]
 

@@ -1,7 +1,6 @@
 import datetime
 
 import pyarrow
-import pytest
 
 from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
 from .fixtures import (

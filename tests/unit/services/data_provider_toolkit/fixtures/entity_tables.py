@@ -2,7 +2,6 @@ import dataclasses
 import decimal
 import datetime
 import enum
-import typing
 
 import pyarrow
 import pyarrow.compute

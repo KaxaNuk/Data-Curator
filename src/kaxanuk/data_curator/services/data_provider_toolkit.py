@@ -11,8 +11,6 @@ import pyarrow.json
 
 from kaxanuk.data_curator.data_blocks.base_data_block import (
     BaseDataBlock,
-    ConsolidatedFieldsTable,
-    EntityBuildingTables,
     EntityField,
 )
 from kaxanuk.data_curator.entities import (
@@ -61,12 +59,20 @@ type EndpointColumnRemaps = dict[
         list[ColumnRemap]
     ]
 ]
+type DataBlockEndpointColumnRemaps = dict[
+        type[BaseDataBlock],
+        EndpointColumnRemaps
+    ]
 type EndpointFieldPreprocessors = dict[
     Endpoint,
     dict[
         EntityField,
         PreprocessedFieldMapping
     ]
+]
+type DataBlockEndpointFieldPreprocessors = dict[
+    type[BaseDataBlock],
+    EndpointFieldPreprocessors
 ]
 type EndpointTables = dict[
     Endpoint,
@@ -76,6 +82,10 @@ type EntityClassNameMap = dict[
     str,
     type[BaseDataEntity]
 ]
+type DataBlockEntityClassNameMap = dict[
+        type[BaseDataBlock],
+        EntityClassNameMap
+    ]
 type EntityEndpoints = dict[
     type[BaseDataEntity],
     set[Endpoint]
@@ -114,18 +124,15 @@ class DataProviderFieldPreprocessors:
 
 class DataProviderToolkit:
     # endpoint column remaps cache
-    _data_block_endpoint_column_remaps: dict[
-        type[BaseDataBlock],
-        EndpointColumnRemaps
+    _data_block_endpoint_column_remaps: typing.ClassVar[
+        DataBlockEndpointColumnRemaps
     ] = {}
     # endpoint field preprocessors cache
-    _data_block_endpoint_field_preprocessors: dict[
-        type[BaseDataBlock],
-        EndpointFieldPreprocessors
+    _data_block_endpoint_field_preprocessors: typing.ClassVar[
+        DataBlockEndpointFieldPreprocessors
     ] = {}
-    _data_block_entity_class_name_map: dict[
-        type[BaseDataBlock],
-        EntityClassNameMap
+    _data_block_entity_class_name_map: typing.ClassVar[
+        DataBlockEntityClassNameMap
     ] = {}
 
     @classmethod
@@ -259,7 +266,7 @@ class DataProviderToolkit:
 
         # Check for discrepancies only on common columns between table pairs
         for (col_name, table_indices) in col_to_tables.items():
-            if len(table_indices) < 2:
+            if len(table_indices) <= 1:
                 # No overlap, no discrepancy possible
 
                 continue
@@ -292,7 +299,7 @@ class DataProviderToolkit:
                 are_equal = pyarrow.compute.equal(
                     col1_common,
                     col2_common
-                ).fill_null(False)
+                ).fill_null(fill_value=False)
                 both_null = pyarrow.compute.and_(
                     pyarrow.compute.is_null(col1_common),
                     pyarrow.compute.is_null(col2_common)
@@ -371,7 +378,7 @@ class DataProviderToolkit:
             field_to_full_names[field].append(full_name)
 
         # Process each field group
-        for (field, full_names) in sorted(field_to_full_names.items()):
+        for (_field, full_names) in sorted(field_to_full_names.items()):
             # Collect unique arrays for this field (deduplicate using id() for efficiency)
             seen_array_ids = set()
             arrays_to_coalesce = []
@@ -431,7 +438,7 @@ class DataProviderToolkit:
         """ joins by column position, not name """
         if common_rows_table.num_columns != subset_rows_table.num_columns:
             raise DataProviderToolkitArgumentError(
-                f"Tables have different number of columns: "
+                "Tables have different number of columns: "
             )
 
         if common_rows_table.num_rows == 0:
@@ -470,18 +477,18 @@ class DataProviderToolkit:
 
         # Strategy: Replace NULLs with unique placeholder values that won't collide
         # Then join, then verify NULL matches separately
-        
+
         # Create hash columns for NULL-safe comparison
         hash_col_name = "__null_hash__"
-        
+
         # Build hash arrays that encode NULL positions
         common_hash_parts = []
         subset_hash_parts = []
-        
+
         for col_name in column_names:
             common_col = common_rows_table[col_name]
             subset_col = subset_with_matching_types[col_name]
-            
+
             # Create a hash part: "1" if null, "0" if not null
             common_null_indicator = pyarrow.compute.if_else(
                 pyarrow.compute.is_null(common_col),
@@ -493,56 +500,77 @@ class DataProviderToolkit:
                 pyarrow.array(['1'] * len(subset_col)),
                 pyarrow.array(['0'] * len(subset_col))
             )
-            
+
             common_hash_parts.append(common_null_indicator)
             subset_hash_parts.append(subset_null_indicator)
-        
+
         # Concatenate to create null pattern hash
         common_null_hash = common_hash_parts[0]
         for part in common_hash_parts[1:]:
             common_null_hash = pyarrow.compute.binary_join_element_wise(
                 common_null_hash, part, ''
             )
-        
+
         subset_null_hash = subset_hash_parts[0]
         for part in subset_hash_parts[1:]:
             subset_null_hash = pyarrow.compute.binary_join_element_wise(
                 subset_null_hash, part, ''
             )
-        
+
         # Add hash column to tables
-        common_with_hash = common_with_order.append_column(hash_col_name, common_null_hash)
-        subset_with_hash = subset_with_matching_types.append_column(hash_col_name, subset_null_hash)
-        
+        common_with_hash = common_with_order.append_column(
+            hash_col_name,
+            common_null_hash
+        )
+        subset_with_hash = subset_with_matching_types.append_column(
+            hash_col_name,
+            subset_null_hash
+        )
+
         # Replace NULLs with fill values for join (they must match by NULL pattern first via hash)
-        common_filled_cols = {order_col_name: common_with_hash[order_col_name], hash_col_name: common_with_hash[hash_col_name]}
+        common_filled_cols = {
+            order_col_name: common_with_hash[order_col_name],
+            hash_col_name: common_with_hash[hash_col_name]
+        }
         subset_filled_cols = {hash_col_name: subset_with_hash[hash_col_name]}
-        
+
         for col_name in column_names:
             common_col = common_with_hash[col_name]
             subset_col = subset_with_hash[col_name]
-            
+
             # Fill NULLs with a type-appropriate value (0 for numeric, empty string for string, etc.)
             # The actual value doesn't matter as we filter by hash first
-            if pyarrow.types.is_integer(common_col.type) or pyarrow.types.is_floating(common_col.type):
+            if (
+                pyarrow.types.is_integer(common_col.type)
+                or pyarrow.types.is_floating(common_col.type)
+            ):
                 fill_value = 0
-            elif pyarrow.types.is_string(common_col.type) or pyarrow.types.is_large_string(common_col.type):
+            elif (
+                pyarrow.types.is_string(common_col.type)
+                or pyarrow.types.is_large_string(common_col.type)
+            ):
                 fill_value = ''
             elif pyarrow.types.is_date(common_col.type):
                 fill_value = 0  # Will be cast to epoch date
             else:
                 # For other types, try using the type's default
-                fill_value = pyarrow.scalar(None, type=common_col.type).as_py() or 0
-            
+                fill_value = (
+                    pyarrow.scalar(
+                        None,
+                        type=common_col.type
+                    ).as_py()
+                    or 0
+                )
+
             common_filled_cols[col_name] = pyarrow.compute.fill_null(common_col, fill_value)
             subset_filled_cols[col_name] = pyarrow.compute.fill_null(subset_col, fill_value)
-        
+
         common_filled = pyarrow.table(common_filled_cols)
         subset_filled = pyarrow.table(subset_filled_cols)
-        
+
         # Perform join using hash + all columns as keys
         join_keys = [hash_col_name, *column_names]
-        
+
         indicator_col = "__indicator_for_mask__"
         subset_with_indicator = subset_filled.append_column(
             indicator_col,
@@ -637,7 +665,7 @@ class DataProviderToolkit:
         endpoint_tables: EndpointTables,
     ) -> ProcessedEndpointTables:
         if not issubclass(data_block, BaseDataBlock):
-            msg = f"data_block parameter needs to be a subclass of BaseDataBlock"
+            msg = "data_block parameter needs to be a subclass of BaseDataBlock"
 
             raise DataProviderToolkitArgumentError(msg)
 
@@ -774,7 +802,7 @@ class DataProviderToolkit:
     def _calculate_endpoint_field_preprocessors(
         endpoint_field_map: EndpointFieldMap
     ) -> EndpointFieldPreprocessors:
-        preprocessors = {
+        return {
             endpoint: {
                 entity_field: mapping_value
                 for (entity_field, mapping_value) in field_mappings.items()
@@ -782,8 +810,6 @@ class DataProviderToolkit:
             }
             for (endpoint, field_mappings) in endpoint_field_map.items()
         }
-
-        return preprocessors
 
     @staticmethod
     def _clear_table_rows_by_primary_key(
@@ -910,6 +936,7 @@ class DataProviderToolkit:
     @staticmethod
     def _merge_primary_key_subsets_preserving_order(
         primary_key_subsets_tables: list[PrimaryKeyTable],
+        *,
         predominant_order_descending: bool = False,
     ) -> PrimaryKeyTable:
         if not primary_key_subsets_tables:
@@ -999,15 +1026,21 @@ class DataProviderToolkit:
         except networkx.NetworkXUnfeasible:
             msg = "Inconsistent key order between tables results in a circular dependency."
 
-            raise DataProviderMultiEndpointCommonDataOrderError(msg)
+            raise DataProviderMultiEndpointCommonDataOrderError(msg) from None
 
         if not sorted_rows:
             return pyarrow.Table.from_pylist([], schema=schema)
 
-        columns_as_tuples = list(zip(*sorted_rows))
+        columns_as_tuples = list(
+            zip(*sorted_rows, strict=True)
+        )
         arrays = [
             pyarrow.array(col_data, type=field.type)
-            for (col_data, field) in zip(columns_as_tuples, schema)
+            for (col_data, field) in zip(
+                columns_as_tuples,
+                schema,
+                strict=True
+            )
         ]
 
         return pyarrow.Table.from_arrays(arrays, names=column_names)
@@ -1059,12 +1092,10 @@ class DataProviderToolkit:
                 result = input_columns
                 for preprocessor in preprocessed_mapping.preprocessors:
                     # Apply preprocessor with current result(s) as positional arguments
-                    if isinstance(result, list):
-                        # First preprocessor gets multiple columns
-                        result = preprocessor(*result)
-                    else:
-                        # Subsequent preprocessors get single output from previous
-                        result = preprocessor(result)
+                    result = (
+                        preprocessor(*result) if isinstance(result, list)
+                        else preprocessor(result)
+                    )
 
                     # Wrap output in DataColumn.load() for next preprocessor
                     result = DataColumn.load(result)

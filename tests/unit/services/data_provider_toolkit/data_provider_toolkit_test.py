@@ -6,28 +6,19 @@ import pyarrow
 import pytest
 
 from kaxanuk.data_curator.exceptions import (
-    DataProviderIncorrectMappingTypeError,
     DataProviderMultiEndpointCommonDataDiscrepancyError,
     DataProviderMultiEndpointCommonDataOrderError,
     DataProviderToolkitRuntimeError,
-)
-from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
-from kaxanuk.data_curator.entities.fundamental_data_row import (
-    FundamentalDataRow,
-    FundamentalDataRowBalanceSheet,
-    FundamentalDataRowCashFlow,
-    FundamentalDataRowIncomeStatement,
 )
 from kaxanuk.data_curator.services.data_provider_toolkit import DataProviderToolkit
 
 from .fixtures import (
     endpoint_maps,
-    # entity_columns,
     entity_tables,
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def endpoints_fundamental_example():
     class Endpoints(enum.StrEnum):
         BALANCE_SHEET_STATEMENT = 'balance-sheet-statement'
@@ -73,10 +64,10 @@ def check_if_table_preserves_row_order(
             else:
                 col_comparison = pyarrow.compute.is_null(merged_table[col_name])
 
-            if filter_mask is None:
-                filter_mask = col_comparison
-            else:
-                filter_mask = pyarrow.compute.and_(filter_mask, col_comparison)
+            filter_mask = (
+                col_comparison if filter_mask is None
+                else pyarrow.compute.and_(filter_mask, col_comparison)
+            )
 
         # Find indices where the row matches
         matching_indices = pyarrow.compute.filter(
@@ -106,20 +97,21 @@ def reverse_pyarrow_array(array: pyarrow.Array):
 
 
 class TestTestCheckIfTablePreservesRowOrder:
-    def test_check_if_table_preserves_row_order(self):
+    def test_check_if_table_preserves_row_order_1(self):
         test1 = check_if_table_preserves_row_order(
             entity_tables.COMPOUND_KEY_MERGED_TABLE,
             entity_tables.COMPOUND_KEY_NONDETERMINISTIC_SUBSET1_TABLE,
         )
+
+        assert test1
+
+    def test_check_if_table_preserves_row_order_2(self):
         test2 = check_if_table_preserves_row_order(
             entity_tables.COMPOUND_KEY_MERGED_TABLE,
             entity_tables.COMPOUND_KEY_NONDETERMINISTIC_SUBSET2_TABLE,
         )
 
-        assert (
-            test1
-            and test2
-        )
+        assert test2
 
 
 class TestTestReversePyarrowArray:
@@ -339,14 +331,15 @@ class TestPrivateClearTableRowsByPrimaryKey:
         assert result.equals(expected)
 
     def test_clear_table_rows_by_primary_keys_fails_on_discrepant_columns(self):
+        table = pyarrow.table({
+            'primary_key': [1, 2, 3, 4],
+            'other_column': [1, 2, 3, 4]
+        })
+        primary_keys_table = pyarrow.table({
+            'missing_primary_key': [1, 3],
+        })
+
         with pytest.raises(DataProviderToolkitRuntimeError):
-            table = pyarrow.table({
-                'primary_key': [1, 2, 3, 4],
-                'other_column': [1, 2, 3, 4]
-            })
-            primary_keys_table = pyarrow.table({
-                'missing_primary_key': [1, 3],
-            })
             DataProviderToolkit._clear_table_rows_by_primary_key(
                 table,
                 primary_keys_table,
@@ -496,7 +489,7 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
             entity_tables.COMPOUND_KEY_NONDETERMINISTIC_SUBSET2_TABLE,
         ])
 
-        assert (
+        assert (    # noqa: PT018
             check_if_table_preserves_row_order(
                 result,
                 entity_tables.COMPOUND_KEY_NONDETERMINISTIC_SUBSET1_TABLE,
@@ -516,7 +509,7 @@ class TestPrivateProcessRemappedEndpointTables:
         )
         expected = endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PROCESSED
 
-        assert (
+        assert (    # noqa: PT018
             result[endpoint_maps.Endpoints.BALANCE_SHEET_STATEMENT].equals(
                 expected[endpoint_maps.Endpoints.BALANCE_SHEET_STATEMENT]
             )
@@ -534,7 +527,7 @@ class TestPrivateRemapEndpointTableColumns:
         )
         expected = endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD
 
-        assert (
+        assert (    # noqa: PT018
             result[endpoint_maps.Endpoints.BALANCE_SHEET_STATEMENT].equals(
                 expected[endpoint_maps.Endpoints.BALANCE_SHEET_STATEMENT]
             )

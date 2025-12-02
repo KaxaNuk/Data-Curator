@@ -40,19 +40,19 @@ class TestSplitConsolidatedTableIntoEntityTables:
         )
         expected = entity_tables.ENTITY_TABLES
 
-        assert (
+        assert (    # noqa: PT018
             result[entity_tables.MiniFundamentalRow].equals(
                 expected[entity_tables.MiniFundamentalRow]
             )
             and result[entity_tables.MiniFundamentalRowBalanceSheet].equals(
-            expected[entity_tables.MiniFundamentalRowBalanceSheet]
-        )
+                expected[entity_tables.MiniFundamentalRowBalanceSheet]
+            )
             and result[entity_tables.MiniFundamentalRowCashFlow].equals(
-            expected[entity_tables.MiniFundamentalRowCashFlow]
-        )
+                expected[entity_tables.MiniFundamentalRowCashFlow]
+            )
             and result[entity_tables.MiniFundamentalRowIncomeStatement].equals(
-            expected[entity_tables.MiniFundamentalRowIncomeStatement]
-        )
+                expected[entity_tables.MiniFundamentalRowIncomeStatement]
+            )
         )
 
     def test_split_table_inexistent_entity_fails(self):
