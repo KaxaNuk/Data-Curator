@@ -411,12 +411,18 @@ class DataProviderToolkit:
         /,
         endpoint_json_strings: dict[Endpoint, str],
     ) -> EndpointTables:
-        return {
-            endpoint: cls._create_table_from_json_string(json_string)
-            for (endpoint, json_string) in endpoint_json_strings.items()
-        }
+        try:
+            endpoint_tables = {
+                endpoint: cls._create_table_from_json_string(json_string)
+                for (endpoint, json_string) in endpoint_json_strings.items()
+            }
+        except DataProviderParsingError as error:
+            msg = f"Failed to parse endpoint tables: {error}"
 
-    # @todo unit tests!!!
+            raise DataProviderToolkitRuntimeError(msg) from error
+
+        return endpoint_tables
+
     @staticmethod
     def find_common_table_missing_rows_mask(
         common_rows_table: pyarrow.Table,
@@ -424,8 +430,7 @@ class DataProviderToolkit:
     ) -> pyarrow.BooleanArray | None:
         """ joins by column position, not name """
         if common_rows_table.num_columns != subset_rows_table.num_columns:
-            # @todo fix
-            raise ValueError(
+            raise DataProviderToolkitArgumentError(
                 f"Tables have different number of columns: "
             )
 
@@ -463,26 +468,98 @@ class DataProviderToolkit:
             pyarrow.array(range(common_rows_table.num_rows))
         )
 
+        # Strategy: Replace NULLs with unique placeholder values that won't collide
+        # Then join, then verify NULL matches separately
+        
+        # Create hash columns for NULL-safe comparison
+        hash_col_name = "__null_hash__"
+        
+        # Build hash arrays that encode NULL positions
+        common_hash_parts = []
+        subset_hash_parts = []
+        
+        for col_name in column_names:
+            common_col = common_rows_table[col_name]
+            subset_col = subset_with_matching_types[col_name]
+            
+            # Create a hash part: "1" if null, "0" if not null
+            common_null_indicator = pyarrow.compute.if_else(
+                pyarrow.compute.is_null(common_col),
+                pyarrow.array(['1'] * len(common_col)),
+                pyarrow.array(['0'] * len(common_col))
+            )
+            subset_null_indicator = pyarrow.compute.if_else(
+                pyarrow.compute.is_null(subset_col),
+                pyarrow.array(['1'] * len(subset_col)),
+                pyarrow.array(['0'] * len(subset_col))
+            )
+            
+            common_hash_parts.append(common_null_indicator)
+            subset_hash_parts.append(subset_null_indicator)
+        
+        # Concatenate to create null pattern hash
+        common_null_hash = common_hash_parts[0]
+        for part in common_hash_parts[1:]:
+            common_null_hash = pyarrow.compute.binary_join_element_wise(
+                common_null_hash, part, ''
+            )
+        
+        subset_null_hash = subset_hash_parts[0]
+        for part in subset_hash_parts[1:]:
+            subset_null_hash = pyarrow.compute.binary_join_element_wise(
+                subset_null_hash, part, ''
+            )
+        
+        # Add hash column to tables
+        common_with_hash = common_with_order.append_column(hash_col_name, common_null_hash)
+        subset_with_hash = subset_with_matching_types.append_column(hash_col_name, subset_null_hash)
+        
+        # Replace NULLs with fill values for join (they must match by NULL pattern first via hash)
+        common_filled_cols = {order_col_name: common_with_hash[order_col_name], hash_col_name: common_with_hash[hash_col_name]}
+        subset_filled_cols = {hash_col_name: subset_with_hash[hash_col_name]}
+        
+        for col_name in column_names:
+            common_col = common_with_hash[col_name]
+            subset_col = subset_with_hash[col_name]
+            
+            # Fill NULLs with a type-appropriate value (0 for numeric, empty string for string, etc.)
+            # The actual value doesn't matter as we filter by hash first
+            if pyarrow.types.is_integer(common_col.type) or pyarrow.types.is_floating(common_col.type):
+                fill_value = 0
+            elif pyarrow.types.is_string(common_col.type) or pyarrow.types.is_large_string(common_col.type):
+                fill_value = ''
+            elif pyarrow.types.is_date(common_col.type):
+                fill_value = 0  # Will be cast to epoch date
+            else:
+                # For other types, try using the type's default
+                fill_value = pyarrow.scalar(None, type=common_col.type).as_py() or 0
+            
+            common_filled_cols[col_name] = pyarrow.compute.fill_null(common_col, fill_value)
+            subset_filled_cols[col_name] = pyarrow.compute.fill_null(subset_col, fill_value)
+        
+        common_filled = pyarrow.table(common_filled_cols)
+        subset_filled = pyarrow.table(subset_filled_cols)
+        
+        # Perform join using hash + all columns as keys
+        join_keys = [hash_col_name, *column_names]
+        
         indicator_col = "__indicator_for_mask__"
-        subset_with_indicator = subset_with_matching_types.append_column(
+        subset_with_indicator = subset_filled.append_column(
             indicator_col,
             pyarrow.array(
-                [False] * subset_with_matching_types.num_rows,
+                [False] * subset_filled.num_rows,
                 type=pyarrow.bool_()
             )
         )
 
-        joined_table = common_with_order.join(
+        joined_table = common_filled.join(
             subset_with_indicator,
-            keys=column_names,
+            keys=join_keys,
             join_type="left outer"
         ).sort_by(order_col_name)
 
         indicator_column = joined_table.column(indicator_col)
-        mask = pyarrow.compute.is_null(indicator_column)
-
-        if isinstance(mask, pyarrow.ChunkedArray):
-            mask = mask.combine_chunks()
+        mask = pyarrow.compute.is_null(indicator_column).combine_chunks()
 
         if pyarrow.compute.any(mask).as_py():
             return mask
@@ -515,23 +592,23 @@ class DataProviderToolkit:
         endpoint_field_map: EndpointFieldMap,
         csv_separator: str = "|",
     ):
-        # get map from tags to remapped columns
-        # if data_block not in cls._data_block_endpoint_column_remaps:
-        #     cls._data_block_endpoint_column_remaps[data_block] = cls._calculate_endpoint_column_remaps(
-        #         endpoint_field_map
-        #     )
-        # endpoint_column_remaps = cls._data_block_endpoint_column_remaps[data_block]
         column_names = discrepancy_table.column_names
         column_new_names = []
-        # @todo handle errors
+
         # find mapping from column names to "endpoint.tag" format
         for column_name in column_names:
-            if '$' in column_name:
-                (endpoint_name, rest) = column_name.split('$', 1)
-                (entity_name, field_name) = rest.split('.', 1)
-            else:
-                (entity_name, field_name) = column_name.split('.', 1)
-                endpoint_name = None
+            try:
+                if '$' in column_name:
+                    (endpoint_name, rest) = column_name.split('$', 1)
+                    (entity_name, field_name) = rest.split('.', 1)
+                else:
+                    (entity_name, field_name) = column_name.split('.', 1)
+                    endpoint_name = None
+            except ValueError as error:
+                # split failed for some reason
+                msg = f"Failed to format discrepancy table column name '{column_name}': {error}"
+
+                raise DataProviderToolkitRuntimeError(msg) from error
 
             entity = data_block.get_entity_class_name_map()[entity_name]
             field = getattr(entity, field_name)
@@ -594,11 +671,15 @@ class DataProviderToolkit:
         )
 
         # run processors
-        # @todo catch pyarrow.lib.ArrowInvalid
-        processed_endpoint_tables = cls._process_remapped_endpoint_tables(
-            endpoint_field_preprocessors,
-            remapped_endpoint_tables,
-        )
+        try:
+            processed_endpoint_tables = cls._process_remapped_endpoint_tables(
+                endpoint_field_preprocessors,
+                remapped_endpoint_tables,
+            )
+        except pyarrow.lib.ArrowInvalid as error:
+            msg = f"Error running data provider preprocessors: {error}"
+
+            raise DataProviderToolkitRuntimeError(msg) from error
 
         return processed_endpoint_tables
 
@@ -715,8 +796,9 @@ class DataProviderToolkit:
         # Verify all key columns exist in the target table
         for col in (key_columns + preserved_column_names):
             if col not in table.column_names:
-                # @todo custom exception
-                raise ValueError(f"Column '{col}' not found in table.")
+                msg = f"DataProviderToolkit._clear_table_rows_by_primary_key error: Column '{col}' not found in table."
+
+                raise DataProviderToolkitRuntimeError(msg)
 
         if table.num_rows == 0 or clear_rows_primary_keys.num_rows == 0:
             return table
@@ -742,10 +824,11 @@ class DataProviderToolkit:
                 keys=key_columns,
                 join_type="inner"
             )
-        except pyarrow.ArrowInvalid:
+        except pyarrow.lib.ArrowInvalid as error:
             # Propagate error if types are incompatible
-            # @todo custom exception
-            raise
+            msg = f"DataProviderToolkit._clear_table_rows_by_primary_key error: {error}"
+
+            raise DataProviderToolkitRuntimeError(msg) from error
 
         if matches.num_rows == 0:
             return table_combined
@@ -817,10 +900,9 @@ class DataProviderToolkit:
                     newlines_in_values=True,
                 ),
             )
-        except pyarrow.ArrowInvalid as error:
+        except pyarrow.lib.ArrowInvalid as error:
             msg = f"Error parsing JSON string: {error}"
 
-            # @todo catch this
             raise DataProviderParsingError(msg) from error
 
         return table

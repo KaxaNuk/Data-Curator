@@ -32,10 +32,17 @@ class MarketDailyDataBlock(BaseDataBlock):
         consolidated_table: ConsolidatedFieldsTable,
         common_field_data: FieldValueToEntityMap,
     ) -> MarketData:
-        # @todo throw error if not sorted by date asc
-
         common_market_fields = common_field_data[MarketData]
         identifier = common_market_fields[MarketData.main_identifier]
+
+        if not cls.validate_column_sorted_without_duplicates(
+            consolidated_table[
+                cls.get_field_qualified_name(cls.clock_sync_field)
+            ]
+        ):
+            msg = f"Market data unordered or duplicate dates received for {identifier.identifier}"
+
+            raise EntityProcessingError(msg)
 
         try:
             daily_rows = cls.pack_rows_entities_from_consolidated_table(

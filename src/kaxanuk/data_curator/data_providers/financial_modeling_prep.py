@@ -443,8 +443,9 @@ class FinancialModelingPrep(
                 table_merge_fields=[],
                 predominant_order_descending=True
             )
-        except DataProviderToolkitRuntimeError as error:
-            # @todo handle
+        except DataProviderToolkitRuntimeError:
+            # reraise as problem is with data provider logic
+
             raise
 
         consolidated_dividend_table = consolidated_dividend_table_descending[::-1]
@@ -580,6 +581,10 @@ class FinancialModelingPrep(
             logging.getLogger(__name__).warning(msg)
 
             return empty_fundamental_data
+        except DataProviderToolkitRuntimeError:
+            # reraise as problem is with data provider logic
+
+            raise
 
         # @todo put this try catch logic in a context manager ??
         # @todo trim based on start and end dates
@@ -592,8 +597,9 @@ class FinancialModelingPrep(
                 ],
                 predominant_order_descending=True
             )
-        except DataProviderToolkitRuntimeError as error:
-            # @todo handle
+        except DataProviderToolkitRuntimeError:
+            # reraise as problem is with data provider logic
+
             raise
 
         except DataProviderMultiEndpointCommonDataOrderError:
@@ -913,8 +919,9 @@ class FinancialModelingPrep(
                 table_merge_fields=[],
                 predominant_order_descending=True
             )
-        except DataProviderToolkitRuntimeError as error:
-            # @todo handle
+        except DataProviderToolkitRuntimeError:
+            # reraise as problem is with data provider logic
+
             raise
 
         consolidated_split_table = consolidated_split_table_descending[::-1]

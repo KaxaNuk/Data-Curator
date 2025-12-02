@@ -62,7 +62,6 @@ class BaseDataBlock:
     _entity_class_name_map: EntityToClassNameMap
     _ordered_entity_relations: OrderedEntityRelationMap
 
-
     def __init_subclass__(
         cls,
         /,
@@ -193,6 +192,27 @@ class BaseDataBlock:
         )
 
         return row_entities
+
+    @staticmethod
+    def validate_column_sorted_without_duplicates(
+        column: pyarrow.Array,
+        *,
+        descending: bool = False,
+    ) -> bool:
+        if len(column) <= 1:
+            return True
+
+        # Get two shifted views of the column
+        if descending:
+            # For descending: each element should be > the next (strict inequality for no duplicates)
+            return pyarrow.compute.all(
+                pyarrow.compute.greater(column[:-1], column[1:])
+            ).as_py()
+        else:
+            # For ascending: each element should be < the next (strict inequality for no duplicates)
+            return pyarrow.compute.all(
+                pyarrow.compute.less(column[:-1], column[1:])
+            ).as_py()
 
     @staticmethod
     def _calculate_ordered_entity_relation_map(

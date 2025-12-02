@@ -43,10 +43,17 @@ class FundamentalsDataBlock(BaseDataBlock):
         consolidated_table: ConsolidatedFieldsTable,
         common_field_data: FieldValueToEntityMap,
     ) -> FundamentalData:
-        # @todo throw error if not sorted by date asc
-
         common_market_fields = common_field_data[FundamentalData]
         identifier = common_market_fields[FundamentalData.main_identifier]
+
+        if not cls.validate_column_sorted_without_duplicates(
+            consolidated_table[
+                cls.get_field_qualified_name(cls.clock_sync_field)
+            ]
+        ):
+            msg = f"Fundamental data unordered or duplicate dates received for {identifier.identifier}"
+
+            raise EntityProcessingError(msg)
 
         try:
             period_rows = cls.pack_rows_entities_from_consolidated_table(
