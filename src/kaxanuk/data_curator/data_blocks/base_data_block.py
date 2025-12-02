@@ -24,19 +24,15 @@ from kaxanuk.data_curator.exceptions import (
 
 
 type ConsolidatedFieldsTable = pyarrow.Table    # table with consolidated data from all endpoints of a data block
-type EntityBuildingTables = dict[type[BaseDataEntity], pyarrow.Table]
+type EntityBuildingTables = dict[
+    type[BaseDataEntity],
+    pyarrow.Table
+]
 type EntityToClassNameMap = dict[
     str,
     type[BaseDataEntity]
 ]
 type EntityField = types.MemberDescriptorType   # entity field
-type EntityRelationsHierarchy = dict[
-    tuple[
-        types.MemberDescriptorType | None,
-        type[BaseDataEntity]
-    ],
-    EntityRelationsHierarchy | None
-]
 type FieldValueToEntityMap = dict[
     type[BaseDataEntity],
     dict[EntityField, typing.Any]

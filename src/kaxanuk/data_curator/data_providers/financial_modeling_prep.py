@@ -49,9 +49,10 @@ from kaxanuk.data_curator.exceptions import (
 )
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
 from kaxanuk.data_curator.services.data_provider_toolkit import (
-    EndpointFieldMap,
+    DataBlockEndpointTagMap,
     DataProviderFieldPreprocessors,
     DataProviderToolkit,
+    EndpointFieldMap,
     PreprocessedFieldMapping,
 )
 
@@ -342,7 +343,7 @@ class FinancialModelingPrep(
         self.api_key = api_key
 
     @classmethod
-    def get_data_block_endpoint_tag_map(cls):
+    def get_data_block_endpoint_tag_map(cls) -> DataBlockEndpointTagMap:
         return {
             DividendsDataBlock: cls._dividend_data_endpoint_map,
             FundamentalsDataBlock: cls._fundamental_data_endpoint_map,

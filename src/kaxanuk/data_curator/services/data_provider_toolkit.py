@@ -50,6 +50,10 @@ type EndpointFieldMap = dict[
         TagName | PreprocessedFieldMapping
     ]
 ]
+type DataBlockEndpointTagMap = dict[
+    type[BaseDataBlock],
+    EndpointFieldMap
+]
 type EndpointColumnRemaps = dict[
     Endpoint,
     dict[
