@@ -941,7 +941,7 @@ class FinancialModelingPrep(
         self,
     ) -> bool | None:
         """
-        Validate that the API key used to init the class is valid, by making a test request
+        Validate that the API key used to init the class is valid, by making a test request.
 
         Returns
         -------

@@ -26,7 +26,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement element-wise addition operator for DataColumn objects
+        Implement element-wise addition operator for DataColumn objects.
 
         Parameters
         ----------
@@ -129,7 +129,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement element-wise floor division operator for DataColumn objects
+        Implement element-wise floor division operator for DataColumn objects.
 
         Parameters
         ----------
@@ -331,7 +331,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement element-wise modulo operator for DataColumn objects
+        Implement element-wise modulo operator for DataColumn objects.
 
         Parameters
         ----------
@@ -356,7 +356,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement element-wise multiplication operator for DataColumn objects
+        Implement element-wise multiplication operator for DataColumn objects.
 
         Any row involving null returns null.
 
@@ -437,7 +437,7 @@ class DataColumn:
 
     def __neg__(self) -> 'DataColumn':
         """
-        Negate the entire contents of the DataColumn
+        Negate the entire contents of the DataColumn.
 
         Returns
         -------
@@ -449,7 +449,7 @@ class DataColumn:
 
     def __pos__(self):
         """
-        Do nothing. Placeholder for possible future functionality
+        Do nothing. Placeholder for possible future functionality.
 
         Raises
         ------
@@ -463,7 +463,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement reflected element-wise addition operator for DataColumn objects
+        Implement reflected element-wise addition operator for DataColumn objects.
 
         Parameters
         ----------
@@ -513,7 +513,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement element-wise floor division operator for DataColumn objects
+        Implement element-wise floor division operator for DataColumn objects.
 
         Parameters
         ----------
@@ -541,7 +541,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement reflected element-wise modulo operator for DataColumn objects
+        Implement reflected element-wise modulo operator for DataColumn objects.
 
         Parameters
         ----------
@@ -567,7 +567,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement reflected element-wise multiplication operator for DataColumn objects
+        Implement reflected element-wise multiplication operator for DataColumn objects.
 
         Any row involving null returns null.
 
@@ -619,7 +619,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement reflected element-wise subtraction operator for DataColumn objects
+        Implement reflected element-wise subtraction operator for DataColumn objects.
 
         Parameters
         ----------
@@ -666,7 +666,7 @@ class DataColumn:
         /
     ) -> 'DataColumn':
         """
-        Implement element-wise division operator for DataColumn objects
+        Implement element-wise division operator for DataColumn objects.
 
         Parameters
         ----------
