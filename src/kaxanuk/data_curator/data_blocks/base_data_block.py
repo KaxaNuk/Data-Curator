@@ -4,6 +4,7 @@ import decimal
 import types
 import typing
 
+import networkx
 import pyarrow
 import pyarrow.types
 
@@ -56,7 +57,7 @@ class BaseDataBlock:
     main_entity: type[BaseDataEntity]
     # map of entity prefixes to entity classes:
     # (must all be unique, with the shortest one being the common prefix to all the other ones)
-    prefix_to_entity_map: dict[str, type[BaseDataEntity]]
+    prefix_entity_map: dict[str, type[BaseDataEntity]]
 
     _entity_class_name_map: EntityToClassNameMap
     _ordered_entity_relations: OrderedEntityRelationMap
@@ -79,20 +80,43 @@ class BaseDataBlock:
 
                 raise TypeError(msg)
 
-        # @todo validate prefix_to_entity_map
+        # @todo validate prefix_entity_map
 
         cls._entity_class_name_map = {
             entity.__name__: entity
-            for (_, entity) in cls.prefix_to_entity_map.items()
+            for (_, entity) in cls.prefix_entity_map.items()
         }
-
-        # @todo set main_prefix ???
 
     @staticmethod
     def convert_value_to_type(
         original_value: typing.Any,
         to_type: typing.Any
     ) -> typing.Any:
+        """
+        Convert a value to the specified type.
+
+        Handles nullable types (Union with None), date conversions, Decimal conversions,
+        and basic primitive type conversions. Returns None for nullable types when the
+        original value is None or empty string.
+
+        Parameters
+        ----------
+        original_value
+            The value to be converted.
+        to_type
+            The target type to convert to. May be a Union type with None.
+
+        Returns
+        -------
+            The converted value in the target type, or None if applicable.
+
+        Raises
+        ------
+        DataBlockTypeConversionNotImplementedError
+            If conversion to the target type is not implemented.
+        DataBlockTypeConversionRuntimeError
+            If conversion fails during runtime.
+        """
         try:
             type_is_nullable = (
                 isinstance(to_type, types.UnionType)
@@ -147,6 +171,26 @@ class BaseDataBlock:
         /,
         table: ConsolidatedFieldsTable,
     ) -> EntityBuildingTables:
+        """
+        Create separate entity tables from a consolidated fields table.
+
+        Splits a table with columns in 'Entity.field' format into individual tables
+        per entity class, where each table contains only the fields for that entity.
+
+        Parameters
+        ----------
+        table
+            Table with columns in the format 'EntityName.field_name'.
+
+        Returns
+        -------
+            Dictionary mapping entity classes to their corresponding tables.
+
+        Raises
+        ------
+        DataBlockIncorrectMappingTypeError
+            If column names are invalid or reference non-existent entities/fields.
+        """
         return cls._split_consolidated_table_into_entity_tables(
             table,
             cls._entity_class_name_map,
@@ -154,11 +198,38 @@ class BaseDataBlock:
 
     @classmethod
     def get_entity_class_name_map(cls) -> EntityToClassNameMap:
+        """
+        Get the mapping of entity class names to entity classes.
+
+        Returns
+        -------
+            Dictionary mapping entity class names (as strings) to entity class types.
+        """
         return cls._entity_class_name_map
 
     # @todo unit tests
     @staticmethod
     def get_field_qualified_name(field: EntityField) -> str:
+        """
+        Get the fully qualified name of an entity field.
+
+        Constructs the qualified name in the format 'EntityName.field_name' from
+        a field descriptor.
+
+        Parameters
+        ----------
+        field
+            Entity field descriptor.
+
+        Returns
+        -------
+            Qualified field name in the format 'EntityName.field_name'.
+
+        Raises
+        ------
+        DataBlockError
+            If the field descriptor is missing required attributes.
+        """
         if (
             not hasattr(field, '__objclass__')
             or not hasattr(field, '__name__')
@@ -178,6 +249,32 @@ class BaseDataBlock:
         str,
         BaseDataEntity | None
     ]:
+        """
+        Pack entity instances from a consolidated table into hierarchical entities.
+
+        Converts a consolidated table into a dictionary of fully populated entity instances,
+        organized by the clock sync field value. Handles entity dependencies, type conversions,
+        and nullable entity fields.
+
+        Parameters
+        ----------
+        table
+            Table with columns in the format 'EntityName.field_name'.
+
+        Returns
+        -------
+            Dictionary mapping clock sync field values (as ISO format strings) to
+            instantiated main entity objects or None for rows with all null data.
+
+        Raises
+        ------
+        DataBlockEntityPackingError
+            If type conversion fails during entity creation.
+        DataBlockIncorrectPackingStructureError
+            If the entity structure or clock sync field is invalid.
+        DataBlockRowEntityErrorGroup
+            If entity instantiation fails for one or more rows.
+        """
         if not getattr(cls, '_ordered_entity_relations', None):
             cls._ordered_entity_relations = cls._calculate_ordered_entity_relation_map(
                 cls.main_entity
@@ -210,6 +307,23 @@ class BaseDataBlock:
         *,
         descending: bool = False,
     ) -> bool:
+        """
+        Validate that a column is sorted without duplicate values.
+
+        Checks whether the column values are in strictly ascending (default) or
+        strictly descending order with no duplicate values.
+
+        Parameters
+        ----------
+        column
+            PyArrow array to validate.
+        descending
+            If True, validate descending order; otherwise ascending order.
+
+        Returns
+        -------
+            True if the column is sorted without duplicates, False otherwise.
+        """
         if len(column) <= 1:
             return True
 
@@ -235,22 +349,30 @@ class BaseDataBlock:
         Entities without BaseDataEntity subclass fields come first, followed by
         entities whose subclass fields have already been added as keys.
 
+        Parameters
+        ----------
+        main_entity
+            The main entity class from which to derive all related entities.
+
         Returns
         -------
-            OrderedEntityRelationMap: Dict where keys are entity classes in dependency order,
+            Dictionary where keys are entity classes in dependency order,
             and values are either an empty dict (no subclass fields) or a dict mapping field
             descriptors to their corresponding entity types.
         """
-        # Collect all entities and their direct BaseDataEntity field dependencies
-        all_entities_with_deps: dict[
+        # Build a directed graph where edges point from entities to their dependencies
+        dependency_graph = networkx.DiGraph()
+
+        # Track entity dependencies (field -> entity mappings)
+        entity_dependencies: dict[
             type[BaseDataEntity],
             dict[EntityField, type[BaseDataEntity]]
         ] = {}
 
+        # Discover all entities and their dependencies using BFS
         entities_to_process: list[type[BaseDataEntity]] = [main_entity]
         processed_entities: set[type[BaseDataEntity]] = set()
 
-        # First pass: collect all entities and their direct dependencies
         while entities_to_process:
             entity_class = entities_to_process.pop(0)
 
@@ -262,6 +384,10 @@ class BaseDataBlock:
             if not dataclasses.is_dataclass(entity_class):
                 continue
 
+            # Add entity as a node in the graph
+            dependency_graph.add_node(entity_class)
+
+            # Collect dependencies for this entity
             entity_deps: dict[EntityField, type[BaseDataEntity]] = {}
             fields = dataclasses.fields(entity_class)
 
@@ -279,45 +405,25 @@ class BaseDataBlock:
                 field_descriptor = getattr(entity_class, field.name)
                 entity_deps[field_descriptor] = inner_type
 
-                # Add this entity to be processed
+                # Add edge from entity to its dependency (entity depends on inner_type)
+                dependency_graph.add_edge(entity_class, inner_type)
+
+                # Queue dependency for processing
                 if inner_type not in processed_entities:
                     entities_to_process.append(inner_type)
 
-            # Store the dependencies (empty dict if no dependencies)
-            all_entities_with_deps[entity_class] = entity_deps
+            entity_dependencies[entity_class] = entity_deps
 
-        # Second pass: topologically sort entities by dependencies
-        result: OrderedEntityRelationMap = {}
-        remaining_entities = set(all_entities_with_deps.keys())
+        # Perform topological sort (reversed because edges point to dependencies)
+        # Entities with no dependencies come first
+        sorted_entities = list(networkx.topological_sort(dependency_graph))
+        sorted_entities.reverse()
 
-        while remaining_entities:
-            # Find entities whose dependencies are all already in result
-            ready_entities: list[type[BaseDataEntity]] = []
-
-            for entity in remaining_entities:
-                deps = all_entities_with_deps[entity]
-
-                if not deps:
-                    # No dependencies, this entity is ready
-                    ready_entities.append(entity)
-                else:
-                    # Check if all dependencies are already in result
-                    all_deps_ready = all(
-                        dep_entity in result
-                        for dep_entity in deps.values()
-                    )
-                    if all_deps_ready:
-                        ready_entities.append(entity)
-
-            if not ready_entities:
-                # This shouldn't happen with valid data (would indicate circular dependency)
-                break
-
-            # Add ready entities to result in the order they were first encountered
-            # (which preserves definition order due to our BFS collection above)
-            for entity in ready_entities:
-                result[entity] = all_entities_with_deps[entity]
-                remaining_entities.remove(entity)
+        # Build result in topological order
+        result: OrderedEntityRelationMap = {
+            entity: entity_dependencies[entity]
+            for entity in sorted_entities
+        }
 
         return result
 
@@ -332,6 +438,36 @@ class BaseDataBlock:
         str,
         BaseDataEntity | None
     ]:
+        """
+        Pack entity instances in hierarchical order from entity tables.
+
+        Processes entities in dependency order, instantiating child entities before
+        parents and linking them through field references. Handles nullable entities
+        by creating None values when all non-key fields are None.
+
+        Parameters
+        ----------
+        clock_sync_field
+            Entity field used as the master clock for synchronization.
+        ordered_entities
+            Topologically sorted map of entities and their dependencies.
+        entity_table_map
+            Dictionary mapping entity classes to their data tables.
+
+        Returns
+        -------
+            Dictionary mapping clock sync field values (as ISO format strings) to
+            instantiated entity objects or None.
+
+        Raises
+        ------
+        DataBlockIncorrectPackingStructureError
+            If the ordered entities structure is invalid or missing the clock sync field.
+        DataBlockEntityPackingError
+            If type conversion fails during entity creation.
+        DataBlockRowEntityErrorGroup
+            If entity instantiation fails for one or more rows.
+        """
         # clock_type = BaseDataBlock._unwrap_optional_type(
         #     clock_sync_field.__objclass__.__annotations__[clock_sync_field.__name__]
         # )
@@ -452,6 +588,29 @@ class BaseDataBlock:
         table: ConsolidatedFieldsTable,
         entity_class_name_map: EntityToClassNameMap,
     ) -> EntityBuildingTables:
+        """
+        Split a consolidated table into separate entity tables.
+
+        Parses column names in 'EntityName.field_name' format and groups columns
+        by entity class, validating that all referenced entities and fields exist.
+
+        Parameters
+        ----------
+        table
+            Table with columns in the format 'EntityName.field_name'.
+        entity_class_name_map
+            Dictionary mapping entity class names to entity class types.
+
+        Returns
+        -------
+            Dictionary mapping entity classes to their corresponding tables.
+
+        Raises
+        ------
+        DataBlockIncorrectMappingTypeError
+            If column names are malformed, reference non-existent entities,
+            entity classes are not dataclasses, or fields don't exist on entities.
+        """
         entity_columns: dict[type[BaseDataEntity], dict[str, pyarrow.Array]] = {}
         for column_name in table.column_names:
             try:
@@ -497,7 +656,21 @@ class BaseDataBlock:
     def _unwrap_dict_value_type(
         type_hint: type
     ) -> type | tuple[type, ...]:
-        """Extract the value type from dict[K, V]."""
+        """
+        Extract the value type from a dict type annotation.
+
+        Extracts the second type argument from a dict generic type annotation.
+        Returns the type hint unchanged if it's not a dict type.
+
+        Parameters
+        ----------
+        type_hint
+            Type hint to unwrap.
+
+        Returns
+        -------
+            The value type from dict[key, value], or the original type hint if not a dict.
+        """
         origin_type = typing.get_origin(type_hint)
         if origin_type is dict:
             args = typing.get_args(type_hint)
@@ -509,25 +682,23 @@ class BaseDataBlock:
         return type_hint
 
     @staticmethod
-    def _unwrap_list_type(
-        type_hint: type
-    ) -> type | tuple[type, ...]:
-        """Extract the element type from list[T]."""
-        origin_type = typing.get_origin(type_hint)
-        if origin_type is list:
-            args = typing.get_args(type_hint)
-            if args:
-                if len(args) == 1:
-                    return args[0]
-                else:
-                    return tuple(args)
-
-        # If it's not a generic list, return the type_hint as-is
-        return type_hint
-
-    @staticmethod
     def _unwrap_optional_type(type_hint: type) -> type | tuple[type, ...]:
-        """Extract the actual type from Optional/Union with None."""
+        """
+        Extract the actual type from Optional/Union with None.
+
+        Removes NoneType from Union type annotations to get the underlying type(s).
+        Returns the type hint unchanged if it's not a Union type.
+
+        Parameters
+        ----------
+        type_hint
+            Type hint to unwrap.
+
+        Returns
+        -------
+            The non-None type from Optional[T] or Union[T, None], tuple of types
+            if multiple non-None types exist, or the original type hint if not a Union.
+        """
         origin_type = typing.get_origin(type_hint)
         if (
             origin_type is typing.Union

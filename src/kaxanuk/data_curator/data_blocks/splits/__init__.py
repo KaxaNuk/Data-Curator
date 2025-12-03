@@ -23,7 +23,7 @@ class SplitsDataBlock(BaseDataBlock):
     # groups by identifier type; only one identifier type per configuration is supported:
     grouping_identifier_field = SplitData.main_identifier
     main_entity = SplitData
-    prefix_to_entity_map: typing.Final = {
+    prefix_entity_map: typing.Final = {
         's': SplitDataRow,
     }
 

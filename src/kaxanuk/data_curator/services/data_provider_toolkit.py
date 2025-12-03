@@ -10,6 +10,7 @@ import pyarrow.compute
 import pyarrow.json
 
 from kaxanuk.data_curator.data_blocks.base_data_block import (
+    ConsolidatedFieldsTable,
     BaseDataBlock,
     EntityField,
 )
@@ -113,10 +114,42 @@ type ProcessedEndpointTables = dict[    # endpoint tables that have been remappe
 class DataProviderFieldPreprocessors:
     @staticmethod
     def convert_millions_to_units(column: DataColumn) -> DataColumn:
+        """
+        Convert financial values from millions to individual units.
+
+        Takes a column containing values expressed in millions and multiplies
+        each value by 1,000,000 to convert to standard units.
+
+        Parameters
+        ----------
+        column
+            Column containing values in millions
+
+        Returns
+        -------
+        DataColumn
+            Column with values converted to standard units
+        """
         return column * 1_000_000
 
     @staticmethod
     def cast_datetime_to_date(column: DataColumn) -> DataColumn:
+        """
+        Cast datetime values to date type.
+
+        Converts a column containing datetime values to date32 type,
+        discarding time information.
+
+        Parameters
+        ----------
+        column
+            Column containing datetime values
+
+        Returns
+        -------
+        DataColumn
+            Column with values cast to date type
+        """
         return DataColumn.load(
             column.to_pyarrow().cast(pyarrow.date32())
         )
@@ -144,6 +177,29 @@ class DataProviderToolkit:
         key_column_names: list[str],
         preserved_column_names: list[str],
     ) -> EndpointTables:
+        """
+        Clear discrepant rows from processed endpoint tables.
+
+        Identifies rows in processed endpoint tables that match primary keys
+        in the discrepancy table and sets non-preserved column values to null
+        for those rows across all endpoints.
+
+        Parameters
+        ----------
+        discrepancy_table
+            Table containing primary keys of discrepant rows
+        processed_endpoint_tables
+            Dictionary mapping endpoints to their processed tables
+        key_column_names
+            List of primary key column names
+        preserved_column_names
+            List of names of columns to preserve (not set to null)
+
+        Returns
+        -------
+        EndpointTables
+            Dictionary mapping endpoints to tables with discrepant rows cleared
+        """
         # get table with just the primary keys
         primary_keys_table = discrepancy_table.select(key_column_names)
         # for each endpoint table
@@ -163,13 +219,44 @@ class DataProviderToolkit:
         processed_endpoint_tables: ProcessedEndpointTables,
         table_merge_fields: list[EntityField],
         predominant_order_descending: bool = False,
-    ) -> pyarrow.Table:
+    ) -> ConsolidatedFieldsTable:
+        """
+        Consolidate multiple endpoint tables into a single unified table.
+
+        Merges processed tables from different endpoints by their primary keys,
+        preserving row order and coalescing values from different endpoints.
+        Validates that common columns across endpoints have consistent values
+        for shared rows.
+
+        Parameters
+        ----------
+        processed_endpoint_tables
+            Dictionary mapping endpoints to their processed tables
+        table_merge_fields
+            List of entity fields to use as primary keys for merging
+        predominant_order_descending
+            Whether the predominant ordering is descending
+
+        Returns
+        -------
+        ConsolidatedFieldsTable
+            Consolidated table containing all data from all endpoints
+
+        Raises
+        ------
+        DataProviderMultiEndpointCommonDataDiscrepancyError
+            When common columns have inconsistent values across endpoints
+        DataProviderToolkitRuntimeError
+            When no tables contain required primary key columns
+        """
         # if single table, return it
         if not processed_endpoint_tables:
             return pyarrow.table({})
 
         if len(processed_endpoint_tables) == 1:
-            return next(iter(processed_endpoint_tables.values()))
+            return next(
+                iter(processed_endpoint_tables.values())
+            )
 
         # get primary key ordering
         key_column_names = [
@@ -418,6 +505,27 @@ class DataProviderToolkit:
         /,
         endpoint_json_strings: dict[Endpoint, str],
     ) -> EndpointTables:
+        """
+        Create endpoint tables from JSON string representations.
+
+        Parses JSON strings for each endpoint and converts them into PyArrow
+        tables, handling both JSON arrays and newline-delimited JSON formats.
+
+        Parameters
+        ----------
+        endpoint_json_strings
+            Dictionary mapping endpoints to their JSON string data
+
+        Returns
+        -------
+        EndpointTables
+            Dictionary mapping endpoints to parsed PyArrow tables
+
+        Raises
+        ------
+        DataProviderToolkitRuntimeError
+            When JSON parsing fails for any endpoint
+        """
         try:
             endpoint_tables = {
                 endpoint: cls._create_table_from_json_string(json_string)
@@ -435,7 +543,31 @@ class DataProviderToolkit:
         common_rows_table: pyarrow.Table,
         subset_rows_table: pyarrow.Table,
     ) -> pyarrow.BooleanArray | None:
-        """Joins by column position, not name."""
+        """
+        Identify rows in common table that are missing from subset table.
+
+        Performs a null-safe comparison between two tables by column position
+        to determine which rows in the common table are not present in the
+        subset table.
+
+        Parameters
+        ----------
+        common_rows_table
+            Table containing all potential rows
+        subset_rows_table
+            Table containing a subset of rows to check against
+
+        Returns
+        -------
+        pyarrow.BooleanArray or None
+            Boolean mask where True indicates missing rows, or None if
+            common table is empty
+
+        Raises
+        ------
+        DataProviderToolkitArgumentError
+            When tables have different number of columns
+        """
         if common_rows_table.num_columns != subset_rows_table.num_columns:
             msg = "Tables have different number of columns"
 
@@ -601,6 +733,26 @@ class DataProviderToolkit:
         output_column_renames: list[str] | dict[str, str],
         csv_separator: str = "|",
     ) -> str:
+        """
+        Format a discrepancy table as CSV string for output.
+
+        Converts a PyArrow table to CSV format with renamed columns and
+        specified separator, preserving datetime object formatting.
+
+        Parameters
+        ----------
+        discrepancy_table
+            Table containing discrepancy data to format
+        output_column_renames
+            New column names as positional list or mapping dictionary
+        csv_separator
+            Character to use as CSV field separator
+
+        Returns
+        -------
+        str
+            CSV-formatted string representation of the table
+        """
         renamed_table = discrepancy_table.rename_columns(output_column_renames)
 
         # convert to pandas, preserving all datetime settings
@@ -620,6 +772,35 @@ class DataProviderToolkit:
         endpoint_field_map: EndpointFieldMap,
         csv_separator: str = "|",
     ) -> str:
+        """
+        Format an endpoint discrepancy table with provider-specific naming.
+
+        Converts internal column naming (entity.field format) to provider
+        endpoint tag format (endpoint.tag) and outputs as CSV string.
+
+        Parameters
+        ----------
+        data_block
+            Data block class defining the entity structure
+        discrepancy_table
+            Table containing endpoint discrepancy data
+        endpoints_enum
+            Enum defining available endpoints
+        endpoint_field_map
+            Mapping from entity fields to provider tags per endpoint
+        csv_separator
+            Character to use as CSV field separator
+
+        Returns
+        -------
+        str
+            CSV-formatted string with provider-specific column names
+
+        Raises
+        ------
+        DataProviderToolkitRuntimeError
+            When column name parsing fails
+        """
         column_names = discrepancy_table.column_names
         column_new_names = []
 
@@ -664,6 +845,37 @@ class DataProviderToolkit:
         endpoint_field_map: EndpointFieldMap,
         endpoint_tables: EndpointTables,
     ) -> ProcessedEndpointTables:
+        """
+        Process raw endpoint tables through remapping and preprocessing.
+
+        Transforms provider-specific tag names to entity.field format and
+        applies configured preprocessor functions to compute derived fields
+        from raw data.
+
+        Parameters
+        ----------
+        data_block
+            Data block class defining the entity structure
+        endpoint_field_map
+            Mapping from entity fields to provider tags per endpoint
+        endpoint_tables
+            Dictionary mapping endpoints to raw data tables
+
+        Returns
+        -------
+        ProcessedEndpointTables
+            Dictionary mapping endpoints to processed tables with standardized
+            column names and computed fields
+
+        Raises
+        ------
+        DataProviderToolkitArgumentError
+            When data_block is not a BaseDataBlock subclass
+        DataProviderToolkitNoDataError
+            When all provided tables are empty
+        DataProviderToolkitRuntimeError
+            When preprocessor execution fails
+        """
         if not issubclass(data_block, BaseDataBlock):
             msg = "data_block parameter needs to be a subclass of BaseDataBlock"
 
@@ -721,20 +933,32 @@ class DataProviderToolkit:
         endpoints: list[Endpoint],
     ) -> pyarrow.Table:
         """
-        Create a debug table containing all rows with discrepancies in any common column
-        across endpoints, showing values from all relevant endpoints.
+        Create a debug table showing all discrepancy details.
 
-        Args:
-            discrepant_columns: Set of column names that have discrepancies
-            discrepant_rows_mask: Boolean mask indicating rows with any discrepancy
-            primary_keys_table: Table with primary key columns
-            key_column_names: List of primary key column names
-            aligned_tables: List of aligned tables (one per endpoint)
-            endpoints: List of endpoint names in same order as aligned_tables
+        Builds a table containing primary keys and values from all endpoints
+        for columns and rows where discrepancies were detected, enabling
+        detailed analysis of data inconsistencies.
+
+        Parameters
+        ----------
+        discrepant_columns
+            Set of column names with detected discrepancies
+        discrepant_rows_mask
+            Boolean mask indicating rows containing any discrepancy
+        primary_keys_table
+            Table containing primary key columns
+        key_column_names
+            List of primary key column names
+        aligned_tables
+            List of tables aligned to common primary keys
+        endpoints
+            List of endpoint identifiers corresponding to aligned_tables
 
         Returns
         -------
-            A pyarrow.Table with primary keys and all discrepant column values from all endpoints
+        pyarrow.Table
+            Table with primary keys and endpoint-specific columns for all
+            discrepant data points
         """
         # Start building output table with primary keys
         output_columns = {}
@@ -760,6 +984,28 @@ class DataProviderToolkit:
     def _calculate_endpoint_column_remaps(
         endpoint_field_map: EndpointFieldMap
     ) -> EndpointColumnRemaps:
+        """
+        Calculate column name remapping from provider tags to entity fields.
+
+        Analyzes the endpoint field map to determine how provider-specific
+        tag names should be renamed to standardized entity.field format,
+        handling both simple mappings and preprocessed field mappings.
+
+        Parameters
+        ----------
+        endpoint_field_map
+            Mapping from entity fields to provider tags per endpoint
+
+        Returns
+        -------
+        EndpointColumnRemaps
+            Dictionary mapping endpoints to tag-based column rename operations
+
+        Raises
+        ------
+        DataProviderIncorrectMappingTypeError
+            When a mapping value has an invalid type
+        """
         endpoint_column_remaps: EndpointColumnRemaps = {}
 
         for (endpoint, field_mappings) in endpoint_field_map.items():
@@ -803,6 +1049,22 @@ class DataProviderToolkit:
     def _calculate_endpoint_field_preprocessors(
         endpoint_field_map: EndpointFieldMap
     ) -> EndpointFieldPreprocessors:
+        """
+        Extract preprocessor configurations from endpoint field map.
+
+        Filters the endpoint field map to retain only fields that require
+        preprocessing through PreprocessedFieldMapping objects.
+
+        Parameters
+        ----------
+        endpoint_field_map
+            Mapping from entity fields to provider tags per endpoint
+
+        Returns
+        -------
+        EndpointFieldPreprocessors
+            Dictionary mapping endpoints to fields requiring preprocessing
+        """
         return {
             endpoint: {
                 entity_field: mapping_value
@@ -818,6 +1080,31 @@ class DataProviderToolkit:
         clear_rows_primary_keys: PrimaryKeyTable,
         preserved_column_names: list[str],
     ) -> pyarrow.Table:
+        """
+        Set non-preserved column values to null for specified primary keys.
+
+        Identifies rows in the table matching the provided primary keys and
+        nullifies all column values except those in the preserved list.
+
+        Parameters
+        ----------
+        table
+            Table to clear rows from
+        clear_rows_primary_keys
+            Table containing primary keys of rows to clear
+        preserved_column_names
+            List of names of columns to keep unchanged
+
+        Returns
+        -------
+        pyarrow.Table
+            Table with specified rows cleared in non-preserved columns
+
+        Raises
+        ------
+        DataProviderToolkitRuntimeError
+            When required columns are missing or type incompatibilities exist
+        """
         key_columns = clear_rows_primary_keys.column_names
 
         # Verify all key columns exist in the target table
@@ -827,7 +1114,10 @@ class DataProviderToolkit:
 
                 raise DataProviderToolkitRuntimeError(msg)
 
-        if table.num_rows == 0 or clear_rows_primary_keys.num_rows == 0:
+        if (
+            table.num_rows == 0
+            or clear_rows_primary_keys.num_rows == 0
+        ):
             return table
 
         # Combine chunks to ensure we work with flat Arrays, avoiding 'Mask must be array' errors
@@ -898,6 +1188,27 @@ class DataProviderToolkit:
 
     @staticmethod
     def _create_table_from_json_string(json_string: str) -> pyarrow.Table:
+        """
+        Parse JSON string into a PyArrow table.
+
+        Converts JSON data from array or newline-delimited format into a
+        PyArrow table, handling format normalization automatically.
+
+        Parameters
+        ----------
+        json_string
+            JSON string in array or newline-delimited format
+
+        Returns
+        -------
+        pyarrow.Table
+            Parsed table, or empty table if input is empty
+
+        Raises
+        ------
+        DataProviderParsingError
+            When JSON parsing fails due to invalid format
+        """
         # PyArrow expects newline-delimited JSON, not JSON arrays
         # Convert JSON array to NDJSON with simple text transformation
         json_string_stripped = json_string.strip()
@@ -909,7 +1220,11 @@ class DataProviderToolkit:
             # Remove outer array brackets
             json_string_stripped = json_string_stripped[1:-1].strip()
             # Replace pattern of }\n  { or },\n  { with }\n{
-            json_string_stripped = re.sub(r'\}\s*,\s*\{', '}\n{', json_string_stripped)
+            json_string_stripped = re.sub(
+                r'\}\s*,\s*\{',
+                '}\n{',
+                json_string_stripped
+            )
 
         if len(json_string_stripped) == 0:
             return pyarrow.table({})
@@ -940,6 +1255,33 @@ class DataProviderToolkit:
         *,
         predominant_order_descending: bool = False,
     ) -> PrimaryKeyTable:
+        """
+        Merge primary key subsets while preserving consistent ordering.
+
+        Combines multiple tables containing subsets of primary keys into a
+        single unified ordering using topological sorting to maintain order
+        consistency across all input subsets.
+
+        Parameters
+        ----------
+        primary_key_subsets_tables
+            List of tables each containing a subset of primary keys
+        predominant_order_descending
+            Whether the predominant sort order is descending (True) or ascending (False)
+
+        Returns
+        -------
+        PrimaryKeyTable
+            Table containing merged primary keys in consistent order
+
+        Raises
+        ------
+        DataProviderToolkitRuntimeError
+            When tables have incompatible schemas, contain duplicates, or
+            have no columns
+        DataProviderMultiEndpointCommonDataOrderError
+            When input orderings create circular dependencies
+        """
         if not primary_key_subsets_tables:
             return pyarrow.table({})
 
@@ -1051,6 +1393,25 @@ class DataProviderToolkit:
         endpoint_field_preprocessors: EndpointFieldPreprocessors,
         remapped_endpoint_tables: EndpointTables,
     ) -> EndpointTables:
+        """
+        Apply preprocessor functions to remapped endpoint tables.
+
+        Executes configured preprocessor chains on input columns to compute
+        derived field values, replacing raw input columns with processed
+        outputs.
+
+        Parameters
+        ----------
+        endpoint_field_preprocessors
+            Dictionary mapping endpoints to field preprocessing configurations
+        remapped_endpoint_tables
+            Dictionary mapping endpoints to tables with remapped columns
+
+        Returns
+        -------
+        EndpointTables
+            Dictionary mapping endpoints to tables with preprocessed fields
+        """
         processed_tables: EndpointTables = {}
 
         for (endpoint, table) in remapped_endpoint_tables.items():
@@ -1128,6 +1489,25 @@ class DataProviderToolkit:
         endpoint_column_remaps: EndpointColumnRemaps,
         endpoint_tables: EndpointTables,
     ) -> EndpointTables:
+        """
+        Rename table columns from provider tags to entity field format.
+
+        Transforms column names in endpoint tables according to the provided
+        remapping configuration, duplicating columns when needed for
+        preprocessor inputs.
+
+        Parameters
+        ----------
+        endpoint_column_remaps
+            Dictionary mapping endpoints to tags to column renames
+        endpoint_tables
+            Dictionary mapping endpoints to raw tables
+
+        Returns
+        -------
+        EndpointTables
+            Dictionary mapping endpoints to tables with remapped column names
+        """
         remapped_tables: EndpointTables = {}
 
         for endpoint, table in endpoint_tables.items():

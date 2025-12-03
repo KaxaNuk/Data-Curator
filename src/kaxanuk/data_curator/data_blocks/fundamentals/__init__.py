@@ -31,7 +31,7 @@ class FundamentalsDataBlock(BaseDataBlock):
     grouping_identifier_field = FundamentalData.main_identifier
     main_entity = FundamentalData
     # main_prefix = 'f'
-    prefix_to_entity_map: typing.Final = {
+    prefix_entity_map: typing.Final = {
         'f': FundamentalDataRow,
         'fbs': FundamentalDataRowBalanceSheet,
         'fcf': FundamentalDataRowCashFlow,
