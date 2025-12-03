@@ -978,7 +978,7 @@ class FinancialModelingPrep(
         Get the account paid plan status of the FMP account.
 
         Returns
-        ----------
+        -------
         Whether the account is a paid account plan or not
         """
         return cls._is_paid_account_plan

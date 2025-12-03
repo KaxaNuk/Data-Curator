@@ -8,11 +8,11 @@ import pyarrow
 
 
 class DataCuratorError(Exception):
-    """ Base class for all Data Curator exceptions """
+    """Base class for all Data Curator exceptions"""
 
 
 class DataCuratorUnhandledError(DataCuratorError):
-    """ Base class for exceptions that are not meant to be handled, but should crash the system """
+    """Base class for exceptions that are not meant to be handled, but should crash the system"""
 
 
 class ApiEndpointError(DataCuratorError):

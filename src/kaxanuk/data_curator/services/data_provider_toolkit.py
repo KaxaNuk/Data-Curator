@@ -435,7 +435,7 @@ class DataProviderToolkit:
         common_rows_table: pyarrow.Table,
         subset_rows_table: pyarrow.Table,
     ) -> pyarrow.BooleanArray | None:
-        """ joins by column position, not name """
+        """Joins by column position, not name"""
         if common_rows_table.num_columns != subset_rows_table.num_columns:
             msg = "Tables have different number of columns"
 
@@ -732,7 +732,8 @@ class DataProviderToolkit:
             aligned_tables: List of aligned tables (one per endpoint)
             endpoints: List of endpoint names in same order as aligned_tables
 
-        Returns:
+        Returns
+        -------
             A pyarrow.Table with primary keys and all discrepant column values from all endpoints
         """
         # Start building output table with primary keys

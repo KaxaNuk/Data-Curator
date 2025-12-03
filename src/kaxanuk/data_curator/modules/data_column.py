@@ -452,7 +452,7 @@ class DataColumn:
         Do nothing. Placeholder for possible future functionality
 
         Raises
-        -------
+        ------
         NotImplementedError
         """
         raise NotImplementedError

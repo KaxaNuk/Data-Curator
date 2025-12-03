@@ -235,7 +235,8 @@ class BaseDataBlock:
         Entities without BaseDataEntity subclass fields come first, followed by
         entities whose subclass fields have already been added as keys.
 
-        Returns:
+        Returns
+        -------
             OrderedEntityRelationMap: Dict where keys are entity classes in dependency order,
             and values are either an empty dict (no subclass fields) or a dict mapping field
             descriptors to their corresponding entity types.
