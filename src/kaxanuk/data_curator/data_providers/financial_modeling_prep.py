@@ -656,7 +656,6 @@ class FinancialModelingPrep(
         # @todo filter rows where filing date is before period end date
 
         # catch empty income statement rows
-
         missing_income_statement_rows_mask = DataProviderToolkit.find_common_table_missing_rows_mask(
             consolidated_fundamental_table.select([
                     FundamentalsDataBlock.get_field_qualified_name(
@@ -1001,10 +1000,3 @@ class FinancialModelingPrep(
         if not cls._is_paid_account_plan:
             msg = "Free FMP account plan limitation: fundamental data is only available for the most recent periods."
             logging.getLogger(__name__).warning(msg)
-
-
-
-
-
-
-
