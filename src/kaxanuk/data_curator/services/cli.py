@@ -1,5 +1,5 @@
 """
-The cli entry points are defined and implemented here
+The cli entry points are defined and implemented here.
 """
 import enum
 import errno
@@ -51,14 +51,14 @@ class UpdateFormats(enum.StrEnum):
 @click.group()
 def cli() -> None:
     """
-    Entrypoint required for the click library, body can be empty
+    Entrypoint required for the click library, body can be empty.
     """
 
 
 @cli.command()
 def autorun() -> None:
     """
-    Install the required files and directories for the Excel entry script if missing, otherwise run the system
+    Install the required files and directories for the Excel entry script if missing, otherwise run the system.
     """
     entry_script_path = pathlib.Path(ENTRY_SCRIPT_DEFAULT_NAME)
     if not pathlib.Path.exists(entry_script_path):
@@ -108,7 +108,7 @@ def init(
     entry_script: str
 ) -> None:
     """
-    Create the files and folders required by the specified configuration format
+    Create the files and folders required by the specified configuration format.
 
     \f
 
@@ -160,7 +160,7 @@ def init(
 )
 def run(entry_script_locations: list[str]) -> None:
     """
-    Run the system
+    Run the system.
 
     If passed any string arguments, each one needs to be the path to an entry script (or to a directory with a
     __main__.py entry script) that will be executed. If called without arguments, the entry script in the current
@@ -212,7 +212,7 @@ def run(entry_script_locations: list[str]) -> None:
 )
 def update(config_format: str) -> None:
     """
-    Update the configuration files for the specified format
+    Update the configuration files for the specified format.
 
     \f
 
@@ -251,7 +251,7 @@ def update(config_format: str) -> None:
 
 def _install_excel_files(entry_script: str) -> None:
     """
-    Install the directories and files required for the Excel entry script
+    Install the directories and files required for the Excel entry script.
 
     Parameters
     ----------
@@ -348,7 +348,7 @@ def _find_templates_dir() -> str | None:
 
 def _run_entry_script(entry_script_path: pathlib.Path) -> subprocess.CompletedProcess:
     """
-    Run the entry script on entry_script_path
+    Run the entry script on entry_script_path.
 
     Parameters
     ----------
@@ -371,7 +371,7 @@ def _run_entry_script(entry_script_path: pathlib.Path) -> subprocess.CompletedPr
 
 def _safe_rename_file(path: pathlib.Path) -> None:
     """
-    Rename a file appending a number to the filename, increasing it if it collides with an existing file
+    Rename a file appending a number to the filename, increasing it if it collides with an existing file.
 
     Parameters
     ----------
@@ -402,7 +402,7 @@ def _update_entry_script(
     destination_entry_script_name: str,
 ) -> None:
     """
-    Install the source entry script into the current directory, renaming any existing file beforehand
+    Install the source entry script into the current directory, renaming any existing file beforehand.
 
     Parameters
     ----------
@@ -444,7 +444,7 @@ def _update_entry_script(
 
 def _update_excel_files() -> None:
     """
-    Update the Excel configuration files into the Config subdirectory, renaming any existing file beforehand
+    Update the Excel configuration files into the Config subdirectory, renaming any existing file beforehand.
 
     Raises
     ------
@@ -469,7 +469,7 @@ def _update_excel_files() -> None:
 
 def _validate_filename(filename: str) -> bool:
     """
-    Validate the filename to ensure it can be used in any supported file system
+    Validate the filename to ensure it can be used in any supported file system.
 
     Parameters
     ----------
