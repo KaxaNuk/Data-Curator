@@ -437,9 +437,9 @@ class DataProviderToolkit:
     ) -> pyarrow.BooleanArray | None:
         """ joins by column position, not name """
         if common_rows_table.num_columns != subset_rows_table.num_columns:
-            raise DataProviderToolkitArgumentError(
-                "Tables have different number of columns: "
-            )
+            msg = "Tables have different number of columns"
+
+            raise DataProviderToolkitArgumentError(msg)
 
         if common_rows_table.num_rows == 0:
             return None

@@ -51,7 +51,9 @@ class SplitsDataBlock(BaseDataBlock):
                 consolidated_table
             )
         except DataBlockEntityPackingError as error:
-            raise EntityProcessingError("Split data processing error") from error
+            msg = "Split data processing error"
+
+            raise EntityProcessingError(msg) from error
 
         try:
             if not split_rows:

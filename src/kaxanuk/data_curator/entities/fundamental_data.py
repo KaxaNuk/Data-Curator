@@ -36,13 +36,17 @@ class FundamentalData(BaseDataEntity):
             )
             for row in self.rows.values()
         ):
-            raise EntityValueError("Incorrect data in FundamentalData.rows")
+            msg = "Incorrect data in FundamentalData.rows"
+
+            raise EntityValueError(msg)
 
         if any(
             not validator.is_date_pattern(key)
             for key in self.rows
         ):
-            raise EntityValueError("FundamentalData.rows keys need to be date strings in 'YYYY-MM-DD' format")
+            msg = "FundamentalData.rows keys need to be date strings in 'YYYY-MM-DD' format"
+
+            raise EntityValueError(msg)
 
         if not list(self.rows.keys()) == sorted(self.rows.keys()):
             raise FundamentalDataUnsortedRowDatesError

@@ -32,10 +32,14 @@ class DividendData(BaseDataEntity):
             not validator.is_date_pattern(key)
             for key in self.rows
         ):
-            raise EntityValueError("DividendData.rows keys need to be date strings in 'YYYY-MM-DD' format")
+            msg = "DividendData.rows keys need to be date strings in 'YYYY-MM-DD' format"
+
+            raise EntityValueError(msg)
 
         if not all(
             isinstance(row, DividendDataRow)
             for row in self.rows.values()
         ):
-            raise EntityValueError("Incorrect data in DividendData.rows")
+            msg = "Incorrect data in DividendData.rows"
+
+            raise EntityValueError(msg)

@@ -138,10 +138,9 @@ class ExcelConfigurator(ConfiguratorInterface):
                 len(market_data_provider_name) < 1
                 or market_data_provider_name not in data_providers
             ):
+                msg = "Market data provider selected in configuration file not found"
 
-                raise ConfigurationError(
-                    "Market data provider selected in configuration file not found"
-                )
+                raise ConfigurationError(msg)
 
             if issubclass(
                 data_providers[market_data_provider_name]['class'],
@@ -174,10 +173,9 @@ class ExcelConfigurator(ConfiguratorInterface):
                 len(fundamental_data_provider_name) < 1
                 or fundamental_data_provider_name not in data_providers
             ):
+                msg = "Fundamental data provider selected in configuration file not found"
 
-                raise ConfigurationError(
-                    "Fundamental data provider selected in configuration file not found"
-                )
+                raise ConfigurationError(msg)
 
             else:
                 fundamental_data_provider = data_providers[
@@ -217,8 +215,9 @@ class ExcelConfigurator(ConfiguratorInterface):
                     msg = f"API key validation succeded for {provider.__class__.__name__}"
                     logging.getLogger(__name__).info(msg)
                 elif is_api_key_valid is not None:
+                    msg = f"Invalid API key for {provider.__class__.__name__}"
 
-                    raise ConfigurationError(f"Invalid API key for {provider.__class__.__name__}")
+                    raise ConfigurationError(msg)
 
             self._output_handler = output_handlers[
                 sheet_key_values['General']['output_format']
@@ -548,10 +547,9 @@ class ExcelConfigurator(ConfiguratorInterface):
         ConfigurationHandlerError
         """
         if level_name not in cls.CONFIGURATION_LOGGER_LEVELS:
+            msg = "Invalid logger level in parameters file"
 
-            raise ConfigurationHandlerError(
-                "Invalid logger level in parameters file"
-            )
+            raise ConfigurationHandlerError(msg)
 
         return cls.CONFIGURATION_LOGGER_LEVELS[level_name]
 

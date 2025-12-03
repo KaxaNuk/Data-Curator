@@ -176,7 +176,7 @@ select = [
     "BLE",  # flake8-blind-except: check for blind, catch-all except: and except Exception: statements
     #"D",    # pydocstyle documentation errors
     "DTZ",  # flake8-datetimez: ban the usage of unsafe naive datetime class
-    #"EM",   # flake8-errmsg: helps format nice error messages
+    "EM",   # flake8-errmsg: helps format nice error messages
     "G",    # flake8-logging-format: validate (lack of) logging format strings
     "INT",  # flake8_gettext: check for incorrect use of gettext
     "PERF", # perflint: detect performance anti-patterns
@@ -215,6 +215,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__main__.py" = ["E402", "I"]    # Module level import not at top of file
+#"docs/**" = [
+#    "ANN",      # @todo reenable for docs logic cleanup
+#]
 "docs/source/conf.py" = ["A001"] #  Variable `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
 "src/kaxanuk/data_curator/data_providers/data_provider_interface.py" = [
     # @todo: we'll probably be able to remove following ignore on async http:

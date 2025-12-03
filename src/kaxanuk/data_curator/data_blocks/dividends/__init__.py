@@ -51,7 +51,9 @@ class DividendsDataBlock(BaseDataBlock):
                 consolidated_table
             )
         except DataBlockEntityPackingError as error:
-            raise EntityProcessingError("Dividend data processing error") from error
+            msg = "Dividend data processing error"
+
+            raise EntityProcessingError(msg) from error
 
         try:
             if not dividend_rows:

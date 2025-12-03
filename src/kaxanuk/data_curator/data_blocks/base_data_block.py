@@ -9,8 +9,9 @@ import pyarrow.types
 
 from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
-    DataBlockIncorrectMappingTypeError,
+    DataBlockError,
     DataBlockEntityPackingError,
+    DataBlockIncorrectMappingTypeError,
     DataBlockIncorrectPackingStructureError,
     DataBlockRowEntityErrorGroup,
     DataBlockTypeConversionError,
@@ -74,7 +75,9 @@ class BaseDataBlock:
                 not var.startswith("_")
                 and not hasattr(cls, var)
             ):
-                raise TypeError(f"{cls.__name__} must define '{var}' class variable")
+                msg = f"{cls.__name__} must define '{var}' class variable"
+
+                raise TypeError(msg)
 
         # @todo validate prefix_to_entity_map
 
@@ -160,10 +163,9 @@ class BaseDataBlock:
             not hasattr(field, '__objclass__')
             or not hasattr(field, '__name__')
         ):
-            # @todo raise specific error
-            raise ValueError(
-                "Field descriptor is missing required attributes '__objclass__' or '__name__'"
-            )
+            msg = "Field descriptor is missing required attributes '__objclass__' or '__name__'"
+
+            raise DataBlockError( msg)
 
         return f"{field.__objclass__.__name__}.{field.__name__}"
 

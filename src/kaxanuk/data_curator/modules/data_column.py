@@ -900,9 +900,9 @@ class DataColumn:
         A new DataColumn containing the result of the logical AND comparison.
         """
         if len(columns) < 1:
-            raise DataColumnParameterError(
-                "DataColumn.boolean_and() requires at least one parameter"
-            )
+            msg = "DataColumn.boolean_and() requires at least one parameter"
+
+            raise DataColumnParameterError(msg)
 
         recasted_columns = [
             column.to_pyarrow().cast(
@@ -948,9 +948,9 @@ class DataColumn:
         A new DataColumn containing the result of the logical OR comparison.
         """
         if len(columns) < 1:
-            raise DataColumnParameterError(
-                "DataColumn.boolean_or() requires at least one parameter"
-            )
+            msg = "DataColumn.boolean_or() requires at least one parameter"
+
+            raise DataColumnParameterError(msg)
 
         recasted_columns = [
             column.to_pyarrow().cast(

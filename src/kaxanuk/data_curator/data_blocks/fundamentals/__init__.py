@@ -62,7 +62,9 @@ class FundamentalsDataBlock(BaseDataBlock):
                 consolidated_table
             )
         except DataBlockEntityPackingError as error:
-            raise EntityProcessingError("Fundametal data processing error") from error
+            msg = "Fundametal data processing error"
+
+            raise EntityProcessingError(msg) from error
 
         try:
             if not period_rows:

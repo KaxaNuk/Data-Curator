@@ -51,7 +51,9 @@ class MarketDailyDataBlock(BaseDataBlock):
                 consolidated_table
             )
         except DataBlockEntityPackingError as error:
-            raise EntityProcessingError("Market data processing error") from error
+            msg = "Market data processing error"
+
+            raise EntityProcessingError(msg) from error
 
         try:
             if not daily_rows:

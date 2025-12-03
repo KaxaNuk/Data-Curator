@@ -74,17 +74,23 @@ class ColumnBuilder:
         self.calculation_modules = calculation_modules
 
         if not isinstance(configuration, Configuration):
-            raise InjectedDependencyError("Incorrect configuration passed to ColumnBuilder")
+            msg = "Incorrect configuration passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.configuration = configuration
 
         if not isinstance(market_data, MarketData):
-            raise InjectedDependencyError("Incorrect market_data passed to ColumnBuilder")
+            msg = "Incorrect market_data passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.market_data = market_data
 
         if not isinstance(fundamental_data, FundamentalData):
-            raise InjectedDependencyError("Incorrect fundamental_data passed to ColumnBuilder")
+            msg = "Incorrect fundamental_data passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.infilled_fundamental_data_rows = self._infill_data(
             iter(market_data.daily_rows.keys()),
@@ -92,7 +98,9 @@ class ColumnBuilder:
         )
 
         if not isinstance(dividend_data, DividendData):
-            raise InjectedDependencyError("Incorrect dividend_data passed to ColumnBuilder")
+            msg = "Incorrect dividend_data passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.expanded_dividend_data_rows = self._expand_dated_factors(
             iter(market_data.daily_rows.keys()),
@@ -102,7 +110,9 @@ class ColumnBuilder:
         )
 
         if not isinstance(split_data, SplitData):
-            raise InjectedDependencyError("Incorrect split_data passed to ColumnBuilder")
+            msg = "Incorrect split_data passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.expanded_split_data_rows = self._expand_dated_factors(
             iter(market_data.daily_rows.keys()),

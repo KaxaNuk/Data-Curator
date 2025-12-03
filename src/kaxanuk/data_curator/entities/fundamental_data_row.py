@@ -48,28 +48,38 @@ class FundamentalDataRow(BaseDataEntity):
             raise EntityTypeError(msg)
 
         if not CURRENCY_PATTERN.fullmatch(self.reported_currency):
-            raise EntityValueError("Incorrect data in FundamentalDataRow.currency")
+            msg = "Incorrect data in FundamentalDataRow.currency"
+
+            raise EntityValueError(msg)
 
         if not FISCAL_YEAR_PATTERN.fullmatch(str(self.fiscal_year)):
-            raise EntityValueError("Incorrect data in FundamentalDataRow.fiscal_year")
+            msg = "Incorrect data in FundamentalDataRow.fiscal_year"
+
+            raise EntityValueError(msg)
 
         if self.fiscal_period not in FUNDAMENTAL_DATA_ROW_PERIODS:
             possible_periods = ', '.join(FUNDAMENTAL_DATA_ROW_PERIODS)
-            raise EntityValueError(
-                f"Incorrect FundamentalDataRow.fiscal_period, expecting one of: {possible_periods}"
-            )
+            msg = f"Incorrect FundamentalDataRow.fiscal_period, expecting one of: {possible_periods}"
+
+            raise EntityValueError(msg)
 
         if (
             self.balance_sheet is not None
             and not isinstance(self.balance_sheet, FundamentalDataRowBalanceSheet)
         ):
-            raise EntityValueError("Incorrect FundamentalDataRow.balance_sheet format")
+            msg = "Incorrect FundamentalDataRow.balance_sheet format"
+
+            raise EntityValueError(msg)
 
         if (
             self.cash_flow is not None
             and not isinstance(self.cash_flow, FundamentalDataRowCashFlow)
         ):
-            raise EntityValueError("Incorrect FundamentalDataRow.cash_flow format")
+            msg = "Incorrect FundamentalDataRow.cash_flow format"
+
+            raise EntityValueError(msg)
 
         if not isinstance(self.income_statement, FundamentalDataRowIncomeStatement):
-            raise EntityValueError("Incorrect FundamentalDataRow.income_statement format")
+            msg = "Incorrect FundamentalDataRow.income_statement format"
+
+            raise EntityValueError(msg)

@@ -32,10 +32,14 @@ class SplitData(BaseDataEntity):
             not validator.is_date_pattern(key)
             for key in self.rows
         ):
-            raise EntityValueError("SplitData.rows keys need to be date strings in 'YYYY-MM-DD' format")
+            msg = "SplitData.rows keys need to be date strings in 'YYYY-MM-DD' format"
+
+            raise EntityValueError(msg)
 
         if not all(
             isinstance(row, SplitDataRow)
             for row in self.rows.values()
         ):
-            raise EntityValueError("Incorrect data in SplitData.rows")
+            msg = "Incorrect data in SplitData.rows"
+
+            raise EntityValueError(msg)

@@ -1279,9 +1279,10 @@ def c_last_twelve_months_net_income(
     elif configuration.period == 'annual':
         output = fis_net_income
     else:
-        raise CalculationError(
-            f"calculations - last_twelve_months_net_income failed, unexpected period type: {configuration.period}"
-        )
+        msg = f"calculations - last_twelve_months_net_income failed, unexpected period type: {configuration.period}"
+
+        raise CalculationError(msg)
+
     return output
 
 
@@ -1342,9 +1343,10 @@ def c_last_twelve_months_revenue(
     elif configuration.period == 'annual':
         output = fis_revenues
     else:
-        raise CalculationError(
-            f"calculations - last_twelve_months_revenue failed, unexpected period type: {configuration.period}"
-        )
+        msg = f"calculations - last_twelve_months_revenue failed, unexpected period type: {configuration.period}"
+
+        raise CalculationError(msg)
+
     return output
 
 
