@@ -619,7 +619,7 @@ class DataProviderToolkit:
         endpoints_enum: enum.StrEnum,
         endpoint_field_map: EndpointFieldMap,
         csv_separator: str = "|",
-    ):
+    ) -> str:
         column_names = discrepancy_table.column_names
         column_new_names = []
 
@@ -896,7 +896,7 @@ class DataProviderToolkit:
         return pyarrow.Table.from_pydict(new_columns)
 
     @staticmethod
-    def _create_table_from_json_string(json_string: str):
+    def _create_table_from_json_string(json_string: str) -> pyarrow.Table:
         # PyArrow expects newline-delimited JSON, not JSON arrays
         # Convert JSON array to NDJSON with simple text transformation
         json_string_stripped = json_string.strip()

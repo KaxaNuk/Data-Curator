@@ -336,7 +336,7 @@ def log_returns(column: DataColumn) -> DataColumn:
     return DataColumn.load(output_array)
 
 
-def replace_infinite_with_none(column) -> DataColumn:
+def replace_infinite_with_none(column: DataColumn) -> DataColumn:
     """
     Replace -inf and inf values in a DataColumn with None.
 

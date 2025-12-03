@@ -1,6 +1,8 @@
 """
 Package containing all our custom Exceptions.
 """
+import datetime
+import typing
 
 import pyarrow
 
@@ -62,8 +64,8 @@ class DataBlockIncorrectMappingTypeError(DataCuratorError):
 class DataBlockEntityPackingError(DataCuratorError):
     def __init__(
         self,
-        entity_name,
-        clock_sync_value,
+        entity_name: str,
+        clock_sync_value: datetime.date,
     ):
         self.entity_name = entity_name
         self.clock_sync_value = clock_sync_value
@@ -83,8 +85,8 @@ class DataBlockTypeConversionError(DataCuratorError):
 class DataBlockTypeConversionRuntimeError(DataCuratorError):
     def __init__(
         self,
-        conversion_type,
-        original_value
+        conversion_type: str,
+        original_value: typing.Any
     ):
         self.conversion_type = conversion_type
         self.original_value = original_value
@@ -96,8 +98,8 @@ class DataBlockTypeConversionRuntimeError(DataCuratorError):
 class DataBlockTypeConversionNotImplementedError(DataBlockTypeConversionError):
     def __init__(
         self,
-        conversion_type,
-        original_value
+        conversion_type: str,
+        original_value: typing.Any
     ):
         self.conversion_type = conversion_type
         self.original_value = original_value

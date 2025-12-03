@@ -3,13 +3,13 @@ Debugger tools.
 """
 
 
-def init(debug_port):
+def init(debug_port: int) -> None:
     """
     Initialize the Pycharm Remote Server debugger.
 
     Parameters
     ----------
-    debug_port: int
+    debug_port
         The port the debugger server is listening on
 
     Returns

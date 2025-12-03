@@ -1181,17 +1181,17 @@ class DataColumn:
     @classmethod
     def load(
         cls,
-        data: typing.Iterable | 'DataColumn',
-        dtype=None
+        data: 'typing.Iterable | DataColumn',
+        dtype: pyarrow.DataType = None
     ) -> 'DataColumn':
         """
         Wrap data (pyarrow.Array, pandas.Series, Iterable) in a new DataColumn object.
 
         Parameters
         ----------
-        data : typing.Iterable | 'DataColumn'
+        data
             the data to be wrapped
-        dtype : pyarroy.DataType
+        dtype
             the type of the underlying pyarrow.Array
 
         Returns
@@ -1348,14 +1348,14 @@ class DataColumn:
 
     def _return_null_column_on_null_operand(
         self,
-        operand
+        operand: 'DataColumn | int | float | pyarrow.Scalar'
     ) -> typing.Union['DataColumn', None]:
         """
         Return a null column if self.array is a null column or the operand is a null column or scalar, None otherwise.
 
         Parameters
         ----------
-        operand : DataColumn | Int | Float | pyarrow.Scalar
+        operand
 
         Returns
         -------

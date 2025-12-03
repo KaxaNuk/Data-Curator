@@ -63,7 +63,7 @@ class BaseDataBlock:
     def __init_subclass__(
         cls,
         /,
-        **kwargs
+        **kwargs    # noqa: ANN003
     ):
         super().__init_subclass__(**kwargs)
 
@@ -172,7 +172,10 @@ class BaseDataBlock:
         cls,
         /,
         table: ConsolidatedFieldsTable,
-    ):
+    ) -> dict[
+        str,
+        BaseDataEntity | None
+    ]:
         if not getattr(cls, '_ordered_entity_relations', None):
             cls._ordered_entity_relations = cls._calculate_ordered_entity_relation_map(
                 cls.main_entity
@@ -322,7 +325,10 @@ class BaseDataBlock:
         clock_sync_field: EntityField,
         ordered_entities: OrderedEntityRelationMap,
         entity_table_map: EntityBuildingTables,
-    ):
+    ) -> dict[
+        str,
+        BaseDataEntity | None
+    ]:
         # clock_type = BaseDataBlock._unwrap_optional_type(
         #     clock_sync_field.__objclass__.__annotations__[clock_sync_field.__name__]
         # )

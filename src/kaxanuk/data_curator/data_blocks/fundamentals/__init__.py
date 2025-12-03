@@ -156,7 +156,7 @@ class FundamentalsDataBlock(BaseDataBlock):
         return reordered_mask.combine_chunks()
 
     @staticmethod
-    def _calculate_array_posterior_duplicates_mask(array: pyarrow.Array):
+    def _calculate_array_posterior_duplicates_mask(array: pyarrow.Array) -> pyarrow.BooleanArray:
         # Get value counts for all values in the array
         value_counts = pyarrow.compute.value_counts(array)
 
@@ -197,7 +197,10 @@ class FundamentalsDataBlock(BaseDataBlock):
                 mask.append(False)
                 seen.add(value_primitive)
 
-        return pyarrow.array(mask, type=pyarrow.bool_())
+        return pyarrow.array(
+            mask,
+            type=pyarrow.bool_()
+        )
 
 
 __all__ = [

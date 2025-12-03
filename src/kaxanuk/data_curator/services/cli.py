@@ -56,7 +56,7 @@ def cli() -> None:
 
 
 @cli.command()
-def autorun():
+def autorun() -> None:
     """
     Install the required files and directories for the Excel entry script if missing, otherwise run the system
     """
@@ -106,7 +106,7 @@ def autorun():
 def init(
     config_format: str,
     entry_script: str
-):
+) -> None:
     """
     Create the files and folders required by the specified configuration format
 
@@ -158,7 +158,7 @@ def init(
     nargs=-1,   # variable number of arguments
     type=str,
 )
-def run(entry_script_locations):
+def run(entry_script_locations: list[str]) -> None:
     """
     Run the system
 
@@ -210,7 +210,7 @@ def run(entry_script_locations):
         f.value for f in UpdateFormats
     ),
 )
-def update(config_format: str):
+def update(config_format: str) -> None:
     """
     Update the configuration files for the specified format
 
@@ -249,7 +249,7 @@ def update(config_format: str):
                 raise click.ClickException(msg) from error
 
 
-def _install_excel_files(entry_script: str):
+def _install_excel_files(entry_script: str) -> None:
     """
     Install the directories and files required for the Excel entry script
 
@@ -400,7 +400,7 @@ def _safe_rename_file(path: pathlib.Path) -> None:
 def _update_entry_script(
     source_entry_script_name: str,
     destination_entry_script_name: str,
-):
+) -> None:
     """
     Install the source entry script into the current directory, renaming any existing file beforehand
 
@@ -442,7 +442,7 @@ def _update_entry_script(
     )
 
 
-def _update_excel_files():
+def _update_excel_files() -> None:
     """
     Update the Excel configuration files into the Config subdirectory, renaming any existing file beforehand
 

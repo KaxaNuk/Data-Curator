@@ -286,7 +286,7 @@ class ExcelConfigurator(ConfiguratorInterface):
     def _extract_column_values(
         cls,
         column: tuple[openpyxl.cell.cell.Cell, ...]
-    ):
+    ) -> list[str]:
         """
         Extract the values of an openpyxl column as a string list.
 

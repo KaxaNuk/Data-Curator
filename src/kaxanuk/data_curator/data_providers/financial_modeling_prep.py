@@ -988,7 +988,7 @@ class FinancialModelingPrep(
         cls,
         *,
         is_paid_account_plan: bool,
-    ):
+    ) -> None:
         """
         Set the account paid plan status of the FMP account.
 

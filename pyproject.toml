@@ -170,7 +170,7 @@ select = [
     "W",    # pycodestyle warnings
 
     # Rigorous linters:
-    #"ANN",  # flake8-annotations: detect the absence of PEP 3107-style function annotations
+    "ANN",  # flake8-annotations: detect the absence of PEP 3107-style function annotations
     "ASYNC",# check for bad async / asyncio practices
     "B",    # bugbear: find likely bugs and design problems
     "BLE",  # flake8-blind-except: check for blind, catch-all except: and except Exception: statements
