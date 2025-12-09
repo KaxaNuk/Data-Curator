@@ -266,11 +266,11 @@ class FinancialModelingPrep(
                 ['date'],
                 [DataProviderFieldPreprocessors.cast_datetime_to_date]
             ),
-            MarketDataDailyRow.open: 'adjOpen',
-            MarketDataDailyRow.high: 'adjHigh',
-            MarketDataDailyRow.low: 'adjLow',
-            MarketDataDailyRow.close: 'adjClose',
-            MarketDataDailyRow.volume: 'volume',
+            MarketDataDailyRow.open_dividend_and_split_adjusted: 'adjOpen',
+            MarketDataDailyRow.high_dividend_and_split_adjusted: 'adjHigh',
+            MarketDataDailyRow.low_dividend_and_split_adjusted: 'adjLow',
+            MarketDataDailyRow.close_dividend_and_split_adjusted: 'adjClose',
+            MarketDataDailyRow.volume_dividend_and_split_adjusted: 'volume',
         },
         Endpoints.MARKET_DATA_DAILY_SPLIT_ADJUSTED: {
             MarketDataDailyRow.date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
@@ -289,11 +289,11 @@ class FinancialModelingPrep(
                 ['date'],
                 [DataProviderFieldPreprocessors.cast_datetime_to_date]
             ),
-            MarketDataDailyRow.open_dividend_and_split_adjusted: 'adjOpen',
-            MarketDataDailyRow.high_dividend_and_split_adjusted: 'adjHigh',
-            MarketDataDailyRow.low_dividend_and_split_adjusted: 'adjLow',
-            MarketDataDailyRow.close_dividend_and_split_adjusted: 'adjClose',
-            MarketDataDailyRow.volume_dividend_and_split_adjusted: 'volume',
+            MarketDataDailyRow.open: 'adjOpen',
+            MarketDataDailyRow.high: 'adjHigh',
+            MarketDataDailyRow.low: 'adjLow',
+            MarketDataDailyRow.close: 'adjClose',
+            MarketDataDailyRow.volume: 'volume',
         },
     }
 
