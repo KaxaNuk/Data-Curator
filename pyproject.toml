@@ -24,9 +24,7 @@ dependencies = [    # dev dependencies are in the [tool.pdm.dev-dependencies] se
     "openpyxl>=3.1.5",
     "packaging>=24.2",
     "pandas>=2.2.3",
-    "pandas_ta>=0.3.14b",
     "pyarrow>=18.0",
-    "ta>=0.11",
     "python-dotenv>=1.0.1",
 ]
 dynamic = ["version"]
