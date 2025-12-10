@@ -13,6 +13,7 @@ What you’ll find here:
 - :ref:`feature_naming` – naming conventions and patterns for defining output features
 - :ref:`custom_calculations` – how to write your own functions using `DataColumn`
 - :ref:`data_column` – our core column abstraction that powers all arithmetic and logical operations
+- :ref:`data_provider_toolkit` – core toolkit for data mapping, consolidation, and discrepancy handling
 - :ref:`CLI_Documentation` – command-line entry points and utilities
 
 .. toctree::
@@ -23,4 +24,5 @@ What you’ll find here:
    feature_naming
    custom_calcs
    data_column
+   data_provider_toolkit
    cli

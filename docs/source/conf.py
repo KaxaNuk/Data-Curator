@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from sphinx.application import Sphinx
 
 sys.path.insert(0, str(Path().resolve()))
 sys.path.insert(1, str((Path('..') / '..' / 'templates' / 'data_curator' / 'Config').resolve()))
@@ -96,7 +97,8 @@ html_context = {
 }
 
 # -- Custom CSS and JS --------------------------------------------------------
-def setup(app):
+#def setup(app):
+def setup(app: Sphinx) -> None:
     app.add_css_file('sidebar.css')
     app.add_css_file('general.css')
     app.add_css_file('content.css')
