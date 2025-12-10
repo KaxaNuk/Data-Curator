@@ -3,6 +3,7 @@ import pytest
 import csv
 import pathlib
 
+
 @pytest.fixture(scope="module")
 def example_adjusted_price_ratio_calculation():
     base_dir = pathlib.Path(__file__).parent
@@ -21,9 +22,12 @@ def example_adjusted_price_ratio_calculation():
             for header in reader.fieldnames
         }
         if not columns:
-            raise RuntimeError('No data in adjusted_price_ratio_calculation.csv')
+            msg = 'No data in adjusted_price_ratio_calculation.csv'
+
+            raise RuntimeError(msg)
 
         return columns
+
 
 @pytest.fixture(scope="module")
 def example_chakin_money_flow_calculation():
@@ -42,10 +46,14 @@ def example_chakin_money_flow_calculation():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in chakin_money_flow.csv')
+            msg = 'No data in chakin_money_flow.csv'
+
+            raise RuntimeError(msg)
 
         return columns
+
 
 @pytest.fixture(scope="module")
 def example_log_returns_and_annualized_volatility():
@@ -65,10 +73,14 @@ def example_log_returns_and_annualized_volatility():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in log_returns_annualized_volatility.csv')
+            msg = 'No data in log_returns_annualized_volatility.csv'
+
+            raise RuntimeError(msg)
 
         return columns
+
 
 @pytest.fixture(scope="module")
 def example_relative_strength_index():
@@ -88,9 +100,12 @@ def example_relative_strength_index():
             for header in reader.fieldnames
         }
         if not columns:
-            raise RuntimeError('No data in relative_strength_index')
+            msg = 'No data in relative_strength_index'
+
+            raise RuntimeError(msg)
 
         return columns
+
 
 @pytest.fixture(scope="module")
 def example_sales_to_price():
@@ -110,10 +125,14 @@ def example_sales_to_price():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in sales_to_price.csv')
+            msg = 'No data in sales_to_price.csv'
+
+            raise RuntimeError(msg)
 
         return columns
+
 
 @pytest.fixture(scope="module")
 def example_adjusted_price_ratio():
@@ -133,10 +152,14 @@ def example_adjusted_price_ratio():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in adjusted_price_ratio.csv')
+            msg = 'No data in adjusted_price_ratio.csv'
+
+            raise RuntimeError(msg)
 
         return columns
+
 
 @pytest.fixture(scope="module")
 def example_moving_average():
@@ -156,10 +179,14 @@ def example_moving_average():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in moving_average.csv')
+            msg = 'No data in moving_average.csv'
+
+            raise RuntimeError(msg)
 
         return columns
+
 
 @pytest.fixture(scope="module")
 def example_average_daily_traded_value():
@@ -179,10 +206,14 @@ def example_average_daily_traded_value():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in average_daily_traded_value.csv')
+            msg = 'No data in average_daily_traded_value.csv'
+
+            raise RuntimeError(msg)
 
         return columns
+
 
 @pytest.fixture(scope="module")
 def example_logarithmic_difference_high_low():
@@ -202,8 +233,11 @@ def example_logarithmic_difference_high_low():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in logarithmic_difference_high_low.csv')
+            msg = 'No data in logarithmic_difference_high_low.csv'
+
+            raise RuntimeError(msg)
 
         return columns
 
@@ -226,8 +260,11 @@ def example_market_cap():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in market_cap.csv')
+            msg = 'No data in market_cap.csv'
+
+            raise RuntimeError(msg)
 
         return columns
 
@@ -249,8 +286,11 @@ def example_book_to_price():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in book_to_price.csv')
+            msg = 'No data in book_to_price.csv'
+
+            raise RuntimeError(msg)
 
         return columns
 
@@ -272,8 +312,11 @@ def example_last_twelve_months_revenue_per_share():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in last_twelve_months_revenue_per_share.csv')
+            msg = 'No data in last_twelve_months_revenue_per_share.csv'
+
+            raise RuntimeError(msg)
 
         return columns
 
@@ -295,8 +338,11 @@ def example_earnings_to_price():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in earnings_to_price.csv')
+            msg = 'No data in earnings_to_price.csv'
+
+            raise RuntimeError(msg)
 
         return columns
 
@@ -318,7 +364,10 @@ def example_moving_average_convergence_divergence():
             ]
             for header in reader.fieldnames
         }
+
         if not columns:
-            raise RuntimeError('No data in moving_average_convergence_divergence.csv')
+            msg = 'No data in moving_average_convergence_divergence.csv'
+
+            raise RuntimeError(msg)
 
         return columns

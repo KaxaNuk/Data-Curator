@@ -3,6 +3,63 @@
 V0 Changelog
 ============
 
+0.43.0 (2025-08-26)
+-------------------
+
+Changed
+~~~~~~~
+
+* Improved README file
+
+Fixed
+~~~~~
+
+* DataCulumn division between int columns should return float column
+
+
+
+0.42.0 (2025-08-04)
+-------------------
+
+Added
+~~~~~
+
+* ``DataProviderPaymentError`` and ``DataProviderConnectionError`` exceptions
+* ``FinancialModelingPrep`` now has class methods for setting and getting whether the user's account plan is paid
+* ``pdm run docs`` script as shortcut to the corresponding docs maker for the current OS. Use with ``pdm run docs html``, etc.
+
+Changed
+~~~~~~~
+
+* ``DataProviderInterface._request_data()`` now has special handling for 402 Payment Required errors
+* ``FinancialModelingPrep`` fundamental data methods now handle "The values for 'limit' must be between 0 and 5 based on your current subscription" 402 Payment Required errors
+* ``data_curator.main()`` now handles uncaught ``DataProviderPaymentError`` exceptions
+
+
+
+0.41.0 (2025-07-02)
+-------------------
+
+Added
+~~~~~
+
+* ``DataColumn.__hash__`` method for hashing DataColumns
+* ``InMemoryOutput`` output handler for saving data to memory
+* CI: CODEOWNERS file for GitHub code review automation
+* Docs: Inserted hidden ``toctree`` entries in each category ``index.rst`` to ensure all functions are registered in the Sphinx documentation build.
+* Docs: Added Use Cases section, with links to the Data-Curator-Use-Cases repo
+
+Changed
+~~~~~~~
+
+* Docs: Refactored ``features_extension.py`` to group calculation functions by category for documentation generation.
+* Docs: Calculation functions are now organized in per-category folders under ``api/``, improving maintainability.
+* Docs: Each category generates its own ``index.rst`` file with a clean table layout listing all functions.
+* Docs: The Section Navigation panel now displays categories as expandable subsections instead of a flat list.
+* Docs: Added ``:ref:``-based linking for function references without affecting Excel configuration behavior.
+
+
+
 0.40.2 (2025-06-05)
 -------------------
 

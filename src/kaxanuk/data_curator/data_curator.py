@@ -26,6 +26,7 @@ from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCircularDependenciesError,
     ColumnBuilderCustomFunctionNotFoundError,
     ColumnBuilderUnavailableEntityFieldError,
+    DataBlockRowEntityErrorGroup,
     DataProviderPaymentError,
     EntityProcessingError,
     InjectedDependencyError,
@@ -78,10 +79,14 @@ def main(
     None
     """
     if not isinstance(configuration, Configuration):
-        raise InjectedDependencyError("Incorrect Configuration passed to main")
+        msg = "Incorrect Configuration passed to main"
+
+        raise InjectedDependencyError(msg)
 
     if not _is_valid_log_level(logger_level):
-        raise PassedArgumentError("Incorrect logger_level passed to main")
+        msg = "Incorrect logger_level passed to main"
+
+        raise PassedArgumentError(msg)
 
     logging.basicConfig(
         format=logger_format,
@@ -90,17 +95,17 @@ def main(
     )
 
     if not isinstance(market_data_provider, DataProviderInterface):
-        raise InjectedDependencyError(
-            "Market data provider passed to main doesn't implement FinancialDataProviderInterface"
-        )
+        msg = "Market data provider passed to main doesn't implement FinancialDataProviderInterface"
+
+        raise InjectedDependencyError(msg)
 
     if (
         fundamental_data_provider is not None
         and not isinstance(fundamental_data_provider, DataProviderInterface)
     ):
-        raise InjectedDependencyError(
-            "Fundamental data provider passed to main doesn't implement FinancialDataProviderInterface"
-        )
+        msg = "Fundamental data provider passed to main doesn't implement FinancialDataProviderInterface"
+
+        raise InjectedDependencyError(msg)
 
     if (
         len(output_handlers) < 1
@@ -109,9 +114,9 @@ def main(
             for output_handler in output_handlers
         )
     ):
-        raise InjectedDependencyError(
-            "One or more output handlers passed to main don't implement OutputHandlerInterface"
-        )
+        msg = "One or more output handlers passed to main don't implement OutputHandlerInterface"
+
+        raise InjectedDependencyError(msg)
 
     if custom_calculation_modules is None:
         custom_calculation_modules = []
@@ -191,11 +196,21 @@ def main(
                     f"{main_identifier} skipping output as it presented the following data provider error:",
                     str(error)
                 ])
-
                 logging.getLogger(__name__).error(msg)
 
                 continue
+            except DataBlockRowEntityErrorGroup as error_group:
+                msg = "\n  ".join([
+                    f"{main_identifier} skipping output as it presented the following errors during data assembly:",
+                    str(error_group),
+                    *[
+                        str(error)
+                        for error in error_group.exceptions
+                    ]
+                ])
+                logging.getLogger(__name__).error(msg)
 
+                continue
 
             column_builder = ColumnBuilder(
                 calculation_modules=calculation_modules,

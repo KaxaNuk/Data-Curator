@@ -2,6 +2,7 @@ import dataclasses
 import datetime
 import re
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.entities.fundamental_data_row_balance_sheet import FundamentalDataRowBalanceSheet
 from kaxanuk.data_curator.entities.fundamental_data_row_cash_flow import FundamentalDataRowCashFlow
 from kaxanuk.data_curator.entities.fundamental_data_row_income_statement import FundamentalDataRowIncomeStatement
@@ -10,6 +11,10 @@ from kaxanuk.data_curator.exceptions import (
     EntityValueError,
 )
 from kaxanuk.data_curator.services import entity_helper
+
+
+CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
+FISCAL_YEAR_PATTERN = re.compile(r"^[0-9]{4}$")
 
 FUNDAMENTAL_DATA_ROW_PERIODS = [
     'FY',
@@ -21,7 +26,7 @@ FUNDAMENTAL_DATA_ROW_PERIODS = [
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class FundamentalDataRow:
+class FundamentalDataRow(BaseDataEntity):
     accepted_date: datetime.datetime | None
     balance_sheet: FundamentalDataRowBalanceSheet | None
     cash_flow: FundamentalDataRowCashFlow | None
@@ -42,31 +47,39 @@ class FundamentalDataRow:
 
             raise EntityTypeError(msg)
 
-        currency_pattern = re.compile(r"^[A-Z]{3}$")
-        if not currency_pattern.fullmatch(self.reported_currency):
-            raise EntityValueError("Incorrect data in FundamentalDataRow.currency")
+        if not CURRENCY_PATTERN.fullmatch(self.reported_currency):
+            msg = "Incorrect data in FundamentalDataRow.currency"
 
-        fiscal_year_pattern = re.compile(r"^[0-9]{4}$")
-        if not fiscal_year_pattern.fullmatch(str(self.fiscal_year)):
-            raise EntityValueError("Incorrect data in FundamentalDataRow.fiscal_year")
+            raise EntityValueError(msg)
+
+        if not FISCAL_YEAR_PATTERN.fullmatch(str(self.fiscal_year)):
+            msg = "Incorrect data in FundamentalDataRow.fiscal_year"
+
+            raise EntityValueError(msg)
 
         if self.fiscal_period not in FUNDAMENTAL_DATA_ROW_PERIODS:
             possible_periods = ', '.join(FUNDAMENTAL_DATA_ROW_PERIODS)
-            raise EntityValueError(
-                f"Incorrect FundamentalDataRow.fiscal_period, expecting one of: {possible_periods}"
-            )
+            msg = f"Incorrect FundamentalDataRow.fiscal_period, expecting one of: {possible_periods}"
+
+            raise EntityValueError(msg)
 
         if (
             self.balance_sheet is not None
             and not isinstance(self.balance_sheet, FundamentalDataRowBalanceSheet)
         ):
-            raise EntityValueError("Incorrect FundamentalDataRow.balance_sheet format")
+            msg = "Incorrect FundamentalDataRow.balance_sheet format"
+
+            raise EntityValueError(msg)
 
         if (
             self.cash_flow is not None
             and not isinstance(self.cash_flow, FundamentalDataRowCashFlow)
         ):
-            raise EntityValueError("Incorrect FundamentalDataRow.cash_flow format")
+            msg = "Incorrect FundamentalDataRow.cash_flow format"
+
+            raise EntityValueError(msg)
 
         if not isinstance(self.income_statement, FundamentalDataRowIncomeStatement):
-            raise EntityValueError("Incorrect FundamentalDataRow.income_statement format")
+            msg = "Incorrect FundamentalDataRow.income_statement format"
+
+            raise EntityValueError(msg)

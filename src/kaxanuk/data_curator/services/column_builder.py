@@ -17,6 +17,14 @@ from kaxanuk.data_curator.entities import (
     MarketDataDailyRow,
     SplitData,
 )
+from kaxanuk.data_curator.entities.dividend_data_row import (
+    DIVIDEND_DATE_FIELDS,
+    DIVIDEND_FACTOR_FIELDS,
+)
+from kaxanuk.data_curator.entities.split_data_row import (
+    SPLIT_DATE_FIELDS,
+    SPLIT_FACTOR_FIELDS,
+)
 from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCircularDependenciesError,
     ColumnBuilderCustomFunctionNotFoundError,
@@ -53,25 +61,6 @@ class ColumnBuilder:
     # the names of fields generated from combining columns, like in dividends and splits, will go here:
     _COMBINED_COLUMN_FIELD_NAMES : typing.ClassVar = {}
 
-    # @todo: these should probably be in dividend_data instead of here:
-    _DIVIDEND_DATE_FIELDS = (
-        'declaration_date',
-        'ex_dividend_date',
-        'record_date',
-        'payment_date',
-    )
-    _DIVIDEND_FACTOR_FIELDS = (
-        'dividend',
-        'dividend_split_adjusted',
-    )
-    _SPLIT_DATE_FIELDS = (
-        'split_date',
-    )
-    _SPLIT_FACTOR_FIELDS = (
-        'numerator',
-        'denominator',
-    )
-
     def __init__(
         self,
         *,
@@ -85,17 +74,23 @@ class ColumnBuilder:
         self.calculation_modules = calculation_modules
 
         if not isinstance(configuration, Configuration):
-            raise InjectedDependencyError("Incorrect configuration passed to ColumnBuilder")
+            msg = "Incorrect configuration passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.configuration = configuration
 
         if not isinstance(market_data, MarketData):
-            raise InjectedDependencyError("Incorrect market_data passed to ColumnBuilder")
+            msg = "Incorrect market_data passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.market_data = market_data
 
         if not isinstance(fundamental_data, FundamentalData):
-            raise InjectedDependencyError("Incorrect fundamental_data passed to ColumnBuilder")
+            msg = "Incorrect fundamental_data passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.infilled_fundamental_data_rows = self._infill_data(
             iter(market_data.daily_rows.keys()),
@@ -103,22 +98,26 @@ class ColumnBuilder:
         )
 
         if not isinstance(dividend_data, DividendData):
-            raise InjectedDependencyError("Incorrect dividend_data passed to ColumnBuilder")
+            msg = "Incorrect dividend_data passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.expanded_dividend_data_rows = self._expand_dated_factors(
             iter(market_data.daily_rows.keys()),
-            self._DIVIDEND_DATE_FIELDS,
-            self._DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELDS,
+            DIVIDEND_FACTOR_FIELDS,
             dividend_data.rows
         )
 
         if not isinstance(split_data, SplitData):
-            raise InjectedDependencyError("Incorrect split_data passed to ColumnBuilder")
+            msg = "Incorrect split_data passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
 
         self.expanded_split_data_rows = self._expand_dated_factors(
             iter(market_data.daily_rows.keys()),
-            self._SPLIT_DATE_FIELDS,
-            self._SPLIT_FACTOR_FIELDS,
+            SPLIT_DATE_FIELDS,
+            SPLIT_FACTOR_FIELDS,
             split_data.rows
         )
 
@@ -531,6 +530,7 @@ class ColumnBuilder:
         if len(data_rows) < 1:
             return dict.fromkeys(dates)
 
+        # @todo save each repeating date's data as a separate Array, all consolidated inside a ChunkedArray
         infilled_data = {}
         data_row_dates = iter(data_rows.keys())
         previous_data_row_date = None
@@ -646,8 +646,8 @@ class ColumnBuilder:
                 case 'd':       # dividends
                     if column_name not in cls._get_combined_field_column_names(
                         'dividend',
-                        cls._DIVIDEND_DATE_FIELDS,
-                        cls._DIVIDEND_FACTOR_FIELDS
+                        DIVIDEND_DATE_FIELDS,
+                        DIVIDEND_FACTOR_FIELDS
                     ):
                         msg = f"Column not available in dividend data: {column}"
                         raise ColumnBuilderUnavailableEntityFieldError(msg)
@@ -729,8 +729,8 @@ class ColumnBuilder:
                 case 's':       # splits
                     if column_name not in cls._get_combined_field_column_names(
                         'split',
-                        cls._SPLIT_DATE_FIELDS,
-                        cls._SPLIT_FACTOR_FIELDS
+                        SPLIT_DATE_FIELDS,
+                        SPLIT_FACTOR_FIELDS
                     ):
                         msg = f"Column not available in split data: {column}"
                         raise ColumnBuilderUnavailableEntityFieldError(msg)

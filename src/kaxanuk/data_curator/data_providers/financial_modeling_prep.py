@@ -1,10 +1,15 @@
-import collections
 import datetime
 import enum
-import json
 import logging
-import types
+import typing
 
+import pyarrow
+import pyarrow.compute
+
+from kaxanuk.data_curator.data_blocks.dividends import DividendsDataBlock
+from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
+from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
+from kaxanuk.data_curator.data_blocks.splits import SplitsDataBlock
 from kaxanuk.data_curator.entities import (
     Configuration,
     DividendData,
@@ -16,33 +21,32 @@ from kaxanuk.data_curator.entities import (
     FundamentalDataRowIncomeStatement,
     MarketData,
     MarketDataDailyRow,
+    MarketInstrumentIdentifier,
     SplitData,
     SplitDataRow,
     MainIdentifier,
 )
 from kaxanuk.data_curator.exceptions import (
     DataProviderMissingKeyError,
+    DataProviderMultiEndpointCommonDataOrderError,
+    DataProviderMultiEndpointCommonDataDiscrepancyError,
     DataProviderPaymentError,
-    DividendDataEmptyError,
-    DividendDataRowError,
-    EntityFieldTypeError,
-    EntityProcessingError,
-    EntityTypeError,
-    EntityValueError,
-    FundamentalDataNoIncomeError,
-    FundamentalDataNonChronologicalStatementWithoutOriginalDateError,
-    FundamentalDataUnsortedRowDatesError,
-    MarketDataEmptyError,
-    MarketDataRowError,
-    SplitDataEmptyError,
-    SplitDataRowError,
+    DataProviderToolkitNoDataError,
+    DataProviderToolkitRuntimeError,
 )
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
-from kaxanuk.data_curator.services import entity_helper
+from kaxanuk.data_curator.services.data_provider_toolkit import (
+    DataBlockEndpointTagMap,
+    DataProviderFieldPreprocessors,
+    DataProviderToolkit,
+    EndpointFieldMap,
+    PreprocessedFieldMapping,
+)
 
 
-
-class FinancialModelingPrep(DataProviderInterface):
+class FinancialModelingPrep(
+    DataProviderInterface,      # this is the interface all data providers have to implement
+):
     CONNECTION_VALIDATION_TICKER = 'AAPL'   # will be used to validate we can connect
     MAX_RECORDS_DOWNLOAD_LIMIT = 1000
     MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT = 5
@@ -69,223 +73,246 @@ class FinancialModelingPrep(DataProviderInterface):
 
     _is_paid_account_plan = None
 
-    _fields_dividend_data_rows = types.MappingProxyType({
-        'declaration_date': 'declarationDate',
-        'ex_dividend_date': 'date',
-        'record_date': 'recordDate',
-        'payment_date': 'paymentDate',
-        'dividend': 'dividend',
-        'dividend_split_adjusted': 'adjDividend',
-    })
-    _fields_fundamental_balance_sheet_data_rows = types.MappingProxyType({
-        'filing_date': 'fillingDate',
-        'accumulated_other_comprehensive_income_after_tax': 'accumulatedOtherComprehensiveIncomeLoss',
-        'additional_paid_in_capital': 'additionalPaidInCapital',
-        'assets': 'totalAssets',
-        'capital_lease_obligations': 'capitalLeaseObligations',
-        'cash_and_cash_equivalents': 'cashAndCashEquivalents',
-        'cash_and_shortterm_investments': 'cashAndShortTermInvestments',
-        'common_stock_value': 'commonStock',
-        'current_accounts_payable': 'accountPayables',
-        'current_accounts_receivable_after_doubtful_accounts': 'accountsReceivables',
-        'current_accrued_expenses': 'accruedExpenses',
-        'current_assets': 'totalCurrentAssets',
-        'current_capital_lease_obligations': 'capitalLeaseObligationsCurrent',
-        'current_liabilities': 'totalCurrentLiabilities',
-        'current_net_receivables': 'netReceivables',
-        'current_tax_payables': 'taxPayables',
-        'deferred_revenue': 'deferredRevenue',
-        'goodwill': 'goodwill',
-        'investments': 'totalInvestments',
-        'liabilities': 'totalLiabilities',
-        'longterm_debt': 'longTermDebt',
-        'longterm_investments': 'longTermInvestments',
-        'net_debt': 'netDebt',
-        'net_intangible_assets_excluding_goodwill': 'intangibleAssets',
-        'net_intangible_assets_including_goodwill': 'goodwillAndIntangibleAssets',
-        'net_inventory': 'inventory',
-        'net_property_plant_and_equipment': 'propertyPlantEquipmentNet',
-        'noncontrolling_interest': 'minorityInterest',
-        'noncurrent_assets': 'totalNonCurrentAssets',
-        'noncurrent_capital_lease_obligations': 'capitalLeaseObligationsNonCurrent',
-        'noncurrent_deferred_revenue': 'deferredRevenueNonCurrent',
-        'noncurrent_deferred_tax_assets': 'taxAssets',
-        'noncurrent_deferred_tax_liabilities': 'deferredTaxLiabilitiesNonCurrent',
-        'noncurrent_liabilities': 'totalNonCurrentLiabilities',
-        'other_assets': 'otherAssets',
-        'other_current_assets': 'otherCurrentAssets',
-        'other_current_liabilities': 'otherCurrentLiabilities',
-        'other_liabilities': 'otherLiabilities',
-        'other_noncurrent_assets': 'otherNonCurrentAssets',
-        'other_noncurrent_liabilities': 'otherNonCurrentLiabilities',
-        'other_payables': 'otherPayables',
-        'other_receivables': 'otherReceivables',
-        'other_stockholder_equity': 'otherTotalStockholdersEquity',
-        'preferred_stock_value': 'preferredStock',
-        'prepaid_expenses': 'prepaids',
-        'retained_earnings': 'retainedEarnings',
-        'shortterm_debt': 'shortTermDebt',
-        'shortterm_investments': 'shortTermInvestments',
-        'stockholder_equity': 'totalStockholdersEquity',
-        'total_debt_including_capital_lease_obligations': 'totalDebt',
-        'total_equity_including_noncontrolling_interest': 'totalEquity',
-        'total_liabilities_and_equity': 'totalLiabilitiesAndTotalEquity',
-        'total_payables_current_and_noncurrent': 'totalPayables',
-        'treasury_stock_value': 'treasuryStock',
-    })
-    _fields_fundamental_cash_flow_data_rows = types.MappingProxyType({
-        'accounts_payable_change': 'accountsPayables',
-        'accounts_receivable_change': 'accountsReceivables',
-        'capital_expenditure': 'capitalExpenditure',
-        'cash_and_cash_equivalents_change': 'netChangeInCash',
-        'cash_exchange_rate_effect': 'effectOfForexChangesOnCash',
-        'common_stock_dividend_payments': 'commonDividendsPaid',
-        'common_stock_issuance_proceeds': 'commonStockIssuance',
-        'common_stock_repurchase': 'commonStockRepurchased',
-        'deferred_income_tax': 'deferredIncomeTax',
-        'depreciation_and_amortization': 'depreciationAndAmortization',
-        'dividend_payments': 'netDividendsPaid',
-        'free_cash_flow': 'freeCashFlow',
-        'interest_payments': 'interestPaid',
-        'inventory_change': 'inventory',
-        'investment_sales_maturities_and_collections_proceeds': 'salesMaturitiesOfInvestments',
-        'investments_purchase': 'purchasesOfInvestments',
-        'net_business_acquisition_payments': 'acquisitionsNet',
-        'net_cash_from_operating_activities': 'netCashProvidedByOperatingActivities',
-        'net_cash_from_investing_activites': 'netCashProvidedByInvestingActivities',
-        'net_cash_from_financing_activities': 'netCashProvidedByFinancingActivities',
-        'net_common_stock_issuance_proceeds': 'netCommonStockIssuance',
-        'net_debt_issuance_proceeds': 'netDebtIssuance',
-        'net_income': 'netIncome',
-        'net_income_tax_payments': 'incomeTaxesPaid',
-        'net_longterm_debt_issuance_proceeds': 'longTermNetDebtIssuance',
-        'net_shortterm_debt_issuance_proceeds': 'shortTermNetDebtIssuance',
-        'net_stock_issuance_proceeds': 'netStockIssuance',
-        'other_financing_activities': 'otherFinancingActivities',
-        'other_investing_activities': 'otherInvestingActivities',
-        'other_noncash_items': 'otherNonCashItems',
-        'other_working_capital': 'otherWorkingCapital',
-        'period_end_cash': 'cashAtEndOfPeriod',
-        'period_start_cash': 'cashAtBeginningOfPeriod',
-        'preferred_stock_dividend_payments': 'preferredDividendsPaid',
-        'preferred_stock_issuance_proceeds': 'netPreferredStockIssuance',
-        'property_plant_and_equipment_purchase': 'investmentsInPropertyPlantAndEquipment',
-        'stock_based_compensation': 'stockBasedCompensation',
-        'working_capital_change': 'changeInWorkingCapital',
-    })
-    _fields_fundamental_common_data_rows = types.MappingProxyType({
-        'accepted_date': 'acceptedDate',
-        'filing_date': 'filingDate',
-        'fiscal_period': 'period',
-        'fiscal_year': 'fiscalYear',
-        'period_end_date': 'date',
-        'reported_currency': 'reportedCurrency',
-    })
-    _fields_fundamental_income_data_rows = types.MappingProxyType({
-        'basic_earnings_per_share': 'eps',
-        'basic_net_income_available_to_common_stockholders': 'bottomLineNetIncome',
-        'continuing_operations_income_after_tax': 'netIncomeFromContinuingOperations',
-        'costs_and_expenses': 'costAndExpenses',
-        'cost_of_revenue': 'costOfRevenue',
-        'depreciation_and_amortization': 'depreciationAndAmortization',
-        'diluted_earnings_per_share': 'epsDiluted',
-        'discontinued_operations_income_after_tax': 'netIncomeFromDiscontinuedOperations',
-        'earnings_before_interest_and_tax': 'ebit',
-        'earnings_before_interest_tax_depreciation_and_amortization': 'ebitda',
-        'general_and_administrative_expense': 'generalAndAdministrativeExpenses',
-        'gross_profit': 'grossProfit',
-        'income_before_tax': 'incomeBeforeTax',
-        'income_tax_expense': 'incomeTaxExpense',
-        'interest_expense': 'interestExpense',
-        'interest_income': 'interestIncome',
-        'net_income': 'netIncome',
-        'net_income_deductions': 'netIncomeDeductions',
-        'net_interest_income': 'netInterestIncome',
-        'net_total_other_income': 'totalOtherIncomeExpensesNet',
-        'nonoperating_income_excluding_interest': 'nonOperatingIncomeExcludingInterest',
-        'operating_expenses': 'operatingExpenses',
-        'operating_income': 'operatingIncome',
-        'other_expenses': 'otherExpenses',
-        'other_net_income_adjustments': 'otherAdjustmentsToNetIncome',
-        'research_and_development_expense': 'researchAndDevelopmentExpenses',
-        'revenues': 'revenue',
-        'selling_and_marketing_expense': 'sellingAndMarketingExpenses',
-        'selling_general_and_administrative_expense': 'sellingGeneralAndAdministrativeExpenses',
-        'weighted_average_basic_shares_outstanding': 'weightedAverageShsOut',
-        'weighted_average_diluted_shares_outstanding': 'weightedAverageShsOutDil',
-    })
-    _fields_market_data_daily_rows_dividend_and_split_adjusted = types.MappingProxyType({
-        'date': 'date',
-        'open': None,
-        'high': None,
-        'low': None,
-        'close': None,
-        'volume': None,
-        'vwap': None,
-        'open_split_adjusted': None,
-        'high_split_adjusted': None,
-        'low_split_adjusted': None,
-        'close_split_adjusted': None,
-        'volume_split_adjusted': None,
-        'vwap_split_adjusted': None,
-        'open_dividend_and_split_adjusted': 'adjOpen',
-        'high_dividend_and_split_adjusted': 'adjHigh',
-        'low_dividend_and_split_adjusted': 'adjLow',
-        'close_dividend_and_split_adjusted': 'adjClose',
-        'volume_dividend_and_split_adjusted': 'volume',
-        'vwap_dividend_and_split_adjusted': None,
-    })
-    _fields_market_data_daily_rows_split_adjusted = types.MappingProxyType({
-        'date': 'date',
-        'open': None,
-        'high': None,
-        'low': None,
-        'close': None,
-        'volume': None,
-        'vwap': None,
-        'open_split_adjusted': 'open',
-        'high_split_adjusted': 'high',
-        'low_split_adjusted': 'low',
-        'close_split_adjusted': 'close',
-        'volume_split_adjusted': 'volume',
-        'vwap_split_adjusted': 'vwap',
-        'open_dividend_and_split_adjusted': None,
-        'high_dividend_and_split_adjusted': None,
-        'low_dividend_and_split_adjusted': None,
-        'close_dividend_and_split_adjusted': None,
-        'volume_dividend_and_split_adjusted': None,
-        'vwap_dividend_and_split_adjusted': None,
-    })
-    _fields_market_data_daily_rows_unadjusted = types.MappingProxyType({
-        'date': 'date',
-        'open': 'adjOpen',
-        'high': 'adjHigh',
-        'low': 'adjLow',
-        'close': 'adjClose',
-        'volume': 'volume',
-        'vwap': None,
-        'open_split_adjusted': None,
-        'high_split_adjusted': None,
-        'low_split_adjusted': None,
-        'close_split_adjusted': None,
-        'volume_split_adjusted': None,
-        'vwap_split_adjusted': None,
-        'open_dividend_and_split_adjusted': None,
-        'high_dividend_and_split_adjusted': None,
-        'low_dividend_and_split_adjusted': None,
-        'close_dividend_and_split_adjusted': None,
-        'volume_dividend_and_split_adjusted': None,
-        'vwap_dividend_and_split_adjusted': None,
-    })
-    _fields_split_data_rows = types.MappingProxyType({
-        'split_date': 'date',
-        'numerator': 'numerator',
-        'denominator': 'denominator',
-    })
-    _periods = types.MappingProxyType({
+    _dividend_data_endpoint_map: typing.Final[EndpointFieldMap] = {
+        Endpoints.STOCK_DIVIDEND: {
+            DividendDataRow.declaration_date: 'declarationDate',
+            DividendDataRow.ex_dividend_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            DividendDataRow.record_date: 'recordDate',
+            DividendDataRow.payment_date: 'paymentDate',
+            DividendDataRow.dividend: 'dividend',
+            DividendDataRow.dividend_split_adjusted: 'adjDividend',
+        },
+    }
+
+    _fundamental_data_endpoint_map : typing.Final[EndpointFieldMap] = {
+        Endpoints.BALANCE_SHEET_STATEMENT: {
+            FundamentalDataRow.accepted_date: 'acceptedDate',
+            FundamentalDataRow.filing_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['filingDate'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            FundamentalDataRow.fiscal_period: 'period',
+            FundamentalDataRow.fiscal_year: 'fiscalYear',
+            FundamentalDataRow.period_end_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            FundamentalDataRow.reported_currency: 'reportedCurrency',
+            FundamentalDataRowBalanceSheet.accumulated_other_comprehensive_income_after_tax:
+                'accumulatedOtherComprehensiveIncomeLoss',
+            FundamentalDataRowBalanceSheet.additional_paid_in_capital: 'additionalPaidInCapital',
+            FundamentalDataRowBalanceSheet.assets: 'totalAssets',
+            FundamentalDataRowBalanceSheet.capital_lease_obligations: 'capitalLeaseObligations',
+            FundamentalDataRowBalanceSheet.cash_and_cash_equivalents: 'cashAndCashEquivalents',
+            FundamentalDataRowBalanceSheet.cash_and_shortterm_investments: 'cashAndShortTermInvestments',
+            FundamentalDataRowBalanceSheet.common_stock_value: 'commonStock',
+            FundamentalDataRowBalanceSheet.current_accounts_payable: 'accountPayables',
+            FundamentalDataRowBalanceSheet.current_accounts_receivable_after_doubtful_accounts: 'accountsReceivables',
+            FundamentalDataRowBalanceSheet.current_accrued_expenses: 'accruedExpenses',
+            FundamentalDataRowBalanceSheet.current_assets: 'totalCurrentAssets',
+            FundamentalDataRowBalanceSheet.current_capital_lease_obligations: 'capitalLeaseObligationsCurrent',
+            FundamentalDataRowBalanceSheet.current_liabilities: 'totalCurrentLiabilities',
+            FundamentalDataRowBalanceSheet.current_net_receivables: 'netReceivables',
+            FundamentalDataRowBalanceSheet.current_tax_payables: 'taxPayables',
+            FundamentalDataRowBalanceSheet.deferred_revenue: 'deferredRevenue',
+            FundamentalDataRowBalanceSheet.goodwill: 'goodwill',
+            FundamentalDataRowBalanceSheet.investments: 'totalInvestments',
+            FundamentalDataRowBalanceSheet.liabilities: 'totalLiabilities',
+            FundamentalDataRowBalanceSheet.longterm_debt: 'longTermDebt',
+            FundamentalDataRowBalanceSheet.longterm_investments: 'longTermInvestments',
+            FundamentalDataRowBalanceSheet.net_debt: 'netDebt',
+            FundamentalDataRowBalanceSheet.net_intangible_assets_excluding_goodwill: 'intangibleAssets',
+            FundamentalDataRowBalanceSheet.net_intangible_assets_including_goodwill: 'goodwillAndIntangibleAssets',
+            FundamentalDataRowBalanceSheet.net_inventory: 'inventory',
+            FundamentalDataRowBalanceSheet.net_property_plant_and_equipment: 'propertyPlantEquipmentNet',
+            FundamentalDataRowBalanceSheet.noncontrolling_interest: 'minorityInterest',
+            FundamentalDataRowBalanceSheet.noncurrent_assets: 'totalNonCurrentAssets',
+            FundamentalDataRowBalanceSheet.noncurrent_capital_lease_obligations: 'capitalLeaseObligationsNonCurrent',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_revenue: 'deferredRevenueNonCurrent',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_tax_assets: 'taxAssets',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_tax_liabilities: 'deferredTaxLiabilitiesNonCurrent',
+            FundamentalDataRowBalanceSheet.noncurrent_liabilities: 'totalNonCurrentLiabilities',
+            FundamentalDataRowBalanceSheet.other_assets: 'otherAssets',
+            FundamentalDataRowBalanceSheet.other_current_assets: 'otherCurrentAssets',
+            FundamentalDataRowBalanceSheet.other_current_liabilities: 'otherCurrentLiabilities',
+            FundamentalDataRowBalanceSheet.other_liabilities: 'otherLiabilities',
+            FundamentalDataRowBalanceSheet.other_noncurrent_assets: 'otherNonCurrentAssets',
+            FundamentalDataRowBalanceSheet.other_noncurrent_liabilities: 'otherNonCurrentLiabilities',
+            FundamentalDataRowBalanceSheet.other_payables: 'otherPayables',
+            FundamentalDataRowBalanceSheet.other_receivables: 'otherReceivables',
+            FundamentalDataRowBalanceSheet.other_stockholder_equity: 'otherTotalStockholdersEquity',
+            FundamentalDataRowBalanceSheet.preferred_stock_value: 'preferredStock',
+            FundamentalDataRowBalanceSheet.prepaid_expenses: 'prepaids',
+            FundamentalDataRowBalanceSheet.retained_earnings: 'retainedEarnings',
+            FundamentalDataRowBalanceSheet.shortterm_debt: 'shortTermDebt',
+            FundamentalDataRowBalanceSheet.shortterm_investments: 'shortTermInvestments',
+            FundamentalDataRowBalanceSheet.stockholder_equity: 'totalStockholdersEquity',
+            FundamentalDataRowBalanceSheet.total_debt_including_capital_lease_obligations: 'totalDebt',
+            FundamentalDataRowBalanceSheet.total_equity_including_noncontrolling_interest: 'totalEquity',
+            FundamentalDataRowBalanceSheet.total_liabilities_and_equity: 'totalLiabilitiesAndTotalEquity',
+            FundamentalDataRowBalanceSheet.total_payables_current_and_noncurrent: 'totalPayables',
+            FundamentalDataRowBalanceSheet.treasury_stock_value: 'treasuryStock',
+        },
+        Endpoints.CASH_FLOW_STATEMENT: {
+            FundamentalDataRow.accepted_date: 'acceptedDate',
+            FundamentalDataRow.filing_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['filingDate'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            FundamentalDataRow.fiscal_period: 'period',
+            FundamentalDataRow.fiscal_year: 'fiscalYear',
+            FundamentalDataRow.period_end_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            FundamentalDataRow.reported_currency: 'reportedCurrency',
+            FundamentalDataRowCashFlow.accounts_payable_change: 'accountsPayables',
+            FundamentalDataRowCashFlow.accounts_receivable_change: 'accountsReceivables',
+            FundamentalDataRowCashFlow.capital_expenditure: 'capitalExpenditure',
+            FundamentalDataRowCashFlow.cash_and_cash_equivalents_change: 'netChangeInCash',
+            FundamentalDataRowCashFlow.cash_exchange_rate_effect: 'effectOfForexChangesOnCash',
+            FundamentalDataRowCashFlow.common_stock_dividend_payments: 'commonDividendsPaid',
+            FundamentalDataRowCashFlow.common_stock_issuance_proceeds: 'commonStockIssuance',
+            FundamentalDataRowCashFlow.common_stock_repurchase: 'commonStockRepurchased',
+            FundamentalDataRowCashFlow.deferred_income_tax: 'deferredIncomeTax',
+            FundamentalDataRowCashFlow.depreciation_and_amortization: 'depreciationAndAmortization',
+            FundamentalDataRowCashFlow.dividend_payments: 'netDividendsPaid',
+            FundamentalDataRowCashFlow.free_cash_flow: 'freeCashFlow',
+            FundamentalDataRowCashFlow.interest_payments: 'interestPaid',
+            FundamentalDataRowCashFlow.inventory_change: 'inventory',
+            FundamentalDataRowCashFlow.investment_sales_maturities_and_collections_proceeds:
+                'salesMaturitiesOfInvestments',
+            FundamentalDataRowCashFlow.investments_purchase: 'purchasesOfInvestments',
+            FundamentalDataRowCashFlow.net_business_acquisition_payments: 'acquisitionsNet',
+            FundamentalDataRowCashFlow.net_cash_from_operating_activities: 'netCashProvidedByOperatingActivities',
+            FundamentalDataRowCashFlow.net_cash_from_investing_activites: 'netCashProvidedByInvestingActivities',
+            FundamentalDataRowCashFlow.net_cash_from_financing_activities: 'netCashProvidedByFinancingActivities',
+            FundamentalDataRowCashFlow.net_common_stock_issuance_proceeds: 'netCommonStockIssuance',
+            FundamentalDataRowCashFlow.net_debt_issuance_proceeds: 'netDebtIssuance',
+            FundamentalDataRowCashFlow.net_income: 'netIncome',
+            FundamentalDataRowCashFlow.net_income_tax_payments: 'incomeTaxesPaid',
+            FundamentalDataRowCashFlow.net_longterm_debt_issuance_proceeds: 'longTermNetDebtIssuance',
+            FundamentalDataRowCashFlow.net_shortterm_debt_issuance_proceeds: 'shortTermNetDebtIssuance',
+            FundamentalDataRowCashFlow.net_stock_issuance_proceeds: 'netStockIssuance',
+            FundamentalDataRowCashFlow.other_financing_activities: 'otherFinancingActivities',
+            FundamentalDataRowCashFlow.other_investing_activities: 'otherInvestingActivities',
+            FundamentalDataRowCashFlow.other_noncash_items: 'otherNonCashItems',
+            FundamentalDataRowCashFlow.other_working_capital: 'otherWorkingCapital',
+            FundamentalDataRowCashFlow.period_end_cash: 'cashAtEndOfPeriod',
+            FundamentalDataRowCashFlow.period_start_cash: 'cashAtBeginningOfPeriod',
+            FundamentalDataRowCashFlow.preferred_stock_dividend_payments: 'preferredDividendsPaid',
+            FundamentalDataRowCashFlow.preferred_stock_issuance_proceeds: 'netPreferredStockIssuance',
+            FundamentalDataRowCashFlow.property_plant_and_equipment_purchase: 'investmentsInPropertyPlantAndEquipment',
+            FundamentalDataRowCashFlow.stock_based_compensation: 'stockBasedCompensation',
+            FundamentalDataRowCashFlow.working_capital_change: 'changeInWorkingCapital',
+        },
+        Endpoints.INCOME_STATEMENT: {
+            FundamentalDataRow.accepted_date: 'acceptedDate',
+            FundamentalDataRow.filing_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['filingDate'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            FundamentalDataRow.fiscal_period: 'period',
+            FundamentalDataRow.fiscal_year: 'fiscalYear',
+            FundamentalDataRow.period_end_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            FundamentalDataRow.reported_currency: 'reportedCurrency',
+            FundamentalDataRowIncomeStatement.basic_earnings_per_share: 'eps',
+            FundamentalDataRowIncomeStatement.basic_net_income_available_to_common_stockholders: 'bottomLineNetIncome',
+            FundamentalDataRowIncomeStatement.continuing_operations_income_after_tax:
+                'netIncomeFromContinuingOperations',
+            FundamentalDataRowIncomeStatement.costs_and_expenses: 'costAndExpenses',
+            FundamentalDataRowIncomeStatement.cost_of_revenue: 'costOfRevenue',
+            FundamentalDataRowIncomeStatement.depreciation_and_amortization: 'depreciationAndAmortization',
+            FundamentalDataRowIncomeStatement.diluted_earnings_per_share: 'epsDiluted',
+            FundamentalDataRowIncomeStatement.discontinued_operations_income_after_tax:
+                'netIncomeFromDiscontinuedOperations',
+            FundamentalDataRowIncomeStatement.earnings_before_interest_and_tax: 'ebit',
+            FundamentalDataRowIncomeStatement.earnings_before_interest_tax_depreciation_and_amortization: 'ebitda',
+            FundamentalDataRowIncomeStatement.general_and_administrative_expense: 'generalAndAdministrativeExpenses',
+            FundamentalDataRowIncomeStatement.gross_profit: 'grossProfit',
+            FundamentalDataRowIncomeStatement.income_before_tax: 'incomeBeforeTax',
+            FundamentalDataRowIncomeStatement.income_tax_expense: 'incomeTaxExpense',
+            FundamentalDataRowIncomeStatement.interest_expense: 'interestExpense',
+            FundamentalDataRowIncomeStatement.interest_income: 'interestIncome',
+            FundamentalDataRowIncomeStatement.net_income: 'netIncome',
+            FundamentalDataRowIncomeStatement.net_income_deductions: 'netIncomeDeductions',
+            FundamentalDataRowIncomeStatement.net_interest_income: 'netInterestIncome',
+            FundamentalDataRowIncomeStatement.net_total_other_income: 'totalOtherIncomeExpensesNet',
+            FundamentalDataRowIncomeStatement.nonoperating_income_excluding_interest:
+                'nonOperatingIncomeExcludingInterest',
+            FundamentalDataRowIncomeStatement.operating_expenses: 'operatingExpenses',
+            FundamentalDataRowIncomeStatement.operating_income: 'operatingIncome',
+            FundamentalDataRowIncomeStatement.other_expenses: 'otherExpenses',
+            FundamentalDataRowIncomeStatement.other_net_income_adjustments: 'otherAdjustmentsToNetIncome',
+            FundamentalDataRowIncomeStatement.research_and_development_expense: 'researchAndDevelopmentExpenses',
+            FundamentalDataRowIncomeStatement.revenues: 'revenue',
+            FundamentalDataRowIncomeStatement.selling_and_marketing_expense: 'sellingAndMarketingExpenses',
+            FundamentalDataRowIncomeStatement.selling_general_and_administrative_expense:
+                'sellingGeneralAndAdministrativeExpenses',
+            FundamentalDataRowIncomeStatement.weighted_average_basic_shares_outstanding: 'weightedAverageShsOut',
+            FundamentalDataRowIncomeStatement.weighted_average_diluted_shares_outstanding: 'weightedAverageShsOutDil',
+        },
+    }
+
+    _market_data_endpoint_map: typing.Final[EndpointFieldMap] = {
+        Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED: {
+            MarketDataDailyRow.date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            MarketDataDailyRow.open_dividend_and_split_adjusted: 'adjOpen',
+            MarketDataDailyRow.high_dividend_and_split_adjusted: 'adjHigh',
+            MarketDataDailyRow.low_dividend_and_split_adjusted: 'adjLow',
+            MarketDataDailyRow.close_dividend_and_split_adjusted: 'adjClose',
+            MarketDataDailyRow.volume_dividend_and_split_adjusted: 'volume',
+        },
+        Endpoints.MARKET_DATA_DAILY_SPLIT_ADJUSTED: {
+            MarketDataDailyRow.date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            MarketDataDailyRow.open_split_adjusted: 'open',
+            MarketDataDailyRow.high_split_adjusted: 'high',
+            MarketDataDailyRow.low_split_adjusted: 'low',
+            MarketDataDailyRow.close_split_adjusted: 'close',
+            MarketDataDailyRow.volume_split_adjusted: 'volume',
+            MarketDataDailyRow.vwap_split_adjusted: 'vwap',
+        },
+        Endpoints.MARKET_DATA_DAILY_UNADJUSTED: {
+            MarketDataDailyRow.date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            MarketDataDailyRow.open: 'adjOpen',
+            MarketDataDailyRow.high: 'adjHigh',
+            MarketDataDailyRow.low: 'adjLow',
+            MarketDataDailyRow.close: 'adjClose',
+            MarketDataDailyRow.volume: 'volume',
+        },
+    }
+
+    _split_data_endpoint_map: typing.Final[EndpointFieldMap] = {
+        Endpoints.STOCK_SPLIT: {
+            SplitDataRow.split_date: PreprocessedFieldMapping(   # compensate pyarrow casting issues
+                ['date'],
+                [DataProviderFieldPreprocessors.cast_datetime_to_date]
+            ),
+            SplitDataRow.numerator: 'numerator',
+            SplitDataRow.denominator: 'denominator',
+        },
+    }
+
+    # @todo: make enum
+    _periods: typing.Final = {
         'annual': 'annual',
         'quarterly': 'quarter'
-    })
+    }
 
     def __init__(
         self,
@@ -307,6 +334,15 @@ class FinancialModelingPrep(DataProviderInterface):
             raise DataProviderMissingKeyError
 
         self.api_key = api_key
+
+    @classmethod
+    def get_data_block_endpoint_tag_map(cls) -> DataBlockEndpointTagMap:
+        return {
+            DividendsDataBlock: cls._dividend_data_endpoint_map,
+            FundamentalsDataBlock: cls._fundamental_data_endpoint_map,
+            MarketDailyDataBlock: cls._market_data_endpoint_map,
+            SplitsDataBlock: cls._split_data_endpoint_map,
+        }
 
     def get_dividend_data(
         self,
@@ -372,12 +408,51 @@ class FinancialModelingPrep(DataProviderInterface):
             else:
                 raise error
 
-        return self._create_dividend_data_from_raw_stock_response(
-            main_identifier,
-            start_date,
-            end_date,
-            dividend_raw_data,
+        endpoint_tables = DataProviderToolkit.create_endpoint_tables_from_json_mapping({
+            self.Endpoints.STOCK_DIVIDEND:
+                dividend_raw_data
+        })
+
+        empty_dividend_data = DividendData(
+            main_identifier=MainIdentifier(main_identifier),
+            rows={}
         )
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=DividendsDataBlock,
+                endpoint_field_map=self._dividend_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError:
+            msg = f"{main_identifier} dividend data endpoints returned no data"
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_dividend_data
+
+        # @todo trim based on start and end dates
+        try:
+            consolidated_dividend_table_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+                processed_endpoint_tables=processed_endpoint_tables,
+                table_merge_fields=[],
+                predominant_order_descending=True
+            )
+        except DataProviderToolkitRuntimeError:
+            # reraise as problem is with data provider logic
+
+            raise
+
+        consolidated_dividend_table = consolidated_dividend_table_descending[::-1]
+
+        dividend_data = DividendsDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_dividend_table,
+            common_field_data={
+                DividendData: {
+                    DividendData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return dividend_data    # noqa: RET504
 
     def get_fundamental_data(
         self,
@@ -475,14 +550,183 @@ class FinancialModelingPrep(DataProviderInterface):
             }
         )
 
-        return self._create_fundamental_data_from_raw_stock_response(
-            main_identifier,
-            start_date,
-            end_date,
-            fundamental_balance_sheet_raw_data,
-            fundamental_cash_flow_raw_data,
-            fundamental_income_raw_data
+        endpoint_tables = DataProviderToolkit.create_endpoint_tables_from_json_mapping({
+            self.Endpoints.BALANCE_SHEET_STATEMENT:
+                fundamental_balance_sheet_raw_data,
+            self.Endpoints.CASH_FLOW_STATEMENT:
+                fundamental_cash_flow_raw_data,
+            self.Endpoints.INCOME_STATEMENT:
+                fundamental_income_raw_data,
+        })
+
+        empty_fundamental_data = FundamentalData(
+            main_identifier=MarketInstrumentIdentifier(main_identifier),
+            rows={}
         )
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=FundamentalsDataBlock,
+                endpoint_field_map=self._fundamental_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError:
+            msg = f"{main_identifier} fundamental data endpoints returned no data"
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_fundamental_data
+        except DataProviderToolkitRuntimeError:
+            # reraise as problem is with data provider logic
+
+            raise
+
+        # @todo put this try catch logic in a context manager ??
+        # @todo trim based on start and end dates
+        try:
+            consolidated_fundamental_table_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+                processed_endpoint_tables=processed_endpoint_tables,
+                table_merge_fields=[
+                    FundamentalsDataBlock.clock_sync_field,
+                    FundamentalDataRow.period_end_date,
+                ],
+                predominant_order_descending=True
+            )
+        except DataProviderToolkitRuntimeError:
+            # reraise as problem is with data provider logic
+
+            raise
+
+        except DataProviderMultiEndpointCommonDataOrderError:
+            msg = " ".join([
+                f"{main_identifier} fundamental data endpoints have inconsistent filing_date order for common data,",
+                "omitting its fundamental data"
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            return empty_fundamental_data
+
+        except DataProviderMultiEndpointCommonDataDiscrepancyError as error:
+            discrepancy_output_table = DataProviderToolkit.format_endpoint_discrepancy_table_for_output(
+                data_block=FundamentalsDataBlock,
+                discrepancy_table=error.discrepancies_table,
+                endpoints_enum=self.Endpoints,
+                endpoint_field_map=self._fundamental_data_endpoint_map,
+            )
+            msg = "\n".join([
+                f"{main_identifier} fundamental data endpoints present discrepancies between common columns:",
+                ", ".join(error.discrepant_columns),
+                "Omitting fundamental data for the dates corresponding to the following discrepancies:",
+                discrepancy_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            # fill the conflicting rows with None and retry
+            no_discrepancy_processed_tables = DataProviderToolkit.clear_discrepant_processed_endpoint_tables_rows(
+                discrepancy_table=error.discrepancies_table,
+                processed_endpoint_tables=processed_endpoint_tables,
+                key_column_names=error.key_column_names,
+                preserved_column_names=[
+                    FundamentalsDataBlock.get_field_qualified_name(FundamentalsDataBlock.clock_sync_field),
+                ]
+            )
+            consolidated_fundamental_table_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+                processed_endpoint_tables=no_discrepancy_processed_tables,
+                table_merge_fields=[
+                    FundamentalsDataBlock.clock_sync_field,
+                    FundamentalDataRow.period_end_date,
+                ],
+                predominant_order_descending=True
+            )
+
+        consolidated_fundamental_table = consolidated_fundamental_table_descending[::-1]
+        warning_output_columns_map = {
+            FundamentalsDataBlock.get_field_qualified_name(
+                FundamentalsDataBlock.clock_sync_field
+            ): 'filing_date',
+            FundamentalsDataBlock.get_field_qualified_name(
+                FundamentalDataRow.period_end_date
+            ): 'period_end_date',
+            FundamentalsDataBlock.get_field_qualified_name(
+                FundamentalDataRow.fiscal_year
+            ): 'fiscal_year',
+            FundamentalsDataBlock.get_field_qualified_name(
+                FundamentalDataRow.fiscal_period
+            ): 'fiscal_period',
+        }
+
+        # @todo filter rows where filing date is before period end date
+
+        # catch empty income statement rows
+        missing_income_statement_rows_mask = DataProviderToolkit.find_common_table_missing_rows_mask(
+            consolidated_fundamental_table.select([
+                    FundamentalsDataBlock.get_field_qualified_name(
+                        FundamentalsDataBlock.clock_sync_field
+                    )
+                ]
+            ),
+            processed_endpoint_tables[self.Endpoints.INCOME_STATEMENT].select([
+                FundamentalsDataBlock.get_field_qualified_name(
+                    FundamentalsDataBlock.clock_sync_field
+                )
+            ]),
+        )
+        if missing_income_statement_rows_mask is not None:
+            missing_income_statement_rows_table = (
+                consolidated_fundamental_table
+                .select(warning_output_columns_map.keys())
+                .filter(missing_income_statement_rows_mask)
+            )
+            discrepancy_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=missing_income_statement_rows_table,
+                output_column_renames=warning_output_columns_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} has balance sheet or cash flow statements with no corresponding income statement.",
+                "Omitting fundamental data for the periods corresponding to the following filings:",
+                discrepancy_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            full_income_rows_mask = pyarrow.compute.invert(missing_income_statement_rows_mask)
+            full_income_fundamental_table = consolidated_fundamental_table.filter(full_income_rows_mask)
+        else:
+            full_income_fundamental_table = consolidated_fundamental_table
+
+        # filter ammendments
+        irregular_rows_mask = FundamentalsDataBlock.find_consolidated_table_irregular_filing_rows(
+            consolidated_table=full_income_fundamental_table
+        )
+        if irregular_rows_mask is not None:
+            irregular_rows_table = (
+                full_income_fundamental_table
+                .select(warning_output_columns_map.keys())
+                .filter(irregular_rows_mask)
+            )
+            discrepancy_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=irregular_rows_table,
+                output_column_renames=warning_output_columns_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} presents irregular (ammended or late) filings.",
+                "Omitting fundamental data for the periods corresponding to the following filings:",
+                discrepancy_output_table
+            ])
+            logging.getLogger(__name__).warning(msg)
+
+            regular_rows_mask = pyarrow.compute.invert(irregular_rows_mask)
+            regularized_fundamental_table = full_income_fundamental_table.filter(regular_rows_mask)
+        else:
+            regularized_fundamental_table = full_income_fundamental_table
+
+        fundamental_data = FundamentalsDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=regularized_fundamental_table,
+            common_field_data={
+                FundamentalData: {
+                    FundamentalData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return fundamental_data     # noqa: RET504
 
     def get_market_data(
             self,
@@ -544,13 +788,36 @@ class FinancialModelingPrep(DataProviderInterface):
                 'to': end_date.strftime("%Y-%m-%d"),
             },
         )
+        endpoint_tables = DataProviderToolkit.create_endpoint_tables_from_json_mapping({
+            self.Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED:
+                market_raw_dividend_and_split_adjusted_data,
+            self.Endpoints.MARKET_DATA_DAILY_SPLIT_ADJUSTED:
+                market_raw_split_adjusted_data,
+            self.Endpoints.MARKET_DATA_DAILY_UNADJUSTED:
+                market_raw_unadjusted_data,
+        })
 
-        return self._create_market_data_from_raw_stock_response(
-            main_identifier,
-            market_raw_unadjusted_data,
-            market_raw_split_adjusted_data,
-            market_raw_dividend_and_split_adjusted_data,
+        processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+            data_block=MarketDailyDataBlock,
+            endpoint_field_map=self._market_data_endpoint_map,
+            endpoint_tables=endpoint_tables,
         )
+        consolidated_market_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+            processed_endpoint_tables=processed_endpoint_tables,
+            table_merge_fields=[MarketDailyDataBlock.clock_sync_field],
+            predominant_order_descending=True
+        )
+        consolidated_market_data = consolidated_market_data_descending[::-1]
+        market_data = MarketDailyDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_market_data,
+            common_field_data={
+                MarketData: {
+                    MarketData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return market_data  # noqa: RET504
 
     def get_split_data(
         self,
@@ -586,13 +853,6 @@ class FinancialModelingPrep(DataProviderInterface):
 
         endpoint_id = self.Endpoints.STOCK_SPLIT.name
 
-        if self._get_paid_account_status() is False:
-            max_records_download_limit = self.MAX_FREE_ACCOUNT_RECORDS_DOWNLOAD_LIMIT
-        else:
-            max_records_download_limit = self.MAX_RECORDS_DOWNLOAD_LIMIT
-
-        endpoint_id = self.Endpoints.STOCK_DIVIDEND.name
-
         try:
             # Attempt to download the data, possibly with a paid account download limit
             split_raw_data = self._request_data(
@@ -623,13 +883,51 @@ class FinancialModelingPrep(DataProviderInterface):
             else:
                 raise error
 
+        endpoint_tables = DataProviderToolkit.create_endpoint_tables_from_json_mapping({
+            self.Endpoints.STOCK_SPLIT:
+                split_raw_data
+        })
 
-        return self._create_split_data_from_raw_stock_response(
-            main_identifier,
-            start_date,
-            end_date,
-            split_raw_data,
+        empty_split_data = SplitData(
+                main_identifier=MainIdentifier(main_identifier),
+                rows={}
+            )
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=SplitsDataBlock,
+                endpoint_field_map=self._split_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError:
+            msg = f"{main_identifier} split data endpoints returned no data"
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_split_data
+
+        # @todo trim based on start and end dates
+        try:
+            consolidated_split_table_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+                processed_endpoint_tables=processed_endpoint_tables,
+                table_merge_fields=[],
+                predominant_order_descending=True
+            )
+        except DataProviderToolkitRuntimeError:
+            # reraise as problem is with data provider logic
+
+            raise
+
+        consolidated_split_table = consolidated_split_table_descending[::-1]
+
+        split_data = SplitsDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_split_table,
+            common_field_data={
+                SplitData: {
+                    SplitData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
         )
+
+        return split_data   # noqa: RET504
 
     def initialize(
         self,
@@ -642,7 +940,7 @@ class FinancialModelingPrep(DataProviderInterface):
         self,
     ) -> bool | None:
         """
-        Validate that the API key used to init the class is valid, by making a test request
+        Validate that the API key used to init the class is valid, by making a test request.
 
         Returns
         -------
@@ -672,554 +970,6 @@ class FinancialModelingPrep(DataProviderInterface):
         return test_data is not None
 
     @classmethod
-    def _create_dividend_data_from_raw_stock_response(
-        cls,
-        ticker: str,
-        start_date,
-        end_date,
-        raw_dividend_response: str,
-    ) -> DividendData:
-        """
-        Populate a DividendData entity from the web service raw data.
-
-        Parameters
-        ----------
-        ticker
-            the stock's ticker
-        start_date
-            The first date we're interested in
-        end_date
-            The last date we're interested in
-        raw_dividend_response
-            The raw dividend response data
-
-        Returns
-        -------
-        DividendData
-
-        Raises
-        ------
-        EntityProcessingError
-        """
-        dividend_data_rows = {}
-        try:
-            if raw_dividend_response is None:
-                raise DividendDataEmptyError("No data returned by dividend data endpoint")
-
-            raw_dividend_data = json.loads(raw_dividend_response)
-
-            dividend_data = sorted(raw_dividend_data, key=lambda x: x['date'])
-            for dividend_row in dividend_data:
-                all_dates = [
-                    dividend_row['declarationDate'],
-                    dividend_row['date'],
-                    dividend_row['recordDate'],
-                    dividend_row['paymentDate'],
-                ]
-                non_empty_dates = list(
-                    filter(
-                        lambda x: x != '',
-                        all_dates
-                    )
-                )
-                # check if the available dates lie outside of the selected period
-                if (
-                    dividend_row['date'] == ''
-                    or len(non_empty_dates) == 0
-                    or non_empty_dates[-1] < str(start_date)
-                    or non_empty_dates[0] > str(end_date)
-                ):
-                    continue
-
-                date = datetime.date.fromisoformat(dividend_row['date'])
-                try:
-                    fields = entity_helper.convert_data_row_into_entity_fields(
-                        dividend_row,
-                        cls._fields_dividend_data_rows,
-                        DividendDataRow
-                    )
-                    dividend_data_rows[dividend_row['date']] = DividendDataRow(
-                        **fields
-                    )
-                except (
-                    EntityFieldTypeError,
-                    EntityTypeError,
-                    EntityValueError,
-                ) as error:
-                    msg = f"date: {date}"
-                    raise DividendDataRowError(msg) from error
-
-            dividend_data = DividendData(
-                main_identifier=MainIdentifier(ticker),
-                rows=dividend_data_rows
-            )
-        except (
-            DividendDataEmptyError,
-            DividendDataRowError
-        ):
-            msg = f"{ticker} has no dividend data obtained for the selected period, omitting its dividend data"
-            logging.getLogger(__name__).warning(msg)
-            dividend_data = DividendData(
-                main_identifier=MainIdentifier(ticker),
-                rows={}
-            )
-
-        return dividend_data
-
-    @classmethod
-    def _create_fundamental_data_from_raw_stock_response(
-        cls,
-        ticker: str,
-        start_date: datetime.date,
-        end_date: datetime.date,
-        fundamental_balance_sheet_raw_data: str,
-        fundamental_cash_flow_raw_data: str,
-        fundamental_income_raw_data: str
-    ) -> FundamentalData:
-        """
-        Populate a FundamentalData entity from the web service raw data.
-
-        Parameters
-        ----------
-        ticker
-            the stock's ticker
-        start_date
-            The first date we're interested in
-        end_date
-            The last date we're interested in
-        fundamental_balance_sheet_raw_data
-            The raw balance sheet response data
-        fundamental_cash_flow_raw_data
-            The raw cash flow response data
-        fundamental_income_raw_data
-            The raw income response data
-
-        Returns
-        -------
-        FundamentalData
-
-        Raises
-        ------
-        EntityProcessingError
-        """
-        try:
-            fundamental_data_rows = {}
-            balance_sheet_data = {
-                i[cls._fields_fundamental_common_data_rows[cls.FILING_DATE_FIELD_NAME]]: i
-                for i in json.loads(fundamental_balance_sheet_raw_data)
-            }
-            cash_flow_data = {
-                i[cls._fields_fundamental_common_data_rows[cls.FILING_DATE_FIELD_NAME]]: i
-                for i in json.loads(fundamental_cash_flow_raw_data)
-            }
-            income_data = {
-                i[cls._fields_fundamental_common_data_rows[cls.FILING_DATE_FIELD_NAME]]: i
-                for i in json.loads(fundamental_income_raw_data)
-            }
-
-            # Reminder: FMP returns fundamentals ordered from new to old
-            descending_dates = income_data.keys()
-            if len(descending_dates) < 1:
-                raise FundamentalDataNoIncomeError
-
-            # find unordered dates (usually amendments)
-            unordered_dates = cls._find_unordered_dates(
-                list(descending_dates),
-                descending_order=True
-            )
-
-            first_date = cls._find_first_date_before_start_date(
-                list(descending_dates),
-                str(start_date)
-            )
-            last_date = str(end_date)
-
-            date_indexes = reversed(descending_dates)
-
-            for date_index in date_indexes:
-                if (
-                    date_index < first_date
-                    or (
-                        date_index > last_date
-                        and (       # amendments with original date after last_date
-                            cls.PERIOD_END_DATE_PROVIDER_FIELD_NAME not in income_data[date_index]
-                            or income_data[date_index][cls.PERIOD_END_DATE_PROVIDER_FIELD_NAME] > last_date
-                        )
-                    )
-                ):
-                    continue
-
-                if date_index in unordered_dates:
-                    # possibly amended statement; try to insert blank data into original date
-                    if cls.PERIOD_END_DATE_PROVIDER_FIELD_NAME not in income_data[date_index]:
-                        raise FundamentalDataNonChronologicalStatementWithoutOriginalDateError
-                    else:
-                        current_period_end_date = income_data[date_index][cls.PERIOD_END_DATE_PROVIDER_FIELD_NAME]
-                        if (
-                            start_date
-                            <= datetime.date.fromisoformat(current_period_end_date)
-                            <= end_date
-                        ):
-                            logging.getLogger(__name__).warning(
-                                " ".join([
-                                    f"{ticker} has late or amended filing date for {date_index}, omitting",
-                                    f"fundamental data corresponding to: {current_period_end_date}"
-                                ])
-                            )
-                        fundamental_data_rows[current_period_end_date] = None
-
-                        continue
-
-                income_row = income_data[date_index]
-
-                try:
-                    if date_index not in balance_sheet_data:
-                        fundamental_row_balance_sheet = None
-                    else:
-                        balance_sheet_fields = entity_helper.convert_data_row_into_entity_fields(
-                            balance_sheet_data[date_index],
-                            dict(cls._fields_fundamental_balance_sheet_data_rows),
-                            FundamentalDataRowBalanceSheet
-                        )
-                        fundamental_row_balance_sheet = FundamentalDataRowBalanceSheet(
-                            **balance_sheet_fields
-                        )
-
-                    if date_index not in cash_flow_data:
-                        fundamental_row_cash_flow = None
-                    else:
-                        cash_flow_fields = entity_helper.convert_data_row_into_entity_fields(
-                            cash_flow_data[date_index],
-                            dict(cls._fields_fundamental_cash_flow_data_rows),
-                            FundamentalDataRowCashFlow
-                        )
-                        fundamental_row_cash_flow = FundamentalDataRowCashFlow(
-                            **cash_flow_fields
-                        )
-
-                    income_fields = entity_helper.convert_data_row_into_entity_fields(
-                        income_row,
-                        dict(cls._fields_fundamental_income_data_rows),
-                        FundamentalDataRowIncomeStatement
-                    )
-                except EntityFieldTypeError as error:
-                    fundamental_data_rows[date_index] = None
-                    msg = f"{ticker} row processing error: {error}; omitting fundamental data for date: {date_index}"
-                    logging.getLogger(__name__).warning(msg)
-
-                    continue
-
-                if (
-                    fundamental_row_balance_sheet is None
-                    and fundamental_row_cash_flow is None
-                ):
-                    logging.getLogger(__name__).warning(
-                        " ".join([
-                            f"{ticker} missing Balance Sheet and Cash Flow data for date: {date_index}"
-                        ])
-                    )
-                elif fundamental_row_balance_sheet is None:
-                    logging.getLogger(__name__).warning(
-                        " ".join([
-                            f"{ticker} missing Balance Sheet data for date: {date_index}"
-                        ])
-                    )
-                elif fundamental_row_cash_flow is None:
-                    logging.getLogger(__name__).warning(
-                        " ".join([
-                            f"{ticker} missing Cash Flow data for date: {date_index}"
-                        ])
-                    )
-
-                try:
-                    fundamental_data_rows[date_index] = FundamentalDataRow(
-                        accepted_date=datetime.datetime.strptime(   # noqa: DTZ007
-                            income_row[cls._fields_fundamental_common_data_rows["accepted_date"]],
-                            "%Y-%m-%d %H:%M:%S"
-                        ),
-                        filing_date=datetime.date.fromisoformat(
-                            income_row[cls._fields_fundamental_common_data_rows[cls.FILING_DATE_FIELD_NAME]],
-                        ),
-                        fiscal_period=str(
-                            income_row[cls._fields_fundamental_common_data_rows["fiscal_period"]]
-                        ),
-                        fiscal_year=int(
-                            income_row[cls._fields_fundamental_common_data_rows["fiscal_year"]]
-                        ),
-                        period_end_date=datetime.date.fromisoformat(
-                            income_row[cls.PERIOD_END_DATE_PROVIDER_FIELD_NAME],
-                        ),
-                        reported_currency=income_row[cls._fields_fundamental_common_data_rows["reported_currency"]],
-                        balance_sheet=fundamental_row_balance_sheet,
-                        cash_flow=fundamental_row_cash_flow,
-                        income_statement=FundamentalDataRowIncomeStatement(
-                            **income_fields
-                        ),
-                    )
-                except (
-                    EntityTypeError,
-                    EntityValueError,
-                ) as error:
-                    msg = f"Fundamental data processing error for date {date_index}"
-                    raise EntityProcessingError(msg) from error
-
-            fundamental_data = FundamentalData(
-                main_identifier=MainIdentifier(ticker),
-                rows=fundamental_data_rows
-            )
-        except FundamentalDataNoIncomeError:
-            msg = f"{ticker} has no income data obtained for the selected period, omitting its fundamental data"
-            logging.getLogger(__name__).warning(msg)
-            fundamental_data = FundamentalData(
-                main_identifier=MainIdentifier(ticker),
-                rows={}
-            )
-        except FundamentalDataNonChronologicalStatementWithoutOriginalDateError:
-            msg = ", ".join([
-                f"{ticker} has possibly amended statements without their original dates",
-                "omitting its fundamental data"
-            ])
-            logging.getLogger(__name__).warning(msg)
-            fundamental_data = FundamentalData(
-                main_identifier=MainIdentifier(ticker),
-                rows={}
-            )
-        except (
-            FundamentalDataUnsortedRowDatesError,
-            EntityTypeError,
-            EntityValueError,
-        ) as error:
-            raise EntityProcessingError("Fundamental data processing error") from error
-
-        return fundamental_data
-
-    @classmethod
-    def _create_market_data_from_raw_stock_response(
-        cls,
-        ticker: str,
-        raw_unadjusted_response: str,
-        raw_split_adjusted_response: str,
-        raw_dividend_and_split_adjusted_response: str,
-    ) -> MarketData:
-        """
-        Populate a MarketData entity from the web service raw data.
-
-        Parameters
-        ----------
-        ticker
-            the stock's ticker
-        raw_unadjusted_response
-            The raw unadjusted market response data
-        raw_split_adjusted_response
-            The raw split adjusted market response data
-        raw_dividend_and_split_adjusted_response
-            The raw dividend and split adjusted market response data
-
-        Returns
-        -------
-        MarketData
-
-        Raises
-        ------
-        EntityProcessingError
-        """
-        market_data_rows = {}
-        try:
-            if (
-                raw_unadjusted_response is None
-                or raw_unadjusted_response == '[]'
-            ):
-                raise MarketDataEmptyError("No data returned by unadjusted market data endpoint")
-            if (
-                raw_split_adjusted_response is None
-                or raw_split_adjusted_response == '[]'
-            ):
-                raise MarketDataEmptyError("No data returned by split adjusted market data endpoint")
-            if (
-                raw_dividend_and_split_adjusted_response is None
-                or raw_dividend_and_split_adjusted_response == '[]'
-            ):
-                raise MarketDataEmptyError("No data returned by dividend and split adjusted market data endpoint")
-
-            unadjusted_data_list = json.loads(raw_unadjusted_response)
-            unadjusted_data_by_date = {
-                i[cls._fields_market_data_daily_rows_unadjusted['date']]: i
-                for i in unadjusted_data_list
-            }
-            split_adjusted_data_list = json.loads(raw_split_adjusted_response)
-            split_adjusted_data_by_date = {
-                i[cls._fields_market_data_daily_rows_split_adjusted['date']]: i
-                for i in split_adjusted_data_list
-            }
-            dividend_and_split_adjusted_data_list = json.loads(raw_dividend_and_split_adjusted_response)
-            dividend_and_split_adjusted_data_by_date = {
-                i[cls._fields_market_data_daily_rows_dividend_and_split_adjusted['date']]: i
-                for i in dividend_and_split_adjusted_data_list
-            }
-
-            # stock_data = sorted(raw_stock_data, key=lambda x: x['date'])
-            raw_dates = sorted(
-                unadjusted_data_by_date.keys()
-            )
-            field_equivalences_unadjusted = dict(cls._fields_market_data_daily_rows_unadjusted)
-            field_equivalences_split_adjusted = dict(cls._fields_market_data_daily_rows_split_adjusted)
-            field_equivalences_dividend_and_split_adjusted = dict(
-                cls._fields_market_data_daily_rows_dividend_and_split_adjusted
-            )
-            min_date = None
-            max_date = None
-            for raw_date in raw_dates:
-                date = datetime.date.fromisoformat(raw_date)
-                try:
-                    unadjusted_fields = entity_helper.convert_data_row_into_entity_fields(
-                        unadjusted_data_by_date[raw_date],
-                        field_equivalences_unadjusted,
-                        MarketDataDailyRow
-                    )
-                    split_adjusted_fields = entity_helper.convert_data_row_into_entity_fields(
-                        split_adjusted_data_by_date[raw_date],
-                        field_equivalences_split_adjusted,
-                        MarketDataDailyRow
-                    )
-                    dividend_and_split_adjusted_fields = entity_helper.convert_data_row_into_entity_fields(
-                        dividend_and_split_adjusted_data_by_date[raw_date],
-                        field_equivalences_dividend_and_split_adjusted,
-                        MarketDataDailyRow
-                    )
-                    nonempty_split_adjusted_fields = {
-                        k: v
-                        for k, v in split_adjusted_fields.items()
-                        if v is not None
-                    }
-                    nonempty_dividend_and_split_adjusted_fields = {
-                        k: v
-                        for k, v in dividend_and_split_adjusted_fields.items()
-                        if v is not None
-                    }
-                    fields_chain = collections.ChainMap(
-                        nonempty_dividend_and_split_adjusted_fields,
-                        nonempty_split_adjusted_fields,
-                        unadjusted_fields,
-                    )
-                    market_data_rows[raw_date] = MarketDataDailyRow(
-                        **fields_chain
-                    )
-                except (
-                    EntityFieldTypeError,
-                    EntityTypeError,
-                    EntityValueError,
-                ) as error:
-                    msg = f"date: {date}"
-                    raise MarketDataRowError(msg) from error
-
-                if (
-                    min_date is None
-                    or date < min_date
-                ):
-                    min_date = date
-                if (
-                    max_date is None
-                    or date > max_date
-                ):
-                    max_date = date
-
-            market_data = MarketData(
-                start_date=min_date,
-                end_date=max_date,
-                main_identifier=MainIdentifier(ticker),
-                daily_rows=market_data_rows
-            )
-        except (
-            MarketDataEmptyError,
-            MarketDataRowError
-        ) as error:
-            raise EntityProcessingError("Market data processing error") from error
-
-        return market_data
-
-    @classmethod
-    def _create_split_data_from_raw_stock_response(
-        cls,
-        ticker: str,
-        start_date,
-        end_date,
-        raw_split_response: str,
-    ) -> SplitData:
-        """
-        Populate a SplitData entity from the web service raw data.
-
-        Parameters
-        ----------
-        ticker
-            the stock's ticker
-        start_date
-            The first date we're interested in
-        end_date
-            The last date we're interested in
-        raw_split_response
-            The raw split response data
-
-        Returns
-        -------
-        SplitData
-
-        Raises
-        ------
-        EntityProcessingError
-        """
-        split_data_rows = {}
-        try:
-            if raw_split_response is None:
-                raise SplitDataEmptyError("No data returned by split data endpoint")
-
-            raw_split_data = json.loads(raw_split_response)
-
-            split_data = sorted(raw_split_data, key=lambda x: x['date'])
-            for split_row in split_data:
-                # check if the available dates lie outside of the selected period
-                if (
-                    split_row['date'] == ''
-                    or split_row['date'] < str(start_date)
-                    or split_row['date'] > str(end_date)
-                ):
-                    continue
-
-                date = datetime.date.fromisoformat(split_row['date'])
-                try:
-                    fields = entity_helper.convert_data_row_into_entity_fields(
-                        split_row,
-                        cls._fields_split_data_rows,
-                        SplitDataRow
-                    )
-                    split_data_rows[split_row['date']] = SplitDataRow(
-                        **fields
-                    )
-                except (
-                    EntityFieldTypeError,
-                    EntityTypeError,
-                    EntityValueError,
-                ) as error:
-                    msg = f"date: {date}"
-                    raise SplitDataRowError(msg) from error
-
-            split_data = SplitData(
-                main_identifier=MainIdentifier(ticker),
-                rows=split_data_rows
-            )
-        except (
-            SplitDataEmptyError,
-            SplitDataRowError
-        ):
-            msg = f"{ticker} has no split data obtained for the selected period, omitting its split data"
-            logging.getLogger(__name__).warning(msg)
-            split_data = SplitData(
-                main_identifier=MainIdentifier(ticker),
-                rows={}
-            )
-
-        return split_data
-
-    @classmethod
     def _get_paid_account_status(
         cls,
     ) -> bool | None:
@@ -1227,7 +977,7 @@ class FinancialModelingPrep(DataProviderInterface):
         Get the account paid plan status of the FMP account.
 
         Returns
-        ----------
+        -------
         Whether the account is a paid account plan or not
         """
         return cls._is_paid_account_plan
@@ -1237,7 +987,7 @@ class FinancialModelingPrep(DataProviderInterface):
         cls,
         *,
         is_paid_account_plan: bool,
-    ):
+    ) -> None:
         """
         Set the account paid plan status of the FMP account.
 

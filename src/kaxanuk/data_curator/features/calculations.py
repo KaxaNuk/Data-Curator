@@ -36,7 +36,7 @@ from kaxanuk.data_curator.modules.data_column import DataColumn
 def c_annualized_volatility_5d_log_returns_dividend_and_split_adjusted(
     c_log_returns_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the annualized volatility of the dividend-and-split-adjusted log returns over a 5-day period.
 
     Returns are calculated on the respectively adjusted close prices.
@@ -59,7 +59,7 @@ def c_annualized_volatility_5d_log_returns_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{Annualized\\ Volatility} = \\sigma \\times \\sqrt{252}
+        \mathrm{Annualized\ Volatility} = \sigma \times \sqrt{252}
 
     In Excel, assuming your log returns are in column A starting at cell A2:
 
@@ -80,7 +80,7 @@ def c_annualized_volatility_5d_log_returns_dividend_and_split_adjusted(
 def c_annualized_volatility_21d_log_returns_dividend_and_split_adjusted(
     c_log_returns_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the annualized volatility of the dividend-and-split-adjusted log returns over a 21-day period.
 
     Returns are calculated on the respectively adjusted close prices.
@@ -103,7 +103,7 @@ def c_annualized_volatility_21d_log_returns_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{Annualized\\ Volatility} = \\sigma \\times \\sqrt{252}
+        \mathrm{Annualized\ Volatility} = \sigma \times \sqrt{252}
 
     In Excel, assuming your log returns are in column A starting at cell A2:
 
@@ -124,7 +124,7 @@ def c_annualized_volatility_21d_log_returns_dividend_and_split_adjusted(
 def c_annualized_volatility_63d_log_returns_dividend_and_split_adjusted(
     c_log_returns_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the annualized volatility of the dividend-and-split-adjusted log returns over a 63-day period.
 
     Returns are calculated on the respectively adjusted close prices.
@@ -147,7 +147,7 @@ def c_annualized_volatility_63d_log_returns_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{Annualized\\ Volatility} = \\sigma \\times \\sqrt{252}
+        \mathrm{Annualized\ Volatility} = \sigma \times \sqrt{252}
 
     In Excel, assuming your log returns are in column A starting at cell A2:
 
@@ -168,7 +168,7 @@ def c_annualized_volatility_63d_log_returns_dividend_and_split_adjusted(
 def c_annualized_volatility_252d_log_returns_dividend_and_split_adjusted(
     c_log_returns_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the annualized volatility of the dividend-and-split-adjusted log returns over a 252-day period.
 
     Returns are calculated on the respectively adjusted close prices.
@@ -191,7 +191,7 @@ def c_annualized_volatility_252d_log_returns_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{Annualized\\ Volatility} = \\sigma \\times \\sqrt{252}
+        \mathrm{Annualized\ Volatility} = \sigma \times \sqrt{252}
 
     In Excel, assuming your log returns are in column A starting at cell A2:
 
@@ -215,7 +215,7 @@ def c_book_to_price(
     fbs_preferred_stock_value,
     c_market_cap
 ):
-    """
+    r"""
     Calculate the book-to-price ratio.
 
     .. category:: Market and Fundamental
@@ -242,12 +242,12 @@ def c_book_to_price(
 
     .. math::
 
-        \\text{Book-to-Price} = \\frac{
-            \\mathrm{Total\\ Assets} - (
-                \\mathrm{Total\\ Liabilities} + \\mathrm{Preferred\\ Stock}
+        \text{Book-to-Price} = \frac{
+            \mathrm{Total\ Assets} - (
+                \mathrm{Total\ Liabilities} + \mathrm{Preferred\ Stock}
             )
         }{
-            \\mathrm{Market\\ Cap}
+            \mathrm{Market\ Cap}
         }
 
     In Excel, assuming total assets in column A, total liabilities in column B,
@@ -279,7 +279,7 @@ def c_book_value_per_share(
     fbs_preferred_stock_value,
     fis_weighted_average_basic_shares_outstanding
 ):
-    """
+    r"""
     Calculate the book value per share.
 
     .. category:: Fundamental
@@ -306,12 +306,12 @@ def c_book_value_per_share(
 
     .. math::
 
-        \\mathrm{Book\\ Value\\ Per\\ Share} = \\frac{
-            \\mathrm{Total\\ Assets} - (
-                \\mathrm{Total\\ Liabilities} + \\mathrm{Preferred\\ Stock}
+        \mathrm{Book\ Value\ Per\ Share} = \frac{
+            \mathrm{Total\ Assets} - (
+                \mathrm{Total\ Liabilities} + \mathrm{Preferred\ Stock}
             )
         }{
-            \\mathrm{Weighted\\ Average\\ Basic\\ Shares\\ Outstanding}
+            \mathrm{Weighted\ Average\ Basic\ Shares\ Outstanding}
         }
 
     In Excel, assuming total assets in column A, liabilities in column B,
@@ -343,7 +343,7 @@ def c_chaikin_money_flow_21d_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted,
     m_volume_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 21-day Chaikin Money Flow (CMF) using dividend-and-aplit-adjusted prices.
 
     .. category:: Volume
@@ -370,20 +370,20 @@ def c_chaikin_money_flow_21d_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{MFV}_t = \\frac{
-            (\\mathrm{Close}_t - \\mathrm{Low}_t) - (\\mathrm{High}_t - \\mathrm{Close}_t)
+        \mathrm{MFV}_t = \frac{
+            (\mathrm{Close}_t - \mathrm{Low}_t) - (\mathrm{High}_t - \mathrm{Close}_t)
         }{
-            \\mathrm{High}_t - \\mathrm{Low}_t
-        } \\times \\mathrm{Volume}_t
+            \mathrm{High}_t - \mathrm{Low}_t
+        } \times \mathrm{Volume}_t
 
     Chaikin Money Flow over 21 days is:
 
     .. math::
 
-        \\mathrm{CMF}_{21} = \\frac{
-            \\sum_{i=1}^{21} \\mathrm{MFV}_i
+        \mathrm{CMF}_{21} = \frac{
+            \sum_{i=1}^{21} \mathrm{MFV}_i
         }{
-            \\sum_{i=1}^{21} \\mathrm{Volume}_i
+            \sum_{i=1}^{21} \mathrm{Volume}_i
         }
 
     In Excel, assuming adjusted high in column A, adjusted low in column B,
@@ -418,7 +418,7 @@ def c_chaikin_money_flow_21d_split_adjusted(
     m_close_split_adjusted,
     m_volume_split_adjusted
 ):
-    """
+    r"""
     Calculate the 21-day Chaikin Money Flow (CMF) using split-adjusted prices.
 
     .. category:: Volume
@@ -445,20 +445,20 @@ def c_chaikin_money_flow_21d_split_adjusted(
 
     .. math::
 
-        \\mathrm{MFV}_t = \\frac{
-            (\\mathrm{Close}_t - \\mathrm{Low}_t) - (\\mathrm{High}_t - \\mathrm{Close}_t)
+        \mathrm{MFV}_t = \frac{
+            (\mathrm{Close}_t - \mathrm{Low}_t) - (\mathrm{High}_t - \mathrm{Close}_t)
         }{
-            \\mathrm{High}_t - \\mathrm{Low}_t
-        } \\times \\mathrm{Volume}_t
+            \mathrm{High}_t - \mathrm{Low}_t
+        } \times \mathrm{Volume}_t
 
     Chaikin Money Flow over 21 days is:
 
     .. math::
 
-        \\mathrm{CMF}_{21} = \\frac{
-            \\sum_{i=1}^{21} \\mathrm{MFV}_i
+        \mathrm{CMF}_{21} = \frac{
+            \sum_{i=1}^{21} \mathrm{MFV}_i
         }{
-            \\sum_{i=1}^{21} \\mathrm{Volume}_i
+            \sum_{i=1}^{21} \mathrm{Volume}_i
         }
 
     In Excel, assuming adjusted high in column A, adjusted low in column B,
@@ -495,7 +495,7 @@ def c_daily_traded_value(
     m_vwap_dividend_and_split_adjusted,
     m_volume_dividend_and_split_adjusted,
 ):
-    """
+    r"""
     Calculate the daily intraday traded value using the given VWAP and volume.
 
     First try to use the unadjusted VWAP and volume, then fall back to the split-adjusted VWAP and volume, and finally
@@ -532,7 +532,7 @@ def c_daily_traded_value(
 
     .. math::
 
-        \\mathrm{Average\\ Daily\\ Traded\\ Value} = \\mathrm{VWAP} \\times \\mathrm{Volume}
+        \mathrm{Average\ Daily\ Traded\ Value} = \mathrm{VWAP} \times \mathrm{Volume}
 
     In Excel, assuming VWAP values are in column A (starting at cell A2)
     and volume values are in column B (starting at cell B2):
@@ -560,7 +560,7 @@ def c_daily_traded_value(
 
 # noinspection PyShadowingNames
 def c_daily_traded_value_sma_5d(c_daily_traded_value):
-    """
+    r"""
     Calculate the 5-day simple moving average of the daily traded value.
 
     .. category:: Volume
@@ -581,7 +581,7 @@ def c_daily_traded_value_sma_5d(c_daily_traded_value):
 
     .. math::
 
-        \\mathrm{MA}_{5} = \\frac{1}{5} \\sum_{i=1}^{5} \\mathrm{Daily\\ Traded\\ Value}_{i}
+        \mathrm{MA}_{5} = \frac{1}{5} \sum_{i=1}^{5} \mathrm{Daily\ Traded\ Value}_{i}
 
     In Excel, assuming your daily traded values are in column A starting at cell A2:
 
@@ -598,7 +598,7 @@ def c_daily_traded_value_sma_5d(c_daily_traded_value):
 
 # noinspection PyShadowingNames
 def c_daily_traded_value_sma_21d(c_daily_traded_value):
-    """
+    r"""
     Calculate the 21-day simple moving average of the daily traded value.
 
     .. category:: Volume
@@ -619,7 +619,7 @@ def c_daily_traded_value_sma_21d(c_daily_traded_value):
 
     .. math::
 
-        \\mathrm{MA}_{21} = \\frac{1}{21} \\sum_{i=1}^{21} \\mathrm{Daily\\ Traded\\ Value}_{i}
+        \mathrm{MA}_{21} = \frac{1}{21} \sum_{i=1}^{21} \mathrm{Daily\ Traded\ Value}_{i}
 
     In Excel, assuming your daily traded values are in column A starting at cell A2:
 
@@ -636,7 +636,7 @@ def c_daily_traded_value_sma_21d(c_daily_traded_value):
 
 # noinspection PyShadowingNames
 def c_daily_traded_value_sma_63d(c_daily_traded_value):
-    """
+    r"""
     Calculate the 63-day simple moving average of the daily traded value.
 
     .. category:: Volume
@@ -657,7 +657,7 @@ def c_daily_traded_value_sma_63d(c_daily_traded_value):
 
     .. math::
 
-        \\mathrm{MA}_{63} = \\frac{1}{63} \\sum_{i=1}^{63} \\mathrm{Daily\\ Traded\\ Value}_{i}
+        \mathrm{MA}_{63} = \frac{1}{63} \sum_{i=1}^{63} \mathrm{Daily\ Traded\ Value}_{i}
 
     In Excel, assuming your daily traded values are in column A starting at cell A2:
 
@@ -674,7 +674,7 @@ def c_daily_traded_value_sma_63d(c_daily_traded_value):
 
 # noinspection PyShadowingNames
 def c_daily_traded_value_sma_252d(c_daily_traded_value):
-    """
+    r"""
     Calculate the 252-day simple moving average of the daily traded value.
 
     .. category:: Volume
@@ -695,7 +695,7 @@ def c_daily_traded_value_sma_252d(c_daily_traded_value):
 
     .. math::
 
-        \\mathrm{MA}_{252} = \\frac{1}{252} \\sum_{i=1}^{252} \\mathrm{Daily\\ Traded\\ Value}_{i}
+        \mathrm{MA}_{252} = \frac{1}{252} \sum_{i=1}^{252} \mathrm{Daily\ Traded\ Value}_{i}
 
     In Excel, assuming your daily traded values are in column A starting at cell A2:
 
@@ -715,7 +715,7 @@ def c_earnings_per_share(
     c_last_twelve_months_net_income,
     fis_weighted_average_basic_shares_outstanding
 ):
-    """
+    r"""
     Calculate the earnings per share (EPS).
 
     EPS is calculated using last twelve months net income and weighted average basic shares outstanding.
@@ -740,7 +740,7 @@ def c_earnings_per_share(
 
     .. math::
 
-        \\mathrm{EPS} = \\frac{\\mathrm{Net\\ Income}}{\\mathrm{Weighted\\ Average\\ Basic\\ Shares\\ Outstanding}}
+        \mathrm{EPS} = \frac{\mathrm{Net\ Income}}{\mathrm{Weighted\ Average\ Basic\ Shares\ Outstanding}}
 
     In Excel, assuming net income in column A and shares outstanding in column B (starting at cell A2):
 
@@ -759,7 +759,7 @@ def c_earnings_to_price(
     c_last_twelve_months_net_income,
     c_market_cap
 ):
-    """
+    r"""
     Calculate the earnings-to-price (E/P) ratio.
 
     The E/P ratio is calculated using last twelve months net income and market capitalization.
@@ -784,7 +784,7 @@ def c_earnings_to_price(
 
     .. math::
 
-        \\frac{\\mathrm{Net\\ Income}}{\\mathrm{Market\\ Cap}}
+        \frac{\mathrm{Net\ Income}}{\mathrm{Market\ Cap}}
 
     In Excel, assuming net income in column A and market cap in column B (starting at cell A2):
 
@@ -802,7 +802,7 @@ def c_earnings_to_price(
 def c_exponential_moving_average_5d_close_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 5-day (1 week) exponential moving average (EMA) of the dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -823,14 +823,14 @@ def c_exponential_moving_average_5d_close_dividend_and_split_adjusted(
 
     .. math::
 
-        K = \\frac{2}{n + 1}
+        K = \frac{2}{n + 1}
 
     with n = 5. The EMA is then:
 
     .. math::
 
-        \\mathrm{EMA}_{\\mathrm{current}} = (\\mathrm{Adjusted\\ Close} \\times K)
-        + (\\mathrm{EMA}_{\\mathrm{previous}} \\times (1 - K))
+        \mathrm{EMA}_{\mathrm{current}} = (\mathrm{Adjusted\ Close} \times K)
+        + (\mathrm{EMA}_{\mathrm{previous}} \times (1 - K))
 
     In Excel, assuming adjusted close prices are in column A starting at cell A2:
 
@@ -855,7 +855,7 @@ def c_exponential_moving_average_5d_close_dividend_and_split_adjusted(
 def c_exponential_moving_average_5d_close_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 5-day (1 week) exponential moving average (EMA) of the split-adjusted close prices.
 
     .. category:: Trend
@@ -876,14 +876,14 @@ def c_exponential_moving_average_5d_close_split_adjusted(
 
     .. math::
 
-        K = \\frac{2}{n + 1}
+        K = \frac{2}{n + 1}
 
     with n = 5. The EMA is then:
 
     .. math::
 
-        \\mathrm{EMA}_{\\mathrm{current}} = (\\mathrm{Adjusted\\ Close} \\times K)
-        + (\\mathrm{EMA}_{\\mathrm{previous}} \\times (1 - K))
+        \mathrm{EMA}_{\mathrm{current}} = (\mathrm{Adjusted\ Close} \times K)
+        + (\mathrm{EMA}_{\mathrm{previous}} \times (1 - K))
 
     In Excel, assuming adjusted close prices are in column A starting at cell A2:
 
@@ -908,7 +908,7 @@ def c_exponential_moving_average_5d_close_split_adjusted(
 def c_exponential_moving_average_21d_close_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 21-day (1 month) exponential moving average (EMA) of the dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -929,14 +929,14 @@ def c_exponential_moving_average_21d_close_dividend_and_split_adjusted(
 
     .. math::
 
-        K = \\frac{2}{n + 1}
+        K = \frac{2}{n + 1}
 
     with n = 21. The EMA is then:
 
     .. math::
 
-        \\mathrm{EMA}_{\\mathrm{current}} = (\\mathrm{Adjusted\\ Close} \\times K)
-        + (\\mathrm{EMA}_{\\mathrm{previous}} \\times (1 - K))
+        \mathrm{EMA}_{\mathrm{current}} = (\mathrm{Adjusted\ Close} \times K)
+        + (\mathrm{EMA}_{\mathrm{previous}} \times (1 - K))
 
     In Excel, assuming adjusted close prices are in column A starting at cell A2:
 
@@ -961,7 +961,7 @@ def c_exponential_moving_average_21d_close_dividend_and_split_adjusted(
 def c_exponential_moving_average_21d_close_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 21-day (one month) exponential moving average (EMA) of the split-adjusted close prices.
 
     .. category:: Trend
@@ -982,14 +982,14 @@ def c_exponential_moving_average_21d_close_split_adjusted(
 
     .. math::
 
-        K = \\frac{2}{n + 1}
+        K = \frac{2}{n + 1}
 
     with n = 21. The EMA is then:
 
     .. math::
 
-        \\mathrm{EMA}_{\\mathrm{current}} = (\\mathrm{Adjusted\\ Close} \\times K)
-        + (\\mathrm{EMA}_{\\mathrm{previous}} \\times (1 - K))
+        \mathrm{EMA}_{\mathrm{current}} = (\mathrm{Adjusted\ Close} \times K)
+        + (\mathrm{EMA}_{\mathrm{previous}} \times (1 - K))
 
     In Excel, assuming adjusted close prices are in column A starting at cell A2:
 
@@ -1014,7 +1014,7 @@ def c_exponential_moving_average_21d_close_split_adjusted(
 def c_exponential_moving_average_63d_close_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 63-day (3 month) exponential moving average (EMA) of the dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -1035,14 +1035,14 @@ def c_exponential_moving_average_63d_close_dividend_and_split_adjusted(
 
     .. math::
 
-        K = \\frac{2}{n + 1}
+        K = \frac{2}{n + 1}
 
     with n = 63. The EMA is then:
 
     .. math::
 
-        \\mathrm{EMA}_{\\mathrm{current}} = (\\mathrm{Adjusted\\ Close} \\times K)
-        + (\\mathrm{EMA}_{\\mathrm{previous}} \\times (1 - K))
+        \mathrm{EMA}_{\mathrm{current}} = (\mathrm{Adjusted\ Close} \times K)
+        + (\mathrm{EMA}_{\mathrm{previous}} \times (1 - K))
 
     In Excel, assuming adjusted close prices are in column A starting at cell A2:
 
@@ -1067,7 +1067,7 @@ def c_exponential_moving_average_63d_close_dividend_and_split_adjusted(
 def c_exponential_moving_average_63d_close_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 63-day (3 month) exponential moving average (EMA) of the split-adjusted close prices.
 
     .. category:: Trend
@@ -1088,14 +1088,14 @@ def c_exponential_moving_average_63d_close_split_adjusted(
 
     .. math::
 
-        K = \\frac{2}{n + 1}
+        K = \frac{2}{n + 1}
 
     with n = 63. The EMA is then:
 
     .. math::
 
-        \\mathrm{EMA}_{\\mathrm{current}} = (\\mathrm{Adjusted\\ Close} \\times K)
-        + (\\mathrm{EMA}_{\\mathrm{previous}} \\times (1 - K))
+        \mathrm{EMA}_{\mathrm{current}} = (\mathrm{Adjusted\ Close} \times K)
+        + (\mathrm{EMA}_{\mathrm{previous}} \times (1 - K))
 
     In Excel, assuming adjusted close prices are in column A starting at cell A2:
 
@@ -1120,7 +1120,7 @@ def c_exponential_moving_average_63d_close_split_adjusted(
 def c_exponential_moving_average_252d_close_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 252-day (1 year) exponential moving average (EMA) of the dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -1141,14 +1141,14 @@ def c_exponential_moving_average_252d_close_dividend_and_split_adjusted(
 
     .. math::
 
-        K = \\frac{2}{n + 1}
+        K = \frac{2}{n + 1}
 
     with n = 252. The EMA is then:
 
     .. math::
 
-        \\mathrm{EMA}_{\\mathrm{current}} = (\\mathrm{Adjusted\\ Close} \\times K)
-        + (\\mathrm{EMA}_{\\mathrm{previous}} \\times (1 - K))
+        \mathrm{EMA}_{\mathrm{current}} = (\mathrm{Adjusted\ Close} \times K)
+        + (\mathrm{EMA}_{\mathrm{previous}} \times (1 - K))
 
     In Excel, assuming adjusted close prices are in column A starting at cell A2:
 
@@ -1173,7 +1173,7 @@ def c_exponential_moving_average_252d_close_dividend_and_split_adjusted(
 def c_exponential_moving_average_252d_close_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 252-day (1 year) exponential moving average (EMA) of the split-adjusted close prices.
 
     .. category:: Trend
@@ -1194,14 +1194,14 @@ def c_exponential_moving_average_252d_close_split_adjusted(
 
     .. math::
 
-        K = \\frac{2}{n + 1}
+        K = \frac{2}{n + 1}
 
     with n = 252. The EMA is then:
 
     .. math::
 
-        \\mathrm{EMA}_{\\mathrm{current}} = (\\mathrm{Adjusted\\ Close} \\times K)
-        + (\\mathrm{EMA}_{\\mathrm{previous}} \\times (1 - K))
+        \mathrm{EMA}_{\mathrm{current}} = (\mathrm{Adjusted\ Close} \times K)
+        + (\mathrm{EMA}_{\mathrm{previous}} \times (1 - K))
 
     In Excel, assuming adjusted close prices are in column A starting at cell A2:
 
@@ -1229,7 +1229,7 @@ def c_last_twelve_months_net_income(
     f_fiscal_period,
     configuration
 ):
-    """
+    r"""
     Calculate the last twelve months net income (LTM net income).
 
     For quarterly periods this function computes the rolling sum of net income over the last four quarters.
@@ -1258,7 +1258,7 @@ def c_last_twelve_months_net_income(
 
     .. math::
 
-        \\mathrm{LTM\\ Net\\ Income}_t = \\sum_{i=0}^{3} \\mathrm{Net\\ Income}_{t-i}
+        \mathrm{LTM\ Net\ Income}_t = \sum_{i=0}^{3} \mathrm{Net\ Income}_{t-i}
 
     For annual data, return the period net income directly.
     """
@@ -1279,9 +1279,10 @@ def c_last_twelve_months_net_income(
     elif configuration.period == 'annual':
         output = fis_net_income
     else:
-        raise CalculationError(
-            f"calculations - last_twelve_months_net_income failed, unexpected period type: {configuration.period}"
-        )
+        msg = f"calculations - last_twelve_months_net_income failed, unexpected period type: {configuration.period}"
+
+        raise CalculationError(msg)
+
     return output
 
 
@@ -1292,7 +1293,7 @@ def c_last_twelve_months_revenue(
     f_fiscal_period,
     configuration
 ):
-    """
+    r"""
     Calculate the last twelve months revenue (LTM revenue).
 
     For quarterly periods this function computes the rolling sum of revenues over the last four quarters.
@@ -1321,7 +1322,7 @@ def c_last_twelve_months_revenue(
 
     .. math::
 
-        \\mathrm{LTM\\ Revenue}_t = \\sum_{i=0}^{3} \\mathrm{Revenue}_{t-i}
+        \mathrm{LTM\ Revenue}_t = \sum_{i=0}^{3} \mathrm{Revenue}_{t-i}
 
     For annual data, return the period revenue directly.
     """
@@ -1342,9 +1343,10 @@ def c_last_twelve_months_revenue(
     elif configuration.period == 'annual':
         output = fis_revenues
     else:
-        raise CalculationError(
-            f"calculations - last_twelve_months_revenue failed, unexpected period type: {configuration.period}"
-        )
+        msg = f"calculations - last_twelve_months_revenue failed, unexpected period type: {configuration.period}"
+
+        raise CalculationError(msg)
+
     return output
 
 
@@ -1353,7 +1355,7 @@ def c_last_twelve_months_revenue_per_share(
     c_last_twelve_months_revenue,
     fis_weighted_average_basic_shares_outstanding
 ):
-    """
+    r"""
     Calculate the last twelve months revenue per share, using weighted average basic shares outstanding.
 
     .. category:: Fundamental
@@ -1376,10 +1378,10 @@ def c_last_twelve_months_revenue_per_share(
 
     .. math::
 
-        \\mathrm{Revenue\\ Per\\ Share}
+        \mathrm{Revenue\ Per\ Share}
         =
-        \\frac{\\mathrm{LTM\\ Revenue}}
-                 {\\mathrm{Weighted\\ Average\\ Basic\\ Shares\\ Outstanding}}
+        \frac{\mathrm{LTM\ Revenue}}
+                 {\mathrm{Weighted\ Average\ Basic\ Shares\ Outstanding}}
 
 
     In Excel, assuming LTM revenue in column A and shares outstanding in column B (starting at cell A2):
@@ -1399,7 +1401,7 @@ def c_log_difference_high_to_low(
     m_high,
     m_low
 ):
-    """
+    r"""
     Calculate the logarithmic difference between unadjusted high and low prices.
 
     .. category:: Volatility
@@ -1422,7 +1424,7 @@ def c_log_difference_high_to_low(
 
     .. math::
 
-        \\mathrm{LogDiff} = \\ln\\left(\\frac{\\mathrm{High}}{\\mathrm{Low}}\\right)
+        \mathrm{LogDiff} = \ln\left(\frac{\mathrm{High}}{\mathrm{Low}}\right)
 
     In Excel, assuming high in column A and low in column B (starting at cell A2):
 
@@ -1446,7 +1448,7 @@ def c_log_difference_high_to_low(
 def c_log_returns_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the logarithmic returns of dividend-and-split-adjusted close prices.
 
     Returns are calculated between consecutive adjusted close prices.
@@ -1469,7 +1471,7 @@ def c_log_returns_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{Log\\ Returns}_t = \\ln\\left(\\frac{P_t}{P_{t-1}}\\right)
+        \mathrm{Log\ Returns}_t = \ln\left(\frac{P_t}{P_{t-1}}\right)
 
     In Excel, assuming adjusted close prices in column A starting at cell A2:
 
@@ -1487,7 +1489,7 @@ def c_log_returns_dividend_and_split_adjusted(
 def c_macd_26d_12d_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the MACD (Moving Average Convergence Divergence) for 12 and 26 day periods, dividend-and-split-adjusted.
 
     MACD is calculated as the difference between 12-day and 26-day EMAs of close prices.
@@ -1511,7 +1513,7 @@ def c_macd_26d_12d_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{MACD}_{26,12} = \\mathrm{EMA}_{12} - \\mathrm{EMA}_{26}
+        \mathrm{MACD}_{26,12} = \mathrm{EMA}_{12} - \mathrm{EMA}_{26}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -1560,7 +1562,7 @@ def c_macd_26d_12d_dividend_and_split_adjusted(
 def c_macd_26d_12d_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the MACD (Moving Average Convergence Divergence) for 12 and 26 day periods, split-adjusted.
 
     MACD is calculated as the difference between 12-day and 26-day EMAs of close prices.
@@ -1584,7 +1586,7 @@ def c_macd_26d_12d_split_adjusted(
 
     .. math::
 
-        \\mathrm{MACD}_{26,12} = \\mathrm{EMA}_{12} - \\mathrm{EMA}_{26}
+        \mathrm{MACD}_{26,12} = \mathrm{EMA}_{12} - \mathrm{EMA}_{26}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -1633,7 +1635,7 @@ def c_macd_26d_12d_split_adjusted(
 def c_macd_signal_9d_dividend_and_split_adjusted(
     c_macd_26d_12d_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the MACD signal line (9-day EMA of MACD) for dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -1654,13 +1656,13 @@ def c_macd_signal_9d_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{MACD}_{26,12} = \\mathrm{EMA}_{12} - \\mathrm{EMA}_{26}
+        \mathrm{MACD}_{26,12} = \mathrm{EMA}_{12} - \mathrm{EMA}_{26}
 
     The signal line is the 9-day EMA of the MACD series:
 
     .. math::
 
-        \\mathrm{Signal}_9 = \\mathrm{EMA}_9(\\mathrm{MACD}_{26,12})
+        \mathrm{Signal}_9 = \mathrm{EMA}_9(\mathrm{MACD}_{26,12})
 
     In Excel, assuming your adjusted close prices start in column A at cell A2:
 
@@ -1722,7 +1724,7 @@ def c_macd_signal_9d_dividend_and_split_adjusted(
 def c_macd_signal_9d_split_adjusted(
     c_macd_26d_12d_split_adjusted
 ):
-    """
+    r"""
     Calculate the MACD signal line (9-day EMA of MACD) for split-adjusted close prices.
 
     .. category:: Trend
@@ -1743,13 +1745,13 @@ def c_macd_signal_9d_split_adjusted(
 
     .. math::
 
-        \\mathrm{MACD}_{26,12} = \\mathrm{EMA}_{12} - \\mathrm{EMA}_{26}
+        \mathrm{MACD}_{26,12} = \mathrm{EMA}_{12} - \mathrm{EMA}_{26}
 
     The signal line is the 9-day EMA of the MACD series:
 
     .. math::
 
-        \\mathrm{Signal}_9 = \\mathrm{EMA}_9(\\mathrm{MACD}_{26,12})
+        \mathrm{Signal}_9 = \mathrm{EMA}_9(\mathrm{MACD}_{26,12})
 
     In Excel, assuming your adjusted close prices start in column A at cell A2:
 
@@ -1812,7 +1814,7 @@ def c_market_cap(
     m_close_split_adjusted,
     fis_weighted_average_diluted_shares_outstanding
 ):
-    """
+    r"""
     Calculate the market capitalization using unadjusted close prices and weighted average diluted shares outstanding.
 
     .. category:: Market and Fundamental
@@ -1835,7 +1837,7 @@ def c_market_cap(
 
     .. math::
 
-        \\mathrm{Market\\ Cap} = \\mathrm{Close} \\times \\mathrm{Weighted\\ Average\\ Diluted\\ Shares\\ Outstanding}
+        \mathrm{Market\ Cap} = \mathrm{Close} \times \mathrm{Weighted\ Average\ Diluted\ Shares\ Outstanding}
 
     In Excel, assuming close in column A and shares in column B:
 
@@ -1853,7 +1855,7 @@ def c_market_cap(
 def c_rsi_14d_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 14-day relative strength index (RSI) for dividend-and-split-adjusted close prices.
 
     .. category:: Momentum
@@ -1874,7 +1876,7 @@ def c_rsi_14d_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{RSI}_{14} = 100 - \\frac{100}{1 + \\dfrac{\\mathrm{Average\\ Gain}}{\\mathrm{Average\\ Loss}}}
+        \mathrm{RSI}_{14} = 100 - \frac{100}{1 + \dfrac{\mathrm{Average\ Gain}}{\mathrm{Average\ Loss}}}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -1919,7 +1921,7 @@ def c_rsi_14d_dividend_and_split_adjusted(
 def c_rsi_14d_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 14-day relative strength index (RSI) for split-adjusted close prices.
 
     .. category:: Momentum
@@ -1940,7 +1942,7 @@ def c_rsi_14d_split_adjusted(
 
     .. math::
 
-        \\mathrm{RSI}_{14} = 100 - \\frac{100}{1 + \\dfrac{\\mathrm{Average\\ Gain}}{\\mathrm{Average\\ Loss}}}
+        \mathrm{RSI}_{14} = 100 - \frac{100}{1 + \dfrac{\mathrm{Average\ Gain}}{\mathrm{Average\ Loss}}}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -1986,7 +1988,7 @@ def c_sales_to_price(
     c_last_twelve_months_revenue,
     c_market_cap
 ):
-    """
+    r"""
     Calculate the sales-to-price (S/P) ratio.
 
     .. category:: Market and Fundamental
@@ -2009,7 +2011,7 @@ def c_sales_to_price(
 
     .. math::
 
-        \\mathrm{Sales\\ to\\ Price} = \\frac{\\mathrm{Revenue}}{\\mathrm{Market\\ Cap}}
+        \mathrm{Sales\ to\ Price} = \frac{\mathrm{Revenue}}{\mathrm{Market\ Cap}}
 
     In Excel, assuming LTM revenue in column A and market cap in column B (starting at row 2):
 
@@ -2027,7 +2029,7 @@ def c_sales_to_price(
 def c_simple_moving_average_5d_close_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 5-day (1 week) simple moving average (SMA) of the dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -2048,7 +2050,7 @@ def c_simple_moving_average_5d_close_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{SMA}_{5} = \\frac{1}{5} \\sum_{i=0}^{5} \\mathrm{Adjusted\\ Close}_{t-i}
+        \mathrm{SMA}_{5} = \frac{1}{5} \sum_{i=0}^{5} \mathrm{Adjusted\ Close}_{t-i}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -2069,7 +2071,7 @@ def c_simple_moving_average_5d_close_dividend_and_split_adjusted(
 def c_simple_moving_average_5d_close_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 5-day (1 week) simple moving average (SMA) of the split-adjusted close prices.
 
     .. category:: Trend
@@ -2090,7 +2092,7 @@ def c_simple_moving_average_5d_close_split_adjusted(
 
     .. math::
 
-        \\mathrm{SMA}_{5} = \\frac{1}{5} \\sum_{i=0}^{5} \\mathrm{Adjusted\\ Close}_{t-i}
+        \mathrm{SMA}_{5} = \frac{1}{5} \sum_{i=0}^{5} \mathrm{Adjusted\ Close}_{t-i}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -2111,7 +2113,7 @@ def c_simple_moving_average_5d_close_split_adjusted(
 def c_simple_moving_average_21d_close_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 21-day (1 month) simple moving average (SMA) of the dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -2132,7 +2134,7 @@ def c_simple_moving_average_21d_close_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{SMA}_{21} = \\frac{1}{21} \\sum_{i=0}^{21} \\mathrm{Adjusted\\ Close}_{t-i}
+        \mathrm{SMA}_{21} = \frac{1}{21} \sum_{i=0}^{21} \mathrm{Adjusted\ Close}_{t-i}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -2153,7 +2155,7 @@ def c_simple_moving_average_21d_close_dividend_and_split_adjusted(
 def c_simple_moving_average_21d_close_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 21-day (1 month) simple moving average (SMA) of the split-adjusted close prices.
 
     .. category:: Trend
@@ -2174,7 +2176,7 @@ def c_simple_moving_average_21d_close_split_adjusted(
 
     .. math::
 
-        \\mathrm{SMA}_{21} = \\frac{1}{21} \\sum_{i=0}^{21} \\mathrm{Adjusted\\ Close}_{t-i}
+        \mathrm{SMA}_{21} = \frac{1}{21} \sum_{i=0}^{21} \mathrm{Adjusted\ Close}_{t-i}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -2195,7 +2197,7 @@ def c_simple_moving_average_21d_close_split_adjusted(
 def c_simple_moving_average_63d_close_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 63-day (3 month) simple moving average (SMA) of the dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -2216,7 +2218,7 @@ def c_simple_moving_average_63d_close_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{SMA}_{63} = \\frac{1}{63} \\sum_{i=0}^{63} \\mathrm{Adjusted\\ Close}_{t-i}
+        \mathrm{SMA}_{63} = \frac{1}{63} \sum_{i=0}^{63} \mathrm{Adjusted\ Close}_{t-i}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -2237,7 +2239,7 @@ def c_simple_moving_average_63d_close_dividend_and_split_adjusted(
 def c_simple_moving_average_63d_close_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 63-day (3 month) simple moving average (SMA) of the split-adjusted close prices.
 
     .. category:: Trend
@@ -2258,7 +2260,7 @@ def c_simple_moving_average_63d_close_split_adjusted(
 
     .. math::
 
-        \\mathrm{SMA}_{63} = \\frac{1}{63} \\sum_{i=0}^{63} \\mathrm{Adjusted\\ Close}_{t-i}
+        \mathrm{SMA}_{63} = \frac{1}{63} \sum_{i=0}^{63} \mathrm{Adjusted\ Close}_{t-i}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -2279,7 +2281,7 @@ def c_simple_moving_average_63d_close_split_adjusted(
 def c_simple_moving_average_252d_close_dividend_and_split_adjusted(
     m_close_dividend_and_split_adjusted
 ):
-    """
+    r"""
     Calculate the 252-day (1 year) simple moving average (SMA) of the dividend-and-split-adjusted close prices.
 
     .. category:: Trend
@@ -2300,7 +2302,7 @@ def c_simple_moving_average_252d_close_dividend_and_split_adjusted(
 
     .. math::
 
-        \\mathrm{SMA}_{252} = \\frac{1}{252} \\sum_{i=0}^{252} \\mathrm{Adjusted\\ Close}_{t-i}
+        \mathrm{SMA}_{252} = \frac{1}{252} \sum_{i=0}^{252} \mathrm{Adjusted\ Close}_{t-i}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 
@@ -2321,7 +2323,7 @@ def c_simple_moving_average_252d_close_dividend_and_split_adjusted(
 def c_simple_moving_average_252d_close_split_adjusted(
     m_close_split_adjusted
 ):
-    """
+    r"""
     Calculate the 252-day (1 year) simple moving average (SMA) of the split-adjusted close prices.
 
     .. category:: Trend
@@ -2342,7 +2344,7 @@ def c_simple_moving_average_252d_close_split_adjusted(
 
     .. math::
 
-        \\mathrm{SMA}_{252} = \\frac{1}{252} \\sum_{i=0}^{252} \\mathrm{Adjusted\\ Close}_{t-i}
+        \mathrm{SMA}_{252} = \frac{1}{252} \sum_{i=0}^{252} \mathrm{Adjusted\ Close}_{t-i}
 
     In Excel, assuming your adjusted close prices are in column A starting at cell A2:
 

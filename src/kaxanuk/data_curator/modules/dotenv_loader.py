@@ -1,5 +1,5 @@
 """
-Module for loading env variables from .env files
+Module for loading env variables from .env files.
 """
 
 import pathlib

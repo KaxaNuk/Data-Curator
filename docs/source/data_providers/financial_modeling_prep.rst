@@ -71,47 +71,47 @@ Authentication is managed using an API key placed in the `.env` file via the var
    KNDC_API_KEY_FMP=your_key_here
 
 Market Data
-------------
+-----------
 
 .. list-table::
    :header-rows: 1
 
    * - Data Curator Tag
      - FMP Tag
-   * - m_date
-     - date
-   * - m_open
-     - adjOpen
-   * - m_high
-     - adjHigh
-   * - m_low
-     - adjLow
    * - m_close
-     - adjClose
-   * - m_volume
-     - volume
-   * - m_open_split_adjusted
-     - open
-   * - m_high_split_adjusted
-     - high
-   * - m_low_split_adjusted
-     - low
-   * - m_close_split_adjusted
-     - close
-   * - m_volume_split_adjusted
-     - volume
-   * - m_vwap_split_adjusted
-     - vwap
-   * - m_open_dividend_and_split_adjusted
-     - adjOpen
-   * - m_high_dividend_and_split_adjusted
-     - adjHigh
-   * - m_low_dividend_and_split_adjusted
-     - adjLow
+     - :abbr:`adjClose (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
    * - m_close_dividend_and_split_adjusted
-     - adjClose
+     - :abbr:`adjClose (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_close_split_adjusted
+     - :abbr:`close (https://financialmodelingprep.com/stable/historical-price-eod/full)`
+   * - m_date
+     - [ :abbr:`date (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted | https://financialmodelingprep.com/stable/historical-price-eod/full | https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)` ] `* <preprocessed_legend_>`_
+   * - m_high
+     - :abbr:`adjHigh (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
+   * - m_high_dividend_and_split_adjusted
+     - :abbr:`adjHigh (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_high_split_adjusted
+     - :abbr:`high (https://financialmodelingprep.com/stable/historical-price-eod/full)`
+   * - m_low
+     - :abbr:`adjLow (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
+   * - m_low_dividend_and_split_adjusted
+     - :abbr:`adjLow (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_low_split_adjusted
+     - :abbr:`low (https://financialmodelingprep.com/stable/historical-price-eod/full)`
+   * - m_open
+     - :abbr:`adjOpen (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
+   * - m_open_dividend_and_split_adjusted
+     - :abbr:`adjOpen (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_open_split_adjusted
+     - :abbr:`open (https://financialmodelingprep.com/stable/historical-price-eod/full)`
+   * - m_volume
+     - :abbr:`volume (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
    * - m_volume_dividend_and_split_adjusted
-     - volume
+     - :abbr:`volume (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_volume_split_adjusted
+     - :abbr:`volume (https://financialmodelingprep.com/stable/historical-price-eod/full)`
+   * - m_vwap_split_adjusted
+     - :abbr:`vwap (https://financialmodelingprep.com/stable/historical-price-eod/full)`
 
 Dividends
 ---------
@@ -122,17 +122,17 @@ Dividends
    * - Data Curator Tag
      - FMP Tag
    * - d_declaration_date
-     - declarationDate
-   * - d_ex_dividend_date
-     - date
-   * - d_record_date
-     - recordDate
-   * - d_payment_date
-     - paymentDate
+     - :abbr:`declarationDate (https://financialmodelingprep.com/stable/dividends)`
    * - d_dividend
-     - dividend
+     - :abbr:`dividend (https://financialmodelingprep.com/stable/dividends)`
    * - d_dividend_split_adjusted
-     - adjDividend
+     - :abbr:`adjDividend (https://financialmodelingprep.com/stable/dividends)`
+   * - d_ex_dividend_date
+     - [ :abbr:`date (https://financialmodelingprep.com/stable/dividends)` ] `* <preprocessed_legend_>`_
+   * - d_payment_date
+     - :abbr:`paymentDate (https://financialmodelingprep.com/stable/dividends)`
+   * - d_record_date
+     - :abbr:`recordDate (https://financialmodelingprep.com/stable/dividends)`
 
 Splits
 ------
@@ -142,12 +142,12 @@ Splits
 
    * - Data Curator Tag
      - FMP Tag
-   * - s_split_date
-     - date
-   * - s_numerator
-     - numerator
    * - s_denominator
-     - denominator
+     - :abbr:`denominator (https://financialmodelingprep.com/stable/splits)`
+   * - s_numerator
+     - :abbr:`numerator (https://financialmodelingprep.com/stable/splits)`
+   * - s_split_date
+     - [ :abbr:`date (https://financialmodelingprep.com/stable/splits)` ] `* <preprocessed_legend_>`_
 
 Fundamentals
 ------------
@@ -158,17 +158,18 @@ Fundamentals
    * - Data Curator Tag
      - FMP Tag
    * - f_accepted_date
-     - acceptedDate
+     - :abbr:`acceptedDate (https://financialmodelingprep.com/stable/balance-sheet-statement | https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)`
    * - f_filing_date
-     - filingDate
+     - - [ :abbr:`filingDate (https://financialmodelingprep.com/stable/balance-sheet-statement)`, :abbr:`acceptedDate (https://financialmodelingprep.com/stable/balance-sheet-statement)` ] `* <preprocessed_legend_>`_
+       - [ :abbr:`filingDate (https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)` ] `* <preprocessed_legend_>`_
    * - f_fiscal_period
-     - period
+     - :abbr:`period (https://financialmodelingprep.com/stable/balance-sheet-statement | https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)`
    * - f_fiscal_year
-     - fiscalYear
+     - :abbr:`fiscalYear (https://financialmodelingprep.com/stable/balance-sheet-statement | https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)`
    * - f_period_end_date
-     - date
+     - [ :abbr:`date (https://financialmodelingprep.com/stable/balance-sheet-statement | https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)` ] `* <preprocessed_legend_>`_
    * - f_reported_currency
-     - reportedCurrency
+     - :abbr:`reportedCurrency (https://financialmodelingprep.com/stable/balance-sheet-statement | https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)`
 
 Income
 ------
@@ -179,67 +180,67 @@ Income
    * - Data Curator Tag
      - FMP Tag
    * - fis_basic_earnings_per_share
-     - eps
+     - :abbr:`eps (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_basic_net_income_available_to_common_stockholders
-     - bottomLineNetIncome
+     - :abbr:`bottomLineNetIncome (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_continuing_operations_income_after_tax
-     - netIncomeFromContinuingOperations
-   * - fis_costs_and_expenses
-     - costAndExpenses
+     - :abbr:`netIncomeFromContinuingOperations (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_cost_of_revenue
-     - costOfRevenue
+     - :abbr:`costOfRevenue (https://financialmodelingprep.com/stable/income-statement)`
+   * - fis_costs_and_expenses
+     - :abbr:`costAndExpenses (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_depreciation_and_amortization
-     - depreciationAndAmortization
+     - :abbr:`depreciationAndAmortization (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_diluted_earnings_per_share
-     - epsDiluted
+     - :abbr:`epsDiluted (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_discontinued_operations_income_after_tax
-     - netIncomeFromDiscontinuedOperations
+     - :abbr:`netIncomeFromDiscontinuedOperations (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_earnings_before_interest_and_tax
-     - ebit
+     - :abbr:`ebit (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_earnings_before_interest_tax_depreciation_and_amortization
-     - ebitda
+     - :abbr:`ebitda (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_general_and_administrative_expense
-     - generalAndAdministrativeExpenses
+     - :abbr:`generalAndAdministrativeExpenses (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_gross_profit
-     - grossProfit
+     - :abbr:`grossProfit (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_income_before_tax
-     - incomeBeforeTax
+     - :abbr:`incomeBeforeTax (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_income_tax_expense
-     - incomeTaxExpense
+     - :abbr:`incomeTaxExpense (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_interest_expense
-     - interestExpense
+     - :abbr:`interestExpense (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_interest_income
-     - interestIncome
+     - :abbr:`interestIncome (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_net_income
-     - netIncome
+     - :abbr:`netIncome (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_net_income_deductions
-     - netIncomeDeductions
+     - :abbr:`netIncomeDeductions (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_net_interest_income
-     - netInterestIncome
+     - :abbr:`netInterestIncome (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_net_total_other_income
-     - totalOtherIncomeExpensesNet
+     - :abbr:`totalOtherIncomeExpensesNet (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_nonoperating_income_excluding_interest
-     - nonOperatingIncomeExcludingInterest
+     - :abbr:`nonOperatingIncomeExcludingInterest (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_operating_expenses
-     - operatingExpenses
+     - :abbr:`operatingExpenses (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_operating_income
-     - operatingIncome
+     - :abbr:`operatingIncome (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_other_expenses
-     - otherExpenses
+     - :abbr:`otherExpenses (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_other_net_income_adjustments
-     - otherAdjustmentsToNetIncome
+     - :abbr:`otherAdjustmentsToNetIncome (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_research_and_development_expense
-     - researchAndDevelopmentExpenses
+     - :abbr:`researchAndDevelopmentExpenses (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_revenues
-     - revenue
+     - :abbr:`revenue (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_selling_and_marketing_expense
-     - sellingAndMarketingExpenses
+     - :abbr:`sellingAndMarketingExpenses (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_selling_general_and_administrative_expense
-     - sellingGeneralAndAdministrativeExpenses
+     - :abbr:`sellingGeneralAndAdministrativeExpenses (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_weighted_average_basic_shares_outstanding
-     - weightedAverageShsOut
+     - :abbr:`weightedAverageShsOut (https://financialmodelingprep.com/stable/income-statement)`
    * - fis_weighted_average_diluted_shares_outstanding
-     - weightedAverageShsOutDil
+     - :abbr:`weightedAverageShsOutDil (https://financialmodelingprep.com/stable/income-statement)`
 
 Balance Sheet
 -------------
@@ -249,114 +250,112 @@ Balance Sheet
 
    * - Data Curator Tag
      - FMP Tag
-   * - fbs_filing_date
-     - fillingDate
    * - fbs_accumulated_other_comprehensive_income_after_tax
-     - accumulatedOtherComprehensiveIncomeLoss
+     - :abbr:`accumulatedOtherComprehensiveIncomeLoss (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_additional_paid_in_capital
-     - additionalPaidInCapital
+     - :abbr:`additionalPaidInCapital (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_assets
-     - totalAssets
+     - :abbr:`totalAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_capital_lease_obligations
-     - capitalLeaseObligations
+     - :abbr:`capitalLeaseObligations (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_cash_and_cash_equivalents
-     - cashAndCashEquivalents
+     - :abbr:`cashAndCashEquivalents (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_cash_and_shortterm_investments
-     - cashAndShortTermInvestments
+     - :abbr:`cashAndShortTermInvestments (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_common_stock_value
-     - commonStock
+     - :abbr:`commonStock (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_current_accounts_payable
-     - accountPayables
+     - :abbr:`accountPayables (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_current_accounts_receivable_after_doubtful_accounts
-     - accountsReceivables
+     - :abbr:`accountsReceivables (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_current_accrued_expenses
-     - accruedExpenses
+     - :abbr:`accruedExpenses (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_current_assets
-     - totalCurrentAssets
+     - :abbr:`totalCurrentAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_current_capital_lease_obligations
-     - capitalLeaseObligationsCurrent
+     - :abbr:`capitalLeaseObligationsCurrent (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_current_liabilities
-     - totalCurrentLiabilities
+     - :abbr:`totalCurrentLiabilities (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_current_net_receivables
-     - netReceivables
+     - :abbr:`netReceivables (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_current_tax_payables
-     - taxPayables
+     - :abbr:`taxPayables (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_deferred_revenue
-     - deferredRevenue
+     - :abbr:`deferredRevenue (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_goodwill
-     - goodwill
+     - :abbr:`goodwill (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_investments
-     - totalInvestments
+     - :abbr:`totalInvestments (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_liabilities
-     - totalLiabilities
+     - :abbr:`totalLiabilities (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_longterm_debt
-     - longTermDebt
+     - :abbr:`longTermDebt (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_longterm_investments
-     - longTermInvestments
+     - :abbr:`longTermInvestments (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_net_debt
-     - netDebt
+     - :abbr:`netDebt (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_net_intangible_assets_excluding_goodwill
-     - intangibleAssets
+     - :abbr:`intangibleAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_net_intangible_assets_including_goodwill
-     - goodwillAndIntangibleAssets
+     - :abbr:`goodwillAndIntangibleAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_net_inventory
-     - inventory
+     - :abbr:`inventory (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_net_property_plant_and_equipment
-     - propertyPlantEquipmentNet
+     - :abbr:`propertyPlantEquipmentNet (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_noncontrolling_interest
-     - minorityInterest
+     - :abbr:`minorityInterest (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_noncurrent_assets
-     - totalNonCurrentAssets
+     - :abbr:`totalNonCurrentAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_noncurrent_capital_lease_obligations
-     - capitalLeaseObligationsNonCurrent
+     - :abbr:`capitalLeaseObligationsNonCurrent (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_noncurrent_deferred_revenue
-     - deferredRevenueNonCurrent
+     - :abbr:`deferredRevenueNonCurrent (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_noncurrent_deferred_tax_assets
-     - taxAssets
+     - :abbr:`taxAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_noncurrent_deferred_tax_liabilities
-     - deferredTaxLiabilitiesNonCurrent
+     - :abbr:`deferredTaxLiabilitiesNonCurrent (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_noncurrent_liabilities
-     - totalNonCurrentLiabilities
+     - :abbr:`totalNonCurrentLiabilities (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_assets
-     - otherAssets
+     - :abbr:`otherAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_current_assets
-     - otherCurrentAssets
+     - :abbr:`otherCurrentAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_current_liabilities
-     - otherCurrentLiabilities
+     - :abbr:`otherCurrentLiabilities (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_liabilities
-     - otherLiabilities
+     - :abbr:`otherLiabilities (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_noncurrent_assets
-     - otherNonCurrentAssets
+     - :abbr:`otherNonCurrentAssets (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_noncurrent_liabilities
-     - otherNonCurrentLiabilities
+     - :abbr:`otherNonCurrentLiabilities (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_payables
-     - otherPayables
+     - :abbr:`otherPayables (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_receivables
-     - otherReceivables
+     - :abbr:`otherReceivables (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_other_stockholder_equity
-     - otherTotalStockholdersEquity
+     - :abbr:`otherTotalStockholdersEquity (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_preferred_stock_value
-     - preferredStock
+     - :abbr:`preferredStock (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_prepaid_expenses
-     - prepaids
+     - :abbr:`prepaids (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_retained_earnings
-     - retainedEarnings
+     - :abbr:`retainedEarnings (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_shortterm_debt
-     - shortTermDebt
+     - :abbr:`shortTermDebt (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_shortterm_investments
-     - shortTermInvestments
+     - :abbr:`shortTermInvestments (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_stockholder_equity
-     - totalStockholdersEquity
+     - :abbr:`totalStockholdersEquity (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_total_debt_including_capital_lease_obligations
-     - totalDebt
+     - :abbr:`totalDebt (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_total_equity_including_noncontrolling_interest
-     - totalEquity
+     - :abbr:`totalEquity (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_total_liabilities_and_equity
-     - totalLiabilitiesAndTotalEquity
+     - :abbr:`totalLiabilitiesAndTotalEquity (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_total_payables_current_and_noncurrent
-     - totalPayables
+     - :abbr:`totalPayables (https://financialmodelingprep.com/stable/balance-sheet-statement)`
    * - fbs_treasury_stock_value
-     - treasuryStock
+     - :abbr:`treasuryStock (https://financialmodelingprep.com/stable/balance-sheet-statement)`
 
 Cash Flow
 ---------
@@ -367,79 +366,89 @@ Cash Flow
    * - Data Curator Tag
      - FMP Tag
    * - fcf_accounts_payable_change
-     - accountsPayables
+     - :abbr:`accountsPayables (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_accounts_receivable_change
-     - accountsReceivables
+     - :abbr:`accountsReceivables (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_capital_expenditure
-     - capitalExpenditure
+     - :abbr:`capitalExpenditure (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_cash_and_cash_equivalents_change
-     - netChangeInCash
+     - :abbr:`netChangeInCash (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_cash_exchange_rate_effect
-     - effectOfForexChangesOnCash
+     - :abbr:`effectOfForexChangesOnCash (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_common_stock_dividend_payments
-     - commonDividendsPaid
+     - :abbr:`commonDividendsPaid (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_common_stock_issuance_proceeds
-     - commonStockIssuance
+     - :abbr:`commonStockIssuance (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_common_stock_repurchase
-     - commonStockRepurchased
+     - :abbr:`commonStockRepurchased (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_deferred_income_tax
-     - deferredIncomeTax
+     - :abbr:`deferredIncomeTax (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_depreciation_and_amortization
-     - depreciationAndAmortization
+     - :abbr:`depreciationAndAmortization (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_dividend_payments
-     - netDividendsPaid
+     - :abbr:`netDividendsPaid (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_free_cash_flow
-     - freeCashFlow
+     - :abbr:`freeCashFlow (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_interest_payments
-     - interestPaid
+     - :abbr:`interestPaid (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_inventory_change
-     - inventory
+     - :abbr:`inventory (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_investment_sales_maturities_and_collections_proceeds
-     - salesMaturitiesOfInvestments
+     - :abbr:`salesMaturitiesOfInvestments (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_investments_purchase
-     - purchasesOfInvestments
+     - :abbr:`purchasesOfInvestments (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_business_acquisition_payments
-     - acquisitionsNet
-   * - fcf_net_cash_from_operating_activities
-     - netCashProvidedByOperatingActivities
-   * - fcf_net_cash_from_investing_activites
-     - netCashProvidedByInvestingActivities
+     - :abbr:`acquisitionsNet (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_cash_from_financing_activities
-     - netCashProvidedByFinancingActivities
+     - :abbr:`netCashProvidedByFinancingActivities (https://financialmodelingprep.com/stable/cash-flow-statement)`
+   * - fcf_net_cash_from_investing_activites
+     - :abbr:`netCashProvidedByInvestingActivities (https://financialmodelingprep.com/stable/cash-flow-statement)`
+   * - fcf_net_cash_from_operating_activities
+     - :abbr:`netCashProvidedByOperatingActivities (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_common_stock_issuance_proceeds
-     - netCommonStockIssuance
+     - :abbr:`netCommonStockIssuance (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_debt_issuance_proceeds
-     - netDebtIssuance
+     - :abbr:`netDebtIssuance (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_income
-     - netIncome
+     - :abbr:`netIncome (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_income_tax_payments
-     - incomeTaxesPaid
+     - :abbr:`incomeTaxesPaid (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_longterm_debt_issuance_proceeds
-     - longTermNetDebtIssuance
+     - :abbr:`longTermNetDebtIssuance (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_shortterm_debt_issuance_proceeds
-     - shortTermNetDebtIssuance
+     - :abbr:`shortTermNetDebtIssuance (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_stock_issuance_proceeds
-     - netStockIssuance
+     - :abbr:`netStockIssuance (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_other_financing_activities
-     - otherFinancingActivities
+     - :abbr:`otherFinancingActivities (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_other_investing_activities
-     - otherInvestingActivities
+     - :abbr:`otherInvestingActivities (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_other_noncash_items
-     - otherNonCashItems
+     - :abbr:`otherNonCashItems (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_other_working_capital
-     - otherWorkingCapital
+     - :abbr:`otherWorkingCapital (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_period_end_cash
-     - cashAtEndOfPeriod
+     - :abbr:`cashAtEndOfPeriod (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_period_start_cash
-     - cashAtBeginningOfPeriod
+     - :abbr:`cashAtBeginningOfPeriod (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_preferred_stock_dividend_payments
-     - preferredDividendsPaid
+     - :abbr:`preferredDividendsPaid (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_preferred_stock_issuance_proceeds
-     - netPreferredStockIssuance
+     - :abbr:`netPreferredStockIssuance (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_property_plant_and_equipment_purchase
-     - investmentsInPropertyPlantAndEquipment
+     - :abbr:`investmentsInPropertyPlantAndEquipment (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_stock_based_compensation
-     - stockBasedCompensation
+     - :abbr:`stockBasedCompensation (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_working_capital_change
-     - changeInWorkingCapital
+     - :abbr:`changeInWorkingCapital (https://financialmodelingprep.com/stable/cash-flow-statement)`
 
+
+
+|
+
+Data Processing
+---------------
+
+.. _preprocessed_legend:
+
+\* Fields enclosed in brackets [ ... ] with an asterisk indicate preprocessed tags (hover to see source endpoint).

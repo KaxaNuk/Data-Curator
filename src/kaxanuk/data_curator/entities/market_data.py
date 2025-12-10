@@ -1,6 +1,7 @@
 import dataclasses
 import datetime
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.entities.market_data_daily_row import MarketDataDailyRow
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
@@ -14,7 +15,7 @@ from kaxanuk.data_curator.services import (
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class MarketData:
+class MarketData(BaseDataEntity):
     start_date: datetime.date
     end_date: datetime.date
     main_identifier: MainIdentifier
@@ -34,16 +35,19 @@ class MarketData:
             isinstance(row, MarketDataDailyRow)
             for row in self.daily_rows.values()
         ):
-            raise EntityValueError("Incorrect data in MarketData.daily_rows")
+            msg = "Incorrect data in MarketData.daily_rows"
+
+            raise EntityValueError(msg)
 
         if any(
             not validator.is_date_pattern(key)
             for key in self.daily_rows
         ):
-            raise EntityValueError("MarketData.daily_rows keys need to be date strings in 'YYYY-MM-DD' format")
+            msg = "MarketData.daily_rows keys need to be date strings in 'YYYY-MM-DD' format"
 
-        if not (
-            list(self.daily_rows.keys())
-            == sorted(self.daily_rows.keys())
-        ):
-            raise EntityValueError("MarketData.daily_rows are not correctly sorted by date")
+            raise EntityValueError(msg)
+
+        if list(self.daily_rows.keys()) != sorted(self.daily_rows.keys()):
+            msg = "MarketData.daily_rows are not correctly sorted by date"
+
+            raise EntityValueError(msg)

@@ -1,5 +1,6 @@
 import dataclasses
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.entities.dividend_data_row import DividendDataRow
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
@@ -13,7 +14,7 @@ from kaxanuk.data_curator.services import (
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class DividendData:
+class DividendData(BaseDataEntity):
     main_identifier: MainIdentifier
     rows: dict[str, DividendDataRow]
 
@@ -31,11 +32,14 @@ class DividendData:
             not validator.is_date_pattern(key)
             for key in self.rows
         ):
-            raise EntityValueError("DividendData.rows keys need to be date strings in 'YYYY-MM-DD' format")
+            msg = "DividendData.rows keys need to be date strings in 'YYYY-MM-DD' format"
+
+            raise EntityValueError(msg)
 
         if not all(
             isinstance(row, DividendDataRow)
             for row in self.rows.values()
         ):
-            raise EntityValueError("Incorrect data in DividendData.rows")
+            msg = "Incorrect data in DividendData.rows"
 
+            raise EntityValueError(msg)

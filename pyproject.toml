@@ -20,6 +20,7 @@ classifiers = [
 ]
 dependencies = [    # dev dependencies are in the [tool.pdm.dev-dependencies] section
     "click>=8.1.7",
+    "networkx>=3.5",
     "openpyxl>=3.1.5",
     "packaging>=24.2",
     "pandas>=2.2.3",
@@ -92,7 +93,7 @@ data = [
 
 [tool.pdm.dev-dependencies]
 debug = [
-    "pydevd-pycharm>=243.23654.177"
+    "pydevd-pycharm>=252.26830.99"
 ]
 docs = [
     "myst-parser>=4.0.0",
@@ -167,13 +168,13 @@ select = [
     "W",    # pycodestyle warnings
 
     # Rigorous linters:
-    #"ANN",  # flake8-annotations: detect the absence of PEP 3107-style function annotations
+    "ANN",  # flake8-annotations: detect the absence of PEP 3107-style function annotations
     "ASYNC",# check for bad async / asyncio practices
     "B",    # bugbear: find likely bugs and design problems
     "BLE",  # flake8-blind-except: check for blind, catch-all except: and except Exception: statements
     #"D",    # pydocstyle documentation errors
     "DTZ",  # flake8-datetimez: ban the usage of unsafe naive datetime class
-    #"EM",   # flake8-errmsg: helps format nice error messages
+    "EM",   # flake8-errmsg: helps format nice error messages
     "G",    # flake8-logging-format: validate (lack of) logging format strings
     "INT",  # flake8_gettext: check for incorrect use of gettext
     "PERF", # perflint: detect performance anti-patterns
@@ -211,7 +212,9 @@ ignore = [
 "unittest.mock".msg = "use pytest builtin monkeypatch fixture instead"
 
 [tool.ruff.lint.per-file-ignores]
-"__main__.py" = ["E402", "I"]    # Module level import not at top of file
+"docs/**" = [
+    "D",   # Docs docstrings don't need to be strictly checked
+]
 "docs/source/conf.py" = ["A001"] #  Variable `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
 "src/kaxanuk/data_curator/data_providers/data_provider_interface.py" = [
     # @todo: we'll probably be able to remove following ignore on async http:
@@ -232,6 +235,7 @@ ignore = [
     "PLC0415",  # Need to limit the debugger module import to specific envs
 ]
 "src/kaxanuk/data_curator/services/cli.py" = [
+    "D301",     # Escape sequences in docstrings are actually used by click
     "S603",     # The whole point of cli._run_entry_script is to actually run scripts
 ]
 "src/kaxanuk/data_curator/services/entity_helper.py" = [
@@ -239,17 +243,20 @@ ignore = [
 ]
 "templates/**" = [
     "ANN",      # Keep code in custom_calculations template simpler, as it will be consulted for custom user calculations
+    "D",        # Keep docstrings in templates leaner
     "F401",     # Leave imported but unused modules so that users don't have to look for them
     "INP001"    # File part of an implicit namespace package
 ]
 "tests/**" = [
     "ANN",      # Tests don't need to be annotated
+    "DTZ001",   # Don't care about test datetime specifics
     "FBT003",   # Multiple external libraries require boolean positional arguments
     "D",        # Tests don't need to follow strict documentation requirements
     "PLR2004",  # No problem if magic values are usen in tests
     "RET",      # No need for return strictness in tests
     "S101",     # Permit use of pytest assert
     "SLF",      # Tests need private member access
+    "TID252",   # Don't care about relative imports in tests
 ]
 "tests/unit/modules/data_column/equality_test.py" = [
     "A001", #  Variable `type` is shadowing a Python builtin, but that's literally part of the PyArrow interface
