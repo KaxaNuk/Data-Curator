@@ -9,6 +9,7 @@ import re
 from kaxanuk.data_curator.exceptions import ConfigurationError
 
 
+# @todo get this from the data blocks
 CONFIGURATION_COLUMN_PREFIXES = {
     'c': 'calculations',
     'd': 'dividends',
@@ -19,6 +20,7 @@ CONFIGURATION_COLUMN_PREFIXES = {
     'm': 'market_data',
     's': 'split_data',
 }
+# @todo this goes into the fundamentals data block
 CONFIGURATION_PERIODS = (
     'annual',
     'quarterly',
@@ -38,17 +40,22 @@ class Configuration:
             not isinstance(self.start_date, datetime.date)
             or isinstance(self.start_date, datetime.datetime)
         ):
-            raise ConfigurationError("Incorrect Configuration.start_date type, expecting datetime.date")
+            msg = "Incorrect Configuration.start_date type, expecting datetime.date"
+
+            raise ConfigurationError(msg)
 
         if (
             not isinstance(self.end_date, datetime.date)
             or isinstance(self.end_date, datetime.datetime)
         ):
-            raise ConfigurationError("Incorrect Configuration.end_date type, expecting datetime.date")
+            msg = "Incorrect Configuration.end_date type, expecting datetime.date"
+
+            raise ConfigurationError(msg)
 
         if self.period not in CONFIGURATION_PERIODS:
             possible_periods = ', '.join(CONFIGURATION_PERIODS)
             msg = f"Incorrect Configuration.interval, expecting one of: {possible_periods}"
+
             raise ConfigurationError(msg)
 
         valid_prefixes = "|".join(CONFIGURATION_COLUMN_PREFIXES.keys())
@@ -64,4 +71,5 @@ class Configuration:
                 "Incorrect column name in Configuration.columns:",
                 ", ".join(incorrect_columns)
             ])
+
             raise ConfigurationError(msg)

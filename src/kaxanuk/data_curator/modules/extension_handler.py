@@ -39,10 +39,9 @@ def load_data_provider_extension(
             extension_class_name=extension_class_name,
         )
         if not issubclass(extension, DataProviderInterface):
+            msg = f"Extension '{extension_name}' does not implement DataProviderInterface"
 
-            raise ExtensionFailedError(
-                f"Extension '{extension_name}' does not implement DataProviderInterface"
-            )
+            raise ExtensionFailedError(msg)
 
         return extension
 

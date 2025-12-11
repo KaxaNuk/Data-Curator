@@ -2,14 +2,27 @@ import dataclasses
 import datetime
 import decimal
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
 )
 from kaxanuk.data_curator.services import entity_helper
 
 
+DIVIDEND_DATE_FIELDS = (
+    'declaration_date',
+    'ex_dividend_date',
+    'record_date',
+    'payment_date',
+)
+DIVIDEND_FACTOR_FIELDS = (
+    'dividend',
+    'dividend_split_adjusted',
+)
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
-class DividendDataRow:
+class DividendDataRow(BaseDataEntity):
     declaration_date: datetime.date | None
     ex_dividend_date: datetime.date
     record_date: datetime.date | None

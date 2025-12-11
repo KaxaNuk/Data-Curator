@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.44.0] - 2025-12-11
+### Added
+- `BaseDataEntity` class as new parent class for all data entities
+- First partial implementation of data blocks, for generalizing data entity assembly from consolidated data tables
+- `BaseDataBlock` class as data block parent class, containing common entity assembling logic
+- Data block classes for all current data entities
+- `DataProviderToolkit` for generalizing the logic for constructing the consolidated data tables passed to the data blocks, including validation and better error handling/debugging
+- Dependency on the `networkx` library for topological sorting and related uses
+- Devcontainer configuration
+
+### Changed
+- Moved dividend and split date and factor field declarations out of `ColumnBuilder` and into the respective entity modules
+- Standardized the way in which data providers declare endpoints and their respective entity field to tag mappings, including tag preprocessors
+- Refactored `FinancialModelingPrep` to use the new generalized entity creation and validation APIs
+
+### Deprecated
+- `services/entity_helper.py` module will be removed in a future version, with all functionality being moved into the `BaseDataBlock` class.`
+
+
 ## [0.43.1] - 2025-09-09
 ### Removed
 - ta and pandas-ta unused dependencies

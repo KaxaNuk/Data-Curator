@@ -171,7 +171,7 @@ class DataProviderInterface(metaclass=abc.ABCMeta):
         self,
     ) -> bool | None:
         """
-        Validate that the API key used to init the class is valid
+        Validate that the API key used to init the class is valid.
 
         If the provider doesn't use API keys, simply return None
 

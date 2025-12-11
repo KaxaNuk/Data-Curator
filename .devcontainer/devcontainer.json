@@ -1,0 +1,15 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+	"name": "KaxaNuk Data Curator dev container",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "workspace-kndc",
+    "workspaceFolder": "/app",
+
+	// Configure tool-specific properties.
+    "customizations" : {
+        "jetbrains" : {
+          "backend" : "PyCharm"
+        }
+    },
+}

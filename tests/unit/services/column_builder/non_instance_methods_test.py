@@ -15,6 +15,10 @@ from kaxanuk.data_curator.entities import (
     MarketDataDailyRow,
     #SplitDataRow
 )
+from kaxanuk.data_curator.entities.dividend_data_row import (
+    DIVIDEND_DATE_FIELDS,
+    DIVIDEND_FACTOR_FIELDS,
+)
 from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCustomFunctionNotFoundError,
     ColumnBuilderNoDatesToInfillError,
@@ -552,8 +556,8 @@ class TestPrivateExpandDatedFactors:
     def test_expand_dated_factors_full(self, example_expand_dated_factors_dividend_data):
         result = ColumnBuilder._expand_dated_factors(
             iter(example_expand_dated_factors_dividend_data['expected_result_full'].keys()),
-            ColumnBuilder._DIVIDEND_DATE_FIELDS,
-            ColumnBuilder._DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELDS,
+            DIVIDEND_FACTOR_FIELDS,
             example_expand_dated_factors_dividend_data['data_rows']
         )
 
@@ -568,8 +572,8 @@ class TestPrivateExpandDatedFactors:
         }
         result = ColumnBuilder._expand_dated_factors(
             iter(expected_result.keys()),
-            ColumnBuilder._DIVIDEND_DATE_FIELDS,
-            ColumnBuilder._DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELDS,
+            DIVIDEND_FACTOR_FIELDS,
             data_rows
         )
 
@@ -591,8 +595,8 @@ class TestPrivateExpandDatedFactors:
 
         result = ColumnBuilder._expand_dated_factors(
             iter(expected_result.keys()),
-            ColumnBuilder._DIVIDEND_DATE_FIELDS,
-            ColumnBuilder._DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELDS,
+            DIVIDEND_FACTOR_FIELDS,
             example_expand_dated_factors_dividend_data['data_rows']
         )
 
@@ -601,8 +605,8 @@ class TestPrivateExpandDatedFactors:
     def test_expand_dated_factors_with_none_date_fields(self, example_expand_dated_factors_dividend_data):
         result = ColumnBuilder._expand_dated_factors(
             iter(example_expand_dated_factors_dividend_data['expected_result_with_nones'].keys()),
-            ColumnBuilder._DIVIDEND_DATE_FIELDS,
-            ColumnBuilder._DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELDS,
+            DIVIDEND_FACTOR_FIELDS,
             example_expand_dated_factors_dividend_data['data_rows_with_nones']
         )
 

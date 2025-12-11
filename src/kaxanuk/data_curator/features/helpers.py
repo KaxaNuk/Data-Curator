@@ -30,6 +30,7 @@ def annualized_volatility(
     """
     if not isinstance(column, DataColumn):
         msg = "features.helpers.annualized_volatility() column parameter must be a DataColumn object"
+
         raise CalculationHelperError(msg)
 
     if (
@@ -37,13 +38,14 @@ def annualized_volatility(
         or days <= 0
     ):
         msg = "features.helpers.annualized_volatility() days parameter must be a positive integer"
+
         raise CalculationHelperError(msg)
 
     rolling_std = (
         column
-            .to_pandas()
-            .rolling(days)
-            .std()
+        .to_pandas()
+        .rolling(days)
+        .std()
     )
     volatility = (
         rolling_std
@@ -53,6 +55,7 @@ def annualized_volatility(
     return DataColumn.load(volatility)
 
 
+# @todo clean up this code
 def chaikin_money_flow(
     *,
     high: DataColumn,
@@ -84,10 +87,17 @@ def chaikin_money_flow(
     DataColumn
         The CMF values as a DataColumn.
     """
-    if not all(isinstance(col, DataColumn) for col in (high, low, close, volume)):
-        raise CalculationHelperError("All input parameters must be DataColumn objects")
+    if not all(
+        isinstance(col, DataColumn)
+        for col in (high, low, close, volume)
+    ):
+        msg = "All input parameters must be DataColumn objects"
+
+        raise CalculationHelperError(msg)
     if not isinstance(days, int) or days <= 0:
-        raise CalculationHelperError("days parameter must be a positive integer")
+        msg = "days parameter must be a positive integer"
+
+        raise CalculationHelperError(msg)
 
     high_list = high.to_pyarrow().to_pylist()
     low_list = low.to_pyarrow().to_pylist()
@@ -165,9 +175,14 @@ def exponential_moving_average(
         EMA values as a DataColumn.
     """
     if not isinstance(column, DataColumn):
-        raise CalculationHelperError("column parameter must be a DataColumn object")
+        msg = "column parameter must be a DataColumn object"
+
+        raise CalculationHelperError(msg)
+
     if not isinstance(days, int) or days <= 0:
-        raise CalculationHelperError("days parameter must be a positive integer")
+        msg = "days parameter must be a positive integer"
+
+        raise CalculationHelperError(msg)
 
     data = column.to_pyarrow().to_pylist()
     smoothing_factor = Decimal('2') / Decimal(days + 1)
@@ -181,21 +196,22 @@ def exponential_moving_average(
             ema_values.append(None)
             window_values = []
             current_ema = None
-        else:
-            value_decimal = Decimal(str(value))
-            window_values.append(value_decimal)
+            continue
 
-            if len(window_values) < days:
-                ema_values.append(None)
-            elif len(window_values) == days:
-                current_ema = sum(window_values) / Decimal(days)
-                ema_values.append(float(current_ema))
-            else:
-                current_ema = (
-                    value_decimal * smoothing_factor
-                    + current_ema * (Decimal('1') - smoothing_factor)
-                )
-                ema_values.append(float(current_ema))
+        value_decimal = Decimal(str(value))
+        window_values.append(value_decimal)
+
+        if len(window_values) < days:
+            ema_values.append(None)
+        elif len(window_values) == days:
+            current_ema = sum(window_values) / Decimal(days)
+            ema_values.append(float(current_ema))
+        else:
+            current_ema = (
+                value_decimal * smoothing_factor
+                + current_ema * (Decimal('1') - smoothing_factor)
+            )
+            ema_values.append(float(current_ema))
 
     arrow_array = pyarrow.array(ema_values, from_pandas=True)
     finite_mask = pyarrow.compute.is_finite(arrow_array)
@@ -205,6 +221,7 @@ def exponential_moving_average(
             arrow_array,
             pyarrow.scalar(None, type=arrow_array.type)
         )
+
     return DataColumn.load(arrow_array)
 
 
@@ -238,14 +255,17 @@ def indexed_rolling_window_operation(
     """
     if not isinstance(key_column, DataColumn):
         msg = "features.helpers.indexed_rolling_window_operation() key_column parameter must be a DataColumn object"
+
         raise CalculationHelperError(msg)
 
     if not isinstance(value_column, DataColumn):
         msg = "features.helpers.indexed_rolling_window_operation() value_column parameter must be a DataColumn object"
+
         raise CalculationHelperError(msg)
 
     if not callable(operation_function):
         msg = "features.helpers.indexed_rolling_window_operation() operation_function parameter must be a callable"
+
         raise CalculationHelperError(msg)
 
     if (
@@ -253,6 +273,7 @@ def indexed_rolling_window_operation(
         or window_length <= 0
     ):
         msg = "features.helpers.indexed_rolling_window_operation() window_length parameter must be a positive integer"
+
         raise CalculationHelperError(msg)
 
     shifted_key_arrays = [
@@ -324,7 +345,9 @@ def log_returns(column: DataColumn) -> DataColumn:
         Log returns series, with None for the first element.
     """
     if not isinstance(column, DataColumn):
-        raise CalculationHelperError("log_returns() requires a DataColumn input")
+        msg = "log_returns() requires a DataColumn input"
+
+        raise CalculationHelperError(msg)
 
     shifted_ratio = column[1:] / column[:-1]
     ln_array = pyarrow.compute.ln(shifted_ratio.to_pyarrow())
@@ -336,7 +359,7 @@ def log_returns(column: DataColumn) -> DataColumn:
     return DataColumn.load(output_array)
 
 
-def replace_infinite_with_none(column) -> DataColumn:
+def replace_infinite_with_none(column: DataColumn) -> DataColumn:
     """
     Replace -inf and inf values in a DataColumn with None.
 
@@ -350,14 +373,17 @@ def replace_infinite_with_none(column) -> DataColumn:
     DataColumn
         A new DataColumn object with -inf and inf values replaced by None.
     """
-    column = column.to_pyarrow()
-    finite_mask = pyarrow.compute.is_finite(column)
+    array = column.to_pyarrow()
+    finite_mask = pyarrow.compute.is_finite(array)
     if pyarrow.compute.all(finite_mask).as_py():
         return column
-    result = pyarrow.compute.if_else(finite_mask, column, pyarrow.scalar(None))
+
+    result = pyarrow.compute.if_else(finite_mask, array, pyarrow.scalar(None))
+
     return DataColumn.load(result)
 
 
+# @todo clean up this code
 def relative_strength_index(*, column: DataColumn, days: int) -> DataColumn:
     """
     Calculate the Relative Strength Index (RSI) over a specified period.
@@ -378,9 +404,12 @@ def relative_strength_index(*, column: DataColumn, days: int) -> DataColumn:
     """
     if not isinstance(column, DataColumn):
         msg = "features.helpers.relative_strength_index() column parameter must be a DataColumn object"
+
         raise CalculationHelperError(msg)
+
     if not isinstance(days, int) or days <= 0:
         msg = "features.helpers.relative_strength_index() days parameter must be a positive integer"
+
         raise CalculationHelperError(msg)
 
     # Extract raw list, including None
@@ -462,9 +491,15 @@ def simple_moving_average(column: DataColumn, days: int) -> DataColumn:
         Simple moving average series, with None for initial elements until window is reached.
     """
     if not isinstance(column, DataColumn):
-        raise CalculationHelperError("simple_moving_average() requires a DataColumn input")
+        msg = "simple_moving_average() requires a DataColumn input"
+
+        raise CalculationHelperError(msg)
+
     if not isinstance(days, int) or days <= 0:
-        raise CalculationHelperError("simple_moving_average() requires a positive integer window")
+        msg = "simple_moving_average() requires a positive integer window"
+
+        raise CalculationHelperError(msg)
 
     series = column.to_pandas().rolling(window=days).mean()
+
     return DataColumn.load(series)

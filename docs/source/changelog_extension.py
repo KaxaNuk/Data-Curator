@@ -1,5 +1,8 @@
 import re
 from pathlib import Path
+from typing import Any
+
+from sphinx.application import Sphinx
 from sphinx.util import logging
 
 logger = logging.getLogger(__name__)
@@ -21,23 +24,27 @@ INTRO_TEXT = (
     "and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.\n\n"
 )
 
-def escape_inline_backticks(text):
+
+def escape_inline_backticks(text: str) -> str:
     text = CODE_SNIPPET_RE.sub(r"``\1``", text)
     return re.sub(r"(?<!`)`(?!`)", r"\`", text)
 
-def parse_changelog():
+
+def parse_changelog() -> list[tuple[tuple[str, str], list[str]]]:
     if not CHANGELOG_FILE.exists():
         logger.warning("CHANGELOG.md not found at %s", CHANGELOG_FILE)
         return []
 
     lines = CHANGELOG_FILE.read_text(encoding="utf-8").splitlines(keepends=True)
-    entries = []
-    current_version, current_date, buffer = None, None, []
+    entries: list[tuple[tuple[str, str], list[str]]] = []
+    current_version: str | None = None
+    current_date: str | None = None
+    buffer: list[str] = []
 
     for line in lines:
         m = VERSION_HEADER_RE.match(line.strip())
         if m:
-            if current_version:
+            if current_version and current_date:
                 entries.append(((current_version, current_date), buffer))
             current_version, current_date = m.groups()
             title = f"{current_version} ({current_date})"
@@ -57,16 +64,17 @@ def parse_changelog():
                     text = escape_inline_backticks(line)
                     buffer.append(text)
 
-    if current_version:
+    if current_version and current_date:
         entries.append(((current_version, current_date), buffer))
     return entries
 
-def generate_changelog_index(app):
+
+def generate_changelog_index(app: Sphinx) -> None:
     entries = parse_changelog()
     if not entries:
         return
 
-    grouped = {}
+    grouped: dict[str, list[tuple[str, str, list[str]]]] = {}
     for (ver, date), buf in entries:
         major = ver.split('.')[0]
         key = f"v{major}"
@@ -107,7 +115,8 @@ def generate_changelog_index(app):
         for major in sorted(grouped.keys(), reverse=True):
             f.write(f"   {major}/index\n")
 
-def setup(app):
+
+def setup(app: Sphinx) -> dict[str, Any]:
     app.connect('builder-inited', generate_changelog_index)
     return {
         "version": "1.1",

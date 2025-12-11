@@ -1,0 +1,20 @@
+[
+  {
+    "symbol": "NVDA",
+    "date": "2025-11-14",
+    "adjOpen": 182.86,
+    "adjHigh": 190.68,
+    "adjLow": 180.58,
+    "adjClose": 189.42,
+    "volume": 130626834
+  },
+  {
+    "symbol": "NVDA",
+    "date": "2025-11-13",
+    "adjOpen": 191.05,
+    "adjHigh": 191.44,
+    "adjLow": 183.85,
+    "adjClose": 186.86,
+    "volume": 206750700
+  }
+]

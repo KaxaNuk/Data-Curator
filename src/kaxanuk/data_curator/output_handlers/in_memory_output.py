@@ -55,14 +55,18 @@ class InMemoryOutput(OutputHandlerInterface):
         The DataFrame containing the stored data.
         """
         if len(self.data) < 1:
-            raise OutputHandlerError("No data to export.")
+            msg = "No data to export."
+
+            raise OutputHandlerError(msg)
 
         dataframes = []
         for (identifier, table) in self.data.items():
             dataframe = table.to_pandas()
 
             if 'm_date' not in dataframe.columns:
-                raise OutputHandlerError("Unable to index in-memory output by date as 'm_date' column is missing.")
+                msg = "Unable to index in-memory output by date as 'm_date' column is missing."
+
+                raise OutputHandlerError(msg)
 
             dataframe['main_identifier'] = identifier
             dataframes.append(dataframe)

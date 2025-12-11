@@ -2,6 +2,7 @@ import dataclasses
 import datetime
 import decimal
 
+from kaxanuk.data_curator.entities import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
     EntityValueError
@@ -10,7 +11,7 @@ from kaxanuk.data_curator.services import entity_helper
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class MarketDataDailyRow:
+class MarketDataDailyRow(BaseDataEntity):
     date: datetime.date
     open: decimal.Decimal | None
     high: decimal.Decimal | None

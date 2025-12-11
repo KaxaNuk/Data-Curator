@@ -1,10 +1,14 @@
 import importlib.util
 import inspect
 import shutil
-from sphinx.util import logging
+import types
 from pathlib import Path
-from docutils.parsers.rst import Directive
+from typing import Any
+
 from docutils import nodes
+from docutils.parsers.rst import Directive
+from sphinx.application import Sphinx
+from sphinx.util import logging
 
 logger = logging.getLogger(__name__)
 
@@ -13,24 +17,26 @@ CALCULATIONS_PATH = PROJECT_ROOT / 'src' / 'kaxanuk' / 'data_curator' / 'feature
 CALCULATIONS_MODULE = 'kaxanuk.data_curator.features.calculations'
 
 
-def load_calculations_module():
+def load_calculations_module() -> types.ModuleType | None:
     try:
         spec = importlib.util.spec_from_file_location(CALCULATIONS_MODULE, CALCULATIONS_PATH)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        return None
     except (ImportError, FileNotFoundError, AttributeError, SyntaxError) as e:
         logger.error("Failed to load calculations module: %s", e)
         return None
 
 
-def extract_functions_by_category():
+def extract_functions_by_category() -> dict[str, list[tuple[str, str]]]:
     mod = load_calculations_module()
     if mod is None:
         return {}
 
     category_marker = ".. category::"
-    grouped = {}
+    grouped: dict[str, list[tuple[str, str]]] = {}
 
     for name, func in inspect.getmembers(mod, inspect.isfunction):
         if func.__module__ != CALCULATIONS_MODULE:
@@ -51,7 +57,7 @@ def extract_functions_by_category():
     return grouped
 
 
-def generate_features_rst(app, config):
+def generate_features_rst(app: Sphinx, config: Any) -> None:
     functions_by_category = extract_functions_by_category()
     if not functions_by_category:
         logger.warning("No functions found in calculations.py.")
@@ -153,11 +159,12 @@ All functions operate on `DataColumn` inputs and return iterable values compatib
 
 class CategoryDirective(Directive):
     has_content = True
-    def run(self):
+
+    def run(self) -> list[nodes.Node]:
         return [nodes.comment()]
 
 
-def setup(app):
+def setup(app: Sphinx) -> dict[str, Any]:
     app.add_directive("category", CategoryDirective)
     app.connect("config-inited", generate_features_rst)
     return {
@@ -165,3 +172,4 @@ def setup(app):
         "parallel_read_safe": True,
         "parallel_write_safe": True
     }
+

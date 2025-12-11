@@ -10,7 +10,6 @@ init:
 import logging
 import pathlib
 import sys
-import types
 import typing
 
 import openpyxl
@@ -40,7 +39,7 @@ class ExcelConfigurator(ConfiguratorInterface):
         'fundamental'
     )
     NONE_DATA_PROVIDER = 'none'
-    SHEET_KEY_VALUES = types.MappingProxyType({
+    SHEET_KEY_VALUES : typing.Final = {
         'General': (
             'market_data_provider',
             'fundamental_data_provider',
@@ -51,15 +50,15 @@ class ExcelConfigurator(ConfiguratorInterface):
             'output_format',
             'parameters_format_version'
         ),
-    })
-    SHEET_COLUMNS = types.MappingProxyType({
+    }
+    SHEET_COLUMNS : typing.Final = {
         'Identifiers': (
             'main_identifier',
         ),
         'Output_Columns': (
             'columns',
         ),
-    })
+    }
 
     def __init__(
         self,
@@ -139,10 +138,9 @@ class ExcelConfigurator(ConfiguratorInterface):
                 len(market_data_provider_name) < 1
                 or market_data_provider_name not in data_providers
             ):
+                msg = "Market data provider selected in configuration file not found"
 
-                raise ConfigurationError(
-                    "Market data provider selected in configuration file not found"
-                )
+                raise ConfigurationError(msg)
 
             if issubclass(
                 data_providers[market_data_provider_name]['class'],
@@ -175,10 +173,9 @@ class ExcelConfigurator(ConfiguratorInterface):
                 len(fundamental_data_provider_name) < 1
                 or fundamental_data_provider_name not in data_providers
             ):
+                msg = "Fundamental data provider selected in configuration file not found"
 
-                raise ConfigurationError(
-                    "Fundamental data provider selected in configuration file not found"
-                )
+                raise ConfigurationError(msg)
 
             else:
                 fundamental_data_provider = data_providers[
@@ -218,8 +215,9 @@ class ExcelConfigurator(ConfiguratorInterface):
                     msg = f"API key validation succeded for {provider.__class__.__name__}"
                     logging.getLogger(__name__).info(msg)
                 elif is_api_key_valid is not None:
+                    msg = f"Invalid API key for {provider.__class__.__name__}"
 
-                    raise ConfigurationError(f"Invalid API key for {provider.__class__.__name__}")
+                    raise ConfigurationError(msg)
 
             self._output_handler = output_handlers[
                 sheet_key_values['General']['output_format']
@@ -287,7 +285,7 @@ class ExcelConfigurator(ConfiguratorInterface):
     def _extract_column_values(
         cls,
         column: tuple[openpyxl.cell.cell.Cell, ...]
-    ):
+    ) -> list[str]:
         """
         Extract the values of an openpyxl column as a string list.
 
@@ -549,10 +547,9 @@ class ExcelConfigurator(ConfiguratorInterface):
         ConfigurationHandlerError
         """
         if level_name not in cls.CONFIGURATION_LOGGER_LEVELS:
+            msg = "Invalid logger level in parameters file"
 
-            raise ConfigurationHandlerError(
-                "Invalid logger level in parameters file"
-            )
+            raise ConfigurationHandlerError(msg)
 
         return cls.CONFIGURATION_LOGGER_LEVELS[level_name]
 
