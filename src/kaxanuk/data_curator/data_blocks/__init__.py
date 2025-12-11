@@ -1,1 +1,3 @@
-# @todo put all datablock related types here
+"""
+Package containing built-in data blocks (with provisional API, subject to change).
+"""
