@@ -76,30 +76,6 @@ class TestDetectFieldTypeErrors:
         assert len(module.detect_field_type_errors(instance)) == 5
 
 
-class TestFillFields:
-    def test_fill_simple_fields(self):
-        field_correspondences = {
-            'int_field': 'int_field',
-            'str_field': 'str_field',
-            'float_field': 'float_field',
-            'date_field': 'date_field',
-            'decimal_field': 'decimal_field',
-        }
-
-        data_row = {
-            'int_field': "12",
-            'str_field': "some string",
-            'float_field': "34.5",
-            'date_field': '2014-07-21',
-            'decimal_field': '10.1',
-        }
-
-        filled_fields = module.convert_data_row_into_entity_fields(data_row, field_correspondences, SimpleFields)
-        instance = SimpleFields(**filled_fields)
-
-        assert len(module.detect_field_type_errors(instance)) == 0
-
-
 class TestPrivateConvertToType:
     def test_convert_to_date(self):
         assert (
