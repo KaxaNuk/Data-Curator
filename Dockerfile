@@ -66,7 +66,7 @@ COPY src/ ./src/
 RUN \
   pip install pdm \
   # install dependencies
-  && pdm install --dev --global --no-lock --project . \
+  && pdm install --global -G:all --frozen-lockfile --project . \
 ;
 
 

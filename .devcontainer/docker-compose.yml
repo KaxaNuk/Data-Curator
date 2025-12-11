@@ -1,0 +1,11 @@
+services:
+  workspace-kndc:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        - BUILD_ENV
+
+    environment:
+      - KNDC_API_KEY_FMP
+      - KNDC_DEBUG_PORT
