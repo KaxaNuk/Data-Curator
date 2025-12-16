@@ -1,33 +1,36 @@
 # Configuration file for the Sphinx documentation builder.
 
+import datetime
+import pathlib
 import sys
-from pathlib import Path
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from sphinx.application import Sphinx
+import zoneinfo
 
-sys.path.insert(0, str(Path().resolve()))
-sys.path.insert(1, str((Path('..') / '..' / 'templates' / 'data_curator' / 'Config').resolve()))
-sys.path.insert(2, str((Path('..') / '..' / 'src').resolve()))
-sys.path.insert(3, str((Path('..') / '..' / 'src' / 'kaxanuk').resolve()))
-sys.path.insert(4, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator').resolve()))
-sys.path.insert(5, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'config_handlers').resolve()))
-sys.path.insert(6, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'data_providers').resolve()))
-sys.path.insert(7, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'entities').resolve()))
-sys.path.insert(8, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'exceptions').resolve()))
-sys.path.insert(9, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'features').resolve()))
-sys.path.insert(10, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'modules').resolve()))
-sys.path.insert(11, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'output_handlers').resolve()))
-sys.path.insert(12, str((Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'services').resolve()))
+import sphinx.application
+
+from kaxanuk.data_curator import __version__
+
+sys.path.insert(0, str(pathlib.Path().resolve()))
+sys.path.insert(1, str((pathlib.Path('..') / '..' / 'templates' / 'data_curator' / 'Config').resolve()))
+sys.path.insert(2, str((pathlib.Path('..') / '..' / 'src').resolve()))
+sys.path.insert(3, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk').resolve()))
+sys.path.insert(4, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator').resolve()))
+sys.path.insert(5, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'config_handlers').resolve()))
+sys.path.insert(6, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'data_providers').resolve()))
+sys.path.insert(7, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'entities').resolve()))
+sys.path.insert(8, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'exceptions').resolve()))
+sys.path.insert(9, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'features').resolve()))
+sys.path.insert(10, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'modules').resolve()))
+sys.path.insert(11, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'output_handlers').resolve()))
+sys.path.insert(12, str((pathlib.Path('..') / '..' / 'src' / 'kaxanuk' / 'data_curator' / 'services').resolve()))
 
 # -- Project information -----------------------------------------------------
 project = 'Data Curator'
 author = 'KaxaNuk'
 copyright = (
-    f"{datetime.now(ZoneInfo('America/Mexico_City')).year}, "
+    f"{datetime.datetime.now(zoneinfo.ZoneInfo('America/Mexico_City')).year}, "
     "KaxaNuk - Kaxan means Seek and Find, and Nuuk Answer in Mayan"
 )
-release = '0.40.2'
+release = __version__
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -98,7 +101,7 @@ html_context = {
 
 # -- Custom CSS and JS --------------------------------------------------------
 #def setup(app):
-def setup(app: Sphinx) -> None:
+def setup(app: sphinx.application.Sphinx) -> None:
     app.add_css_file('sidebar.css')
     app.add_css_file('general.css')
     app.add_css_file('content.css')

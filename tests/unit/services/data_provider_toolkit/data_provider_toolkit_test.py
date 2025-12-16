@@ -505,7 +505,8 @@ class TestPrivateProcessRemappedEndpointTables:
     def test_process_remapped_endpoint_tables(self):
         result = DataProviderToolkit._process_remapped_endpoint_tables(
             endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_PREPROCESSORS,
-            endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD
+            endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD,
+            endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC,
         )
         expected = endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PROCESSED
 
@@ -523,7 +524,8 @@ class TestPrivateRemapEndpointTableColumns:
     def test_remap_endpoint_table_columns(self):
         result = DataProviderToolkit._remap_endpoint_table_columns(
             endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS,
-            endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_TAG
+            endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_TAG,
+            endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC,
         )
         expected = endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD
 
@@ -534,4 +536,21 @@ class TestPrivateRemapEndpointTableColumns:
             and result[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT].equals(
                 expected[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT]
             )
+        )
+
+    def test_remap_endpoint_table_columns_with_extended_fields(self):
+        result = DataProviderToolkit._remap_endpoint_table_columns(
+            endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS,
+            endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_TAG,
+            endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC,
+        )
+        expected = endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_FIELD
+
+        assert (  # noqa: PT018
+            result[endpoint_maps.Endpoints.BALANCE_SHEET_STATEMENT].equals(
+                expected[endpoint_maps.Endpoints.BALANCE_SHEET_STATEMENT]
+            )
+            and result[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT].equals(
+            expected[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT]
+        )
         )
