@@ -912,10 +912,16 @@ class DataProviderToolkit:
         )
         endpoint_field_preprocessors = cls._data_block_endpoint_field_preprocessors[data_block]
 
+        # get entity field to most specific entity mapping
+        entity_field_to_most_specific_entity = cls._get_entity_field_to_most_specific_entity(
+            endpoint_field_map
+        )
+
         # transform table columns per tag to columns per entity.field$tag
         remapped_endpoint_tables = cls._remap_endpoint_table_columns(
             endpoint_column_remaps,
             endpoint_tables,
+            entity_field_to_most_specific_entity,
         )
 
         # run processors
@@ -988,10 +994,8 @@ class DataProviderToolkit:
 
         return pyarrow.table(output_columns)
 
-    @classmethod
+    @staticmethod
     def _calculate_endpoint_column_remaps(
-        cls,
-        /,
         endpoint_field_map: EndpointFieldMap
     ) -> EndpointColumnRemaps:
         """
@@ -1016,28 +1020,18 @@ class DataProviderToolkit:
         DataProviderIncorrectMappingTypeError
             When a mapping value has an invalid type
         """
-        # Get the field to most specific entity mapping
-        field_to_most_specific_entity = cls._get_entity_field_to_most_specific_entity(
-            endpoint_field_map
-        )
-
-        # Build the column remaps using the most specific entity for each field
-        endpoint_column_remaps = {}
+        endpoint_column_remaps: EndpointColumnRemaps = {}
 
         for (endpoint, field_mappings) in endpoint_field_map.items():
+            # Initialize the tag-to-column-remaps dict for this endpoint
             if endpoint not in endpoint_column_remaps:
                 endpoint_column_remaps[endpoint] = {}
 
             for (entity_field, mapping_value) in field_mappings.items():
-                # Get the field name from the entity_field descriptor
+                # Get the entity class and field name from the entity_field descriptor
+                entity_class = entity_field.__objclass__
+                entity_name = entity_class.__name__
                 field_name = entity_field.__name__
-
-                # Find the most specific entity for this field using the descriptor as key
-                most_specific_entity = field_to_most_specific_entity.get(
-                    entity_field,
-                    entity_field.__objclass__
-                )
-                entity_name = most_specific_entity.__name__
 
                 if isinstance(mapping_value, str):
                     # It's a TagName - create one "entity.field" remap
@@ -1065,10 +1059,8 @@ class DataProviderToolkit:
 
         return endpoint_column_remaps
 
-    @classmethod
+    @staticmethod
     def _calculate_endpoint_field_preprocessors(
-        cls,
-        /,
         endpoint_field_map: EndpointFieldMap
     ) -> EndpointFieldPreprocessors:
         """
@@ -1087,36 +1079,14 @@ class DataProviderToolkit:
         EndpointFieldPreprocessors
             Dictionary mapping endpoints to fields requiring preprocessing
         """
-        # Get the field to most specific entity mapping
-        field_to_most_specific_entity = cls._get_entity_field_to_most_specific_entity(
-            endpoint_field_map
-        )
-
-        # Build the preprocessors using the most specific entity for each field
-        endpoint_field_preprocessors = {}
-
-        for (endpoint, field_mappings) in endpoint_field_map.items():
-            preprocessed_fields = {}
-
-            for (entity_field, mapping_value) in field_mappings.items():
-                if isinstance(mapping_value, PreprocessedFieldMapping):
-                    # Get the field name from the entity_field descriptor
-                    field_name = entity_field.__name__
-
-                    # Find the most specific entity for this field using the descriptor as key
-                    most_specific_entity = field_to_most_specific_entity.get(
-                        entity_field,
-                        entity_field.__objclass__
-                    )
-
-                    # Use the field from the most specific entity
-                    most_specific_field = getattr(most_specific_entity, field_name)
-                    preprocessed_fields[most_specific_field] = mapping_value
-
-            if preprocessed_fields:
-                endpoint_field_preprocessors[endpoint] = preprocessed_fields
-
-        return endpoint_field_preprocessors
+        return {
+            endpoint: {
+                entity_field: mapping_value
+                for (entity_field, mapping_value) in field_mappings.items()
+                if isinstance(mapping_value, PreprocessedFieldMapping)
+            }
+            for (endpoint, field_mappings) in endpoint_field_map.items()
+        }
 
     @staticmethod
     def _calculate_most_specific_field_entity(
@@ -1660,10 +1630,13 @@ class DataProviderToolkit:
 
         return processed_tables
 
-    @staticmethod
+    @classmethod
     def _remap_endpoint_table_columns(
+        cls,
+        /,
         endpoint_column_remaps: EndpointColumnRemaps,
         endpoint_tables: EndpointTables,
+        entity_field_to_most_specific_entity: EntityFieldToMostSpecificEntity,
     ) -> EndpointTables:
         """
         Rename table columns from provider tags to entity field format.
@@ -1678,6 +1651,8 @@ class DataProviderToolkit:
             Dictionary mapping endpoints to tags to column renames
         endpoint_tables
             Dictionary mapping endpoints to raw tables
+        entity_field_to_most_specific_entity
+            Dictionary mapping entity fields to their most specific descendant entities
 
         Returns
         -------
@@ -1686,7 +1661,7 @@ class DataProviderToolkit:
         """
         remapped_tables: EndpointTables = {}
 
-        for endpoint, table in endpoint_tables.items():
+        for (endpoint, table) in endpoint_tables.items():
             if endpoint not in endpoint_column_remaps:
                 # No remapping for this endpoint, keep the table as-is
                 remapped_tables[endpoint] = table
@@ -1700,14 +1675,48 @@ class DataProviderToolkit:
             for tag_name in table.column_names:
                 if tag_name not in column_remaps:
                     # Column not in remaps, skip it
-
                     continue
 
                 # Get the original column data
                 original_column = table[tag_name]
 
                 # Create one column for each remap target
-                for new_column_name in column_remaps[tag_name]:
+                for old_remap_name in column_remaps[tag_name]:
+                    # Parse the old remap name to extract entity field information
+                    # Format: "entity.field" or "entity.field$tag"
+                    if '$' in old_remap_name:
+                        base_name, suffix = old_remap_name.split('$', 1)
+                    else:
+                        base_name = old_remap_name
+                        suffix = None
+
+                    entity_name, field_name = base_name.split('.', 1)
+
+                    # Find the entity field in the mapping
+                    # We need to search through entity_field_to_most_specific_entity keys
+                    matching_entity_field = None
+                    for entity_field in entity_field_to_most_specific_entity:
+                        if (
+                            entity_field.__objclass__.__name__ == entity_name
+                            and entity_field.__name__ == field_name
+                        ):
+                            matching_entity_field = entity_field
+                            break
+
+                    if matching_entity_field is not None:
+                        # Use the most specific entity class for this field
+                        most_specific_entity = entity_field_to_most_specific_entity[matching_entity_field]
+                        most_specific_entity_name = most_specific_entity.__name__
+
+                        # Create remapped column name using the most specific entity
+                        if suffix:
+                            new_column_name = f"{most_specific_entity_name}.{field_name}${suffix}"
+                        else:
+                            new_column_name = f"{most_specific_entity_name}.{field_name}"
+                    else:
+                        # Fallback: use the original remapped name
+                        new_column_name = old_remap_name
+
                     new_columns_dict[new_column_name] = original_column
 
             # Create the new table with remapped columns

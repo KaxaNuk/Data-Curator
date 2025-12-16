@@ -110,6 +110,12 @@ EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS = {
         'netIncome': ['FundamentalDataRowCashFlow.net_income$netIncome'],
     }
 }
+EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC = {
+    FundamentalDataRow.period_end_date: FundamentalDataRow,
+    FundamentalDataRowBalanceSheet.current_assets: FundamentalDataRowBalanceSheet,
+    FundamentalDataRowBalanceSheet.assets: FundamentalDataRowBalanceSheet,
+    FundamentalDataRowCashFlow.net_income: FundamentalDataRowCashFlow,
+}
 
 date_array = pyarrow.array([
     datetime.date(2023, 1, 2) + datetime.timedelta(days=i)
@@ -159,4 +165,41 @@ EXAMPLE_ENDPOINT_TABLES_PROCESSED = {
         'FundamentalDataRow.period_end_date': date_array,
         'FundamentalDataRowCashFlow.net_income': multiplied_net_income_array,
     }),
+}
+
+extra_field_array = pyarrow.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+
+EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_TAG = {
+    Endpoints.BALANCE_SHEET_STATEMENT: pyarrow.table({
+        'date': date_array,
+        'extra': extra_field_array,
+        'totalCurrentAssets': total_current_assets_array,
+        'totalNonCurrentAssets': total_noncurrent_assets_array,
+    }),
+    Endpoints.CASH_FLOW_STATEMENT: pyarrow.table({
+        'date': date_array,
+        'netIncome': net_income_array,
+    }),
+}
+
+EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_FIELD = {
+    Endpoints.BALANCE_SHEET_STATEMENT: pyarrow.table({
+        'ExtendedFundamentalDataRow.period_end_date': date_array,
+        'ExtendedFundamentalDataRow.extra_field': extra_field_array,
+        'FundamentalDataRowBalanceSheet.current_assets': total_current_assets_array,
+        'FundamentalDataRowBalanceSheet.assets$totalCurrentAssets': total_current_assets_array,
+        'FundamentalDataRowBalanceSheet.assets$totalNonCurrentAssets': total_noncurrent_assets_array,
+    }),
+    Endpoints.CASH_FLOW_STATEMENT: pyarrow.table({
+        'ExtendedFundamentalDataRow.period_end_date': date_array,
+        'FundamentalDataRowCashFlow.net_income$netIncome': net_income_array,
+    }),
+}
+
+EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC = {
+    ExtendedFundamentalDataRow.period_end_date: ExtendedFundamentalDataRow,
+    ExtendedFundamentalDataRow.extra_field: ExtendedFundamentalDataRow,
+    FundamentalDataRowBalanceSheet.current_assets: FundamentalDataRowBalanceSheet,
+    FundamentalDataRowBalanceSheet.assets: FundamentalDataRowBalanceSheet,
+    FundamentalDataRowCashFlow.net_income: FundamentalDataRowCashFlow,
 }
