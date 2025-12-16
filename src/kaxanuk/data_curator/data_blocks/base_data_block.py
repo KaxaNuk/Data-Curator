@@ -468,10 +468,34 @@ class BaseDataBlock:
         DataBlockRowEntityErrorGroup
             If entity instantiation fails for one or more rows.
         """
-        # clock_type = BaseDataBlock._unwrap_optional_type(
-        #     clock_sync_field.__objclass__.__annotations__[clock_sync_field.__name__]
-        # )
-        clock_column = entity_table_map[clock_sync_field.__objclass__].column(
+        clock_sync_entity = clock_sync_field.__objclass__
+        if clock_sync_entity not in entity_table_map:
+            # find subclassed entity with clock sync field
+            for candidate_entity in entity_table_map:
+                if (
+                    not issubclass(candidate_entity, clock_sync_entity)
+                    or not dataclasses.is_dataclass(candidate_entity)
+                ):
+                    continue
+
+                candidate_fields = {
+                    field.name
+                    for field in dataclasses.fields(candidate_entity)
+                }
+                if clock_sync_field.__name__ in candidate_fields:
+                    clock_sync_entity = candidate_entity
+                    break
+
+            if clock_sync_entity not in entity_table_map:
+                msg = " ".join([
+                    f"Clock sync field '{clock_sync_field.__name__}'",
+                    f"not found in entity '{clock_sync_field.__objclass__.__name__}'",
+                    f"or its subclasses for data block '{cls.__name__}'"
+                ])
+
+                raise DataBlockIncorrectPackingStructureError(msg)
+
+        clock_column = entity_table_map[clock_sync_entity].column(
             clock_sync_field.__name__
         )
         dependency_rows = {
@@ -521,7 +545,7 @@ class BaseDataBlock:
                     row[field_name] is None
                     for field_name in non_key_common_field_names
                 ):
-                    if clock_sync_field.__objclass__ is entity:
+                    if clock_sync_entity is entity:
                         date = row[clock_sync_field.__name__].isoformat()
                         master_rows[date] = None
                     else:
@@ -561,7 +585,7 @@ class BaseDataBlock:
 
                     continue
 
-                if clock_sync_field.__objclass__ is entity:
+                if clock_sync_entity is entity:
                     date = row[clock_sync_field.__name__].isoformat()
                     master_rows[date] = row_entity
                 else:
@@ -573,7 +597,7 @@ class BaseDataBlock:
                 raise DataBlockRowEntityErrorGroup(msg, entity_creation_exceptions)
 
             # entity with clock sync field is the last entity to be processed
-            if clock_sync_field.__objclass__ is entity:
+            if clock_sync_entity is entity:
                 break
 
         if len(master_rows) < 1:
