@@ -11,6 +11,7 @@ build:
     # Cf. https://docs.readthedocs.com/platform/stable/build-customization.html
     install:
       - pip install --upgrade pip
+      - pip install -e .
       - pip install --group 'docs'
 
 sphinx:

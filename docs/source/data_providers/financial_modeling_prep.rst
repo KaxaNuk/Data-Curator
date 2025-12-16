@@ -79,35 +79,35 @@ Market Data
    * - Data Curator Tag
      - FMP Tag
    * - m_close
-     - :abbr:`adjClose (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
-   * - m_close_dividend_and_split_adjusted
      - :abbr:`adjClose (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_close_dividend_and_split_adjusted
+     - :abbr:`adjClose (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
    * - m_close_split_adjusted
      - :abbr:`close (https://financialmodelingprep.com/stable/historical-price-eod/full)`
    * - m_date
      - [ :abbr:`date (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted | https://financialmodelingprep.com/stable/historical-price-eod/full | https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)` ] `* <preprocessed_legend_>`_
    * - m_high
-     - :abbr:`adjHigh (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
-   * - m_high_dividend_and_split_adjusted
      - :abbr:`adjHigh (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_high_dividend_and_split_adjusted
+     - :abbr:`adjHigh (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
    * - m_high_split_adjusted
      - :abbr:`high (https://financialmodelingprep.com/stable/historical-price-eod/full)`
    * - m_low
-     - :abbr:`adjLow (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
-   * - m_low_dividend_and_split_adjusted
      - :abbr:`adjLow (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_low_dividend_and_split_adjusted
+     - :abbr:`adjLow (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
    * - m_low_split_adjusted
      - :abbr:`low (https://financialmodelingprep.com/stable/historical-price-eod/full)`
    * - m_open
-     - :abbr:`adjOpen (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
-   * - m_open_dividend_and_split_adjusted
      - :abbr:`adjOpen (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_open_dividend_and_split_adjusted
+     - :abbr:`adjOpen (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
    * - m_open_split_adjusted
      - :abbr:`open (https://financialmodelingprep.com/stable/historical-price-eod/full)`
    * - m_volume
-     - :abbr:`volume (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
-   * - m_volume_dividend_and_split_adjusted
      - :abbr:`volume (https://financialmodelingprep.com/stable/historical-price-eod/non-split-adjusted)`
+   * - m_volume_dividend_and_split_adjusted
+     - :abbr:`volume (https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted)`
    * - m_volume_split_adjusted
      - :abbr:`volume (https://financialmodelingprep.com/stable/historical-price-eod/full)`
    * - m_vwap_split_adjusted
@@ -160,8 +160,7 @@ Fundamentals
    * - f_accepted_date
      - :abbr:`acceptedDate (https://financialmodelingprep.com/stable/balance-sheet-statement | https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)`
    * - f_filing_date
-     - - [ :abbr:`filingDate (https://financialmodelingprep.com/stable/balance-sheet-statement)`, :abbr:`acceptedDate (https://financialmodelingprep.com/stable/balance-sheet-statement)` ] `* <preprocessed_legend_>`_
-       - [ :abbr:`filingDate (https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)` ] `* <preprocessed_legend_>`_
+     - [ :abbr:`filingDate (https://financialmodelingprep.com/stable/balance-sheet-statement | https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)` ] `* <preprocessed_legend_>`_
    * - f_fiscal_period
      - :abbr:`period (https://financialmodelingprep.com/stable/balance-sheet-statement | https://financialmodelingprep.com/stable/cash-flow-statement | https://financialmodelingprep.com/stable/income-statement)`
    * - f_fiscal_year
