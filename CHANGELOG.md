@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Load ReadTheDocs dependencies from `pyproject.toml` instead of `requirements.txt`
 
 ### Fixed
-- `DataProviderToolkit` entity field mapping methods fail on subclassed entities 
+- `DataProviderToolkit` entity field mapping methods fail on subclassed entities
 
 
 ## [0.44.0] - 2025-12-11
