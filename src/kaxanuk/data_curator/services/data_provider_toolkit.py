@@ -929,6 +929,7 @@ class DataProviderToolkit:
             processed_endpoint_tables = cls._process_remapped_endpoint_tables(
                 endpoint_field_preprocessors,
                 remapped_endpoint_tables,
+                entity_field_to_most_specific_entity,
             )
         except pyarrow.lib.ArrowInvalid as error:
             msg = f"Error running data provider preprocessors: {error}"
@@ -1538,6 +1539,7 @@ class DataProviderToolkit:
     def _process_remapped_endpoint_tables(
         endpoint_field_preprocessors: EndpointFieldPreprocessors,
         remapped_endpoint_tables: EndpointTables,
+        entity_field_to_most_specific_entity: EntityFieldToMostSpecificEntity,
     ) -> EndpointTables:
         """
         Apply preprocessor functions to remapped endpoint tables.
@@ -1552,6 +1554,8 @@ class DataProviderToolkit:
             Dictionary mapping endpoints to field preprocessing configurations
         remapped_endpoint_tables
             Dictionary mapping endpoints to tables with remapped columns
+        entity_field_to_most_specific_entity
+            Dictionary mapping entity fields to their most specific descendant entities
 
         Returns
         -------
@@ -1577,8 +1581,7 @@ class DataProviderToolkit:
 
             # Process each field that has preprocessors
             for (entity_field, preprocessed_mapping) in field_preprocessors.items():
-                entity_class = entity_field.__objclass__
-                entity_name = entity_class.__name__
+                entity_name = entity_field_to_most_specific_entity[entity_field].__name__
                 field_name = entity_field.__name__
 
                 # Build input column names from tags: "entity.field$tag"
@@ -1630,10 +1633,8 @@ class DataProviderToolkit:
 
         return processed_tables
 
-    @classmethod
+    @staticmethod
     def _remap_endpoint_table_columns(
-        cls,
-        /,
         endpoint_column_remaps: EndpointColumnRemaps,
         endpoint_tables: EndpointTables,
         entity_field_to_most_specific_entity: EntityFieldToMostSpecificEntity,
@@ -1659,11 +1660,16 @@ class DataProviderToolkit:
         EndpointTables
             Dictionary mapping endpoints to tables with remapped column names
         """
+        # Build reverse lookup: (entity_name, field_name) -> most_specific_entity_name
+        entity_field_lookup = {
+            (entity_field.__objclass__.__name__, entity_field.__name__): most_spcific_entity.__name__
+            for (entity_field, most_spcific_entity) in entity_field_to_most_specific_entity.items()
+        }
+
         remapped_tables: EndpointTables = {}
 
         for (endpoint, table) in endpoint_tables.items():
             if endpoint not in endpoint_column_remaps:
-                # No remapping for this endpoint, keep the table as-is
                 remapped_tables[endpoint] = table
 
                 continue
@@ -1671,55 +1677,32 @@ class DataProviderToolkit:
             column_remaps = endpoint_column_remaps[endpoint]
             new_columns_dict = {}
 
-            # Process each column in the original table
             for tag_name in table.column_names:
                 if tag_name not in column_remaps:
                     # Column not in remaps, skip it
+
                     continue
 
-                # Get the original column data
                 original_column = table[tag_name]
 
-                # Create one column for each remap target
                 for old_remap_name in column_remaps[tag_name]:
-                    # Parse the old remap name to extract entity field information
-                    # Format: "entity.field" or "entity.field$tag"
-                    if '$' in old_remap_name:
-                        base_name, suffix = old_remap_name.split('$', 1)
-                    else:
-                        base_name = old_remap_name
-                        suffix = None
-
+                    # Parse: "entity.field" or "entity.field$tag"
+                    base_name, _, suffix = old_remap_name.partition('$')
                     entity_name, field_name = base_name.split('.', 1)
 
-                    # Find the entity field in the mapping
-                    # We need to search through entity_field_to_most_specific_entity keys
-                    matching_entity_field = None
-                    for entity_field in entity_field_to_most_specific_entity:
-                        if (
-                            entity_field.__objclass__.__name__ == entity_name
-                            and entity_field.__name__ == field_name
-                        ):
-                            matching_entity_field = entity_field
-                            break
+                    # Look up most specific entity
+                    most_specific_entity_name = entity_field_lookup.get(
+                        (entity_name, field_name),
+                        entity_name  # Fallback to original if not found
+                    )
 
-                    if matching_entity_field is not None:
-                        # Use the most specific entity class for this field
-                        most_specific_entity = entity_field_to_most_specific_entity[matching_entity_field]
-                        most_specific_entity_name = most_specific_entity.__name__
-
-                        # Create remapped column name using the most specific entity
-                        if suffix:
-                            new_column_name = f"{most_specific_entity_name}.{field_name}${suffix}"
-                        else:
-                            new_column_name = f"{most_specific_entity_name}.{field_name}"
-                    else:
-                        # Fallback: use the original remapped name
-                        new_column_name = old_remap_name
+                    # Build new column name
+                    new_column_name = f"{most_specific_entity_name}.{field_name}"
+                    if suffix:
+                        new_column_name += f"${suffix}"
 
                     new_columns_dict[new_column_name] = original_column
 
-            # Create the new table with remapped columns
             remapped_tables[endpoint] = pyarrow.table(new_columns_dict)
 
         return remapped_tables

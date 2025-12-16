@@ -505,7 +505,8 @@ class TestPrivateProcessRemappedEndpointTables:
     def test_process_remapped_endpoint_tables(self):
         result = DataProviderToolkit._process_remapped_endpoint_tables(
             endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_PREPROCESSORS,
-            endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD
+            endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD,
+            endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC,
         )
         expected = endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PROCESSED
 
