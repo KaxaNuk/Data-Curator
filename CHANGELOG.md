@@ -6,12 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.45.0] - 2025-12-16
 ### Changed
 - Load ReadTheDocs dependencies from `pyproject.toml` instead of `requirements.txt`
 
 ### Fixed
 - `DataProviderToolkit` entity field mapping methods fail on subclassed entities
+- `BaseDataBlock` entity packing methods fail on subclassed entities
 
 
 ## [0.44.0] - 2025-12-11
