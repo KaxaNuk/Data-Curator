@@ -1059,10 +1059,8 @@ class DataProviderToolkit:
 
         return endpoint_column_remaps
 
-    @classmethod
+    @staticmethod
     def _calculate_endpoint_field_preprocessors(
-        cls,
-        /,
         endpoint_field_map: EndpointFieldMap
     ) -> EndpointFieldPreprocessors:
         """
@@ -1081,36 +1079,14 @@ class DataProviderToolkit:
         EndpointFieldPreprocessors
             Dictionary mapping endpoints to fields requiring preprocessing
         """
-        # Get the field to most specific entity mapping
-        field_to_most_specific_entity = cls._get_entity_field_to_most_specific_entity(
-            endpoint_field_map
-        )
-
-        # Build the preprocessors using the most specific entity for each field
-        endpoint_field_preprocessors = {}
-
-        for (endpoint, field_mappings) in endpoint_field_map.items():
-            preprocessed_fields = {}
-
-            for (entity_field, mapping_value) in field_mappings.items():
-                if isinstance(mapping_value, PreprocessedFieldMapping):
-                    # Get the field name from the entity_field descriptor
-                    field_name = entity_field.__name__
-
-                    # Find the most specific entity for this field using the descriptor as key
-                    most_specific_entity = field_to_most_specific_entity.get(
-                        entity_field,
-                        entity_field.__objclass__
-                    )
-
-                    # Use the field from the most specific entity
-                    most_specific_field = getattr(most_specific_entity, field_name)
-                    preprocessed_fields[most_specific_field] = mapping_value
-
-            if preprocessed_fields:
-                endpoint_field_preprocessors[endpoint] = preprocessed_fields
-
-        return endpoint_field_preprocessors
+        return {
+            endpoint: {
+                entity_field: mapping_value
+                for (entity_field, mapping_value) in field_mappings.items()
+                if isinstance(mapping_value, PreprocessedFieldMapping)
+            }
+            for (endpoint, field_mappings) in endpoint_field_map.items()
+        }
 
     @staticmethod
     def _calculate_most_specific_field_entity(
