@@ -110,7 +110,7 @@ type ProcessedEndpointTables = dict[    # endpoint tables that have been remappe
     pyarrow.Table
 ]
 type EntityFieldToMostSpecificEntity = dict[
-    tuple[type[BaseDataEntity], str],  # (entity_class, field_name)
+    EntityField,  # field member descriptor
     type[BaseDataEntity]  # most specific entity for that field
 ]
 
@@ -1029,14 +1029,13 @@ class DataProviderToolkit:
                 endpoint_column_remaps[endpoint] = {}
 
             for (entity_field, mapping_value) in field_mappings.items():
-                # Get the entity class and field name from the entity_field descriptor
-                entity_class = entity_field.__objclass__
+                # Get the field name from the entity_field descriptor
                 field_name = entity_field.__name__
 
-                # Find the most specific entity for this field
+                # Find the most specific entity for this field using the descriptor as key
                 most_specific_entity = field_to_most_specific_entity.get(
-                    (entity_class, field_name),
-                    entity_class
+                    entity_field,
+                    entity_field.__objclass__
                 )
                 entity_name = most_specific_entity.__name__
 
@@ -1101,14 +1100,13 @@ class DataProviderToolkit:
 
             for (entity_field, mapping_value) in field_mappings.items():
                 if isinstance(mapping_value, PreprocessedFieldMapping):
-                    # Get the entity class and field name from the entity_field descriptor
-                    entity_class = entity_field.__objclass__
+                    # Get the field name from the entity_field descriptor
                     field_name = entity_field.__name__
 
-                    # Find the most specific entity for this field
+                    # Find the most specific entity for this field using the descriptor as key
                     most_specific_entity = field_to_most_specific_entity.get(
-                        (entity_class, field_name),
-                        entity_class
+                        entity_field,
+                        entity_field.__objclass__
                     )
 
                     # Use the field from the most specific entity
@@ -1139,7 +1137,7 @@ class DataProviderToolkit:
         Returns
         -------
         EntityFieldToMostSpecificEntity
-            Dictionary mapping (entity_class, field_name) tuples to the most specific
+            Dictionary mapping EntityField descriptors to the most specific
             entity class that should be used for that field
 
         Raises
@@ -1207,7 +1205,7 @@ class DataProviderToolkit:
                                 ancestors_map[leaf1]
                                 & ancestors_map[leaf2]
                             ):
-                                msg =  f"Multiple entities detected with same field name `{field_name}`"
+                                msg = f"Multiple entities detected with same field name `{field_name}`"
 
                                 raise DataProviderToolkitRuntimeError(msg)
 
@@ -1215,7 +1213,10 @@ class DataProviderToolkit:
                     next(iter(leaf_descendants)) if leaf_descendants
                     else entity
                 )
-                field_to_most_specific_entity[(entity, field_name)] = most_specific
+
+                # Use the actual field descriptor from the original entity as the key
+                entity_field = getattr(entity, field_name)
+                field_to_most_specific_entity[entity_field] = most_specific
 
         return field_to_most_specific_entity
 
