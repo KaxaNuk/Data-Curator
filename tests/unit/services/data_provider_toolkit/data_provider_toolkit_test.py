@@ -254,6 +254,14 @@ class TestPrivateCalculateEndpointColumnRemaps:
 
         assert result == expected
 
+    def test_subclassed_entity_remaps(self):
+        result = DataProviderToolkit._calculate_endpoint_column_remaps(
+            endpoint_maps.EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS
+        )
+        expected = endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS
+
+        assert result == expected
+
 
 class TestPrivateCalculateEndpointFieldPreprocessors:
     def test_calculate_endpoint_field_preprocessors(self):

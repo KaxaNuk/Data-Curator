@@ -1,4 +1,5 @@
 import datetime
+import dataclasses
 import enum
 
 import pyarrow.compute
@@ -17,6 +18,17 @@ class Endpoints(enum.StrEnum):
     BALANCE_SHEET_STATEMENT = '/balance-sheet-statement'
     CASH_FLOW_STATEMENT = '/cash-flow-statement'
     INCOME_STATEMENT = '/income-statement'
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExtendedFundamentalDataRow(FundamentalDataRow):
+    accepted_date: datetime.datetime | None
+    filing_date: datetime.date
+    fiscal_period: str
+    fiscal_year: int
+    period_end_date: datetime.date
+    reported_currency: str
+    extra_field: int
 
 
 assets_preprocessed_field_mapping =  PreprocessedFieldMapping(
@@ -65,6 +77,36 @@ EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS = {
     },
     Endpoints.CASH_FLOW_STATEMENT: {
         'date': ['FundamentalDataRow.period_end_date'],
+        'netIncome': ['FundamentalDataRowCashFlow.net_income$netIncome'],
+    }
+}
+
+EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS = {
+    Endpoints.BALANCE_SHEET_STATEMENT: {
+        ExtendedFundamentalDataRow.period_end_date: 'date',
+        ExtendedFundamentalDataRow.extra_field: 'extra',
+        FundamentalDataRowBalanceSheet.current_assets: 'totalCurrentAssets',
+        FundamentalDataRowBalanceSheet.assets: assets_preprocessed_field_mapping
+    },
+    Endpoints.CASH_FLOW_STATEMENT: {
+        ExtendedFundamentalDataRow.period_end_date: 'date',
+        FundamentalDataRowCashFlow.net_income: net_income_preprocessed_field_mapping
+    },
+}
+EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS = {
+    Endpoints.BALANCE_SHEET_STATEMENT: {
+        'date': ['ExtendedFundamentalDataRow.period_end_date'],
+        'extra': ['ExtendedFundamentalDataRow.extra_field'],
+        'totalCurrentAssets': [
+            'FundamentalDataRowBalanceSheet.current_assets',
+            'FundamentalDataRowBalanceSheet.assets$totalCurrentAssets',
+        ],
+        'totalNonCurrentAssets': [
+            'FundamentalDataRowBalanceSheet.assets$totalNonCurrentAssets',
+        ],
+    },
+    Endpoints.CASH_FLOW_STATEMENT: {
+        'date': ['ExtendedFundamentalDataRow.period_end_date'],
         'netIncome': ['FundamentalDataRowCashFlow.net_income$netIncome'],
     }
 }

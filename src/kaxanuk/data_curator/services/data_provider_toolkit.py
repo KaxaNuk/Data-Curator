@@ -109,6 +109,10 @@ type ProcessedEndpointTables = dict[    # endpoint tables that have been remappe
     Endpoint,
     pyarrow.Table
 ]
+type EntityFieldToMostSpecificEntity = dict[
+    tuple[type[BaseDataEntity], str],  # (entity_class, field_name)
+    type[BaseDataEntity]  # most specific entity for that field
+]
 
 
 class DataProviderFieldPreprocessors:
@@ -166,6 +170,10 @@ class DataProviderToolkit:
     ] = {}
     _data_block_entity_class_name_map: typing.ClassVar[
         DataBlockEntityClassNameMap
+    ] = {}
+    # entity field to most specific entity cache (keyed by tuple of (endpoint values, entity names))
+    _entity_field_to_most_specific_entity_cache: typing.ClassVar[
+        dict[str, EntityFieldToMostSpecificEntity]
     ] = {}
 
     @classmethod
@@ -980,8 +988,10 @@ class DataProviderToolkit:
 
         return pyarrow.table(output_columns)
 
-    @staticmethod
+    @classmethod
     def _calculate_endpoint_column_remaps(
+        cls,
+        /,
         endpoint_field_map: EndpointFieldMap
     ) -> EndpointColumnRemaps:
         """
@@ -1006,18 +1016,29 @@ class DataProviderToolkit:
         DataProviderIncorrectMappingTypeError
             When a mapping value has an invalid type
         """
-        endpoint_column_remaps: EndpointColumnRemaps = {}
+        # Get the field to most specific entity mapping
+        field_to_most_specific_entity = cls._get_entity_field_to_most_specific_entity(
+            endpoint_field_map
+        )
+
+        # Build the column remaps using the most specific entity for each field
+        endpoint_column_remaps = {}
 
         for (endpoint, field_mappings) in endpoint_field_map.items():
-            # Initialize the tag-to-column-remaps dict for this endpoint
             if endpoint not in endpoint_column_remaps:
                 endpoint_column_remaps[endpoint] = {}
 
             for (entity_field, mapping_value) in field_mappings.items():
                 # Get the entity class and field name from the entity_field descriptor
                 entity_class = entity_field.__objclass__
-                entity_name = entity_class.__name__
                 field_name = entity_field.__name__
+
+                # Find the most specific entity for this field
+                most_specific_entity = field_to_most_specific_entity.get(
+                    (entity_class, field_name),
+                    entity_class
+                )
+                entity_name = most_specific_entity.__name__
 
                 if isinstance(mapping_value, str):
                     # It's a TagName - create one "entity.field" remap
@@ -1073,6 +1094,105 @@ class DataProviderToolkit:
             }
             for (endpoint, field_mappings) in endpoint_field_map.items()
         }
+
+    @staticmethod
+    def _calculate_most_specific_field_entity(
+        endpoint_field_map: EndpointFieldMap
+    ) -> EntityFieldToMostSpecificEntity:
+        """
+        Calculate mapping from entity fields to their most specific descendant entities.
+
+        For each field in each entity, determines which entity in the inheritance hierarchy
+        should be used for column naming. When a field is inherited, the most specific
+        (deepest) descendant entity that contains the field is chosen.
+
+        Parameters
+        ----------
+        endpoint_field_map
+            Mapping from entity fields to provider tags per endpoint
+
+        Returns
+        -------
+        EntityFieldToMostSpecificEntity
+            Dictionary mapping (entity_class, field_name) tuples to the most specific
+            entity class that should be used for that field
+
+        Raises
+        ------
+        DataProviderToolkitRuntimeError
+            When multiple sibling entities have the same field name
+        """
+        all_entities = {
+            entity_field.__objclass__
+            for field_mappings in endpoint_field_map.values()
+            for entity_field in field_mappings
+        }
+
+        graph = networkx.DiGraph()
+        for entity in all_entities:
+            graph.add_node(entity)
+            for base in entity.__bases__:
+                if base in all_entities:
+                    graph.add_edge(base, entity)
+
+        entity_fields_map = {}
+        for entity in all_entities:
+            if dataclasses.is_dataclass(entity):
+                entity_fields_map[entity] = {
+                    field.name
+                    for field in dataclasses.fields(entity)
+                }
+
+        field_to_most_specific_entity = {}
+
+        for entity in all_entities:
+            if entity not in entity_fields_map:
+                continue
+
+            for field_name in entity_fields_map[entity]:
+                descendants_with_field = {
+                    desc
+                    for desc in (networkx.descendants(graph, entity) | {entity})
+                    if (
+                        desc in entity_fields_map
+                        and field_name in entity_fields_map[desc]
+                    )
+                }
+
+                leaf_descendants = {
+                    desc for desc in descendants_with_field
+                    if not any(
+                        child in descendants_with_field
+                        for child in graph.successors(desc)
+                    )
+                }
+
+                if len(leaf_descendants) > 1:
+                    ancestors_map = {
+                        leaf: set(networkx.ancestors(graph, leaf))
+                        for leaf in leaf_descendants
+                    }
+
+                    for leaf1 in leaf_descendants:
+                        for leaf2 in leaf_descendants:
+                            if leaf1 >= leaf2:
+                                continue
+
+                            if (
+                                ancestors_map[leaf1]
+                                & ancestors_map[leaf2]
+                            ):
+                                msg =  f"Multiple entities detected with same field name `{field_name}`"
+
+                                raise DataProviderToolkitRuntimeError(msg)
+
+                most_specific = (
+                    next(iter(leaf_descendants)) if leaf_descendants
+                    else entity
+                )
+                field_to_most_specific_entity[(entity, field_name)] = most_specific
+
+        return field_to_most_specific_entity
 
     @staticmethod
     def _clear_table_rows_by_primary_key(
@@ -1248,6 +1368,36 @@ class DataProviderToolkit:
             raise DataProviderParsingError(msg) from error
 
         return table
+
+    @classmethod
+    def _get_entity_field_to_most_specific_entity(
+        cls,
+        endpoint_field_map: EndpointFieldMap
+    ) -> EntityFieldToMostSpecificEntity:
+        """
+        Get or calculate mapping from entity fields to their most specific descendant entities.
+
+        Uses memoization based on the endpoint values and entity class names in the endpoint field map.
+
+        Parameters
+        ----------
+        endpoint_field_map
+            Mapping from entity fields to provider tags per endpoint
+
+        Returns
+        -------
+        EntityFieldToMostSpecificEntity
+            Dictionary mapping (entity_class, field_name) tuples to the most specific
+            entity class that should be used for that field
+        """
+        cache_key = repr(endpoint_field_map)
+
+        if cache_key not in cls._entity_field_to_most_specific_entity_cache:
+            cls._entity_field_to_most_specific_entity_cache[
+                cache_key
+            ] = cls._calculate_most_specific_field_entity(endpoint_field_map)
+
+        return cls._entity_field_to_most_specific_entity_cache[cache_key]
 
     @staticmethod
     def _merge_primary_key_subsets_preserving_order(
