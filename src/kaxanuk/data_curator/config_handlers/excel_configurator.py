@@ -212,7 +212,7 @@ class ExcelConfigurator(ConfiguratorInterface):
             for provider in selected_providers.values():
                 is_api_key_valid = provider.validate_api_key()
                 if is_api_key_valid:
-                    msg = f"API key validation succeded for {provider.__class__.__name__}"
+                    msg = f"API key validation succeeded for {provider.__class__.__name__}"
                     logging.getLogger(__name__).info(msg)
                 elif is_api_key_valid is not None:
                     msg = f"Invalid API key for {provider.__class__.__name__}"
