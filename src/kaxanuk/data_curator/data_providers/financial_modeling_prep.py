@@ -653,6 +653,7 @@ class FinancialModelingPrep(
             ): 'fiscal_period',
         }
 
+        # @todo handle duplicate statement filings in data provider dataset
         # @todo filter rows where filing date is before period end date
 
         # catch empty income statement rows
@@ -660,13 +661,19 @@ class FinancialModelingPrep(
             consolidated_fundamental_table.select([
                     FundamentalsDataBlock.get_field_qualified_name(
                         FundamentalsDataBlock.clock_sync_field
-                    )
+                    ),
+                    FundamentalsDataBlock.get_field_qualified_name(
+                        FundamentalDataRow.period_end_date
+                    ),
                 ]
             ),
             processed_endpoint_tables[self.Endpoints.INCOME_STATEMENT].select([
                 FundamentalsDataBlock.get_field_qualified_name(
                     FundamentalsDataBlock.clock_sync_field
-                )
+                ),
+                FundamentalsDataBlock.get_field_qualified_name(
+                    FundamentalDataRow.period_end_date
+                ),
             ]),
         )
         if missing_income_statement_rows_mask is not None:
