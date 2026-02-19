@@ -57,6 +57,10 @@ configurator = kaxanuk.data_curator.config_handlers.ExcelConfigurator(
             ),
             'api_key': None     # this provider doesn't use API key
         },
+        'lseg_workspace': {
+            'class': kaxanuk.data_curator.data_providers.LsegWorkspace,
+            'api_key': '', #@todo: fix this, it should be None
+        }
     },
     output_handlers={
        'csv': kaxanuk.data_curator.output_handlers.CsvOutput(
