@@ -1598,25 +1598,6 @@ class LsegWorkspace(DataProviderInterface):
                 cls.DEFAULT_CURRENCY
             )
 
-        # Fill missing filing dates with period_end_date + 45 days as a conservative
-        # estimate of when the quarterly report was available.
-        # LSEG does not provide Original Announcement Date for older data, but
-        # the downstream clock_sync_field (filing_date) requires non-null, unique,
-        # sorted values. Using period_end_date + 45 days avoids look-ahead bias
-        # (companies typically file 30-60 days after quarter end).
-        #@todo: of course, the following code lines must be deleted. (Added because of nulls)
-        if (
-            ColumnNames.ORIGINAL_ANNOUNCEMENT in ticker_data.columns
-            and ColumnNames.PERIOD_END_DATE in ticker_data.columns
-        ):
-            missing_filing_mask = ticker_data[ColumnNames.ORIGINAL_ANNOUNCEMENT].isna()
-            if missing_filing_mask.any():
-                ticker_data.loc[missing_filing_mask, ColumnNames.ORIGINAL_ANNOUNCEMENT] = (
-                    pandas.to_datetime(
-                        ticker_data.loc[missing_filing_mask, ColumnNames.PERIOD_END_DATE]
-                    ) + pandas.Timedelta(days=45)
-                ).dt.date
-
         # Deduplicate by Period End Date (the natural quarterly identifier).
         # Sort so that rows WITH a real filing date come first (na_position='last'),
         # then by most recent filing date, so drop_duplicates(keep='first')
