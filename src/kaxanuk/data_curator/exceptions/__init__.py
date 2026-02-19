@@ -266,3 +266,64 @@ class DataCuratorErrorGroup(ExceptionGroup):
 
 class DataBlockRowEntityErrorGroup(DataCuratorErrorGroup):
     pass
+
+
+class LSEGDataNotFoundError(DataCuratorError):
+    """
+    Raised when requested data is not available for the given tickers.
+
+    This exception is raised when the API returns successfully but contains
+    no data for the requested instruments.
+
+    Parameters
+    ----------
+    tickers : list[str]
+        List of ticker symbols (RICs) for which data was not found.
+    message : str, optional
+        Custom error message. If not provided, a default message listing
+        the tickers will be generated.
+
+    Attributes
+    ----------
+    tickers : list[str]
+        The ticker symbols that had no data available.
+    """
+
+    def __init__(
+        self,
+        tickers: list[str],
+        message: str | None = None
+    ) -> None:
+        self.tickers = tickers
+        msg = message or f"No data found for tickers: {', '.join(tickers)}"
+        super().__init__(msg)
+
+
+class LSEGFatalError(DataCuratorError):
+    """
+    Raised on fatal errors that should not be retried.
+
+    Certain LSEG API errors indicate fundamental issues that cannot be resolved
+    by retrying, such as invalid field parameters (error code 207), bad request
+    parameters (error code 400) or unrecognized PERIOD values.
+
+    Parameters
+    ----------
+    error_code : int | None
+        The LSEG error code, if available.
+    message : str
+        Detailed description of the fatal error.
+
+    Attributes
+    ----------
+    error_code : int | None
+        The numeric error code from the LSEG API.
+    """
+
+    def __init__(self, error_code: int | None, message: str) -> None:
+        self.error_code = error_code
+        msg = "Fatal LSEG error"
+        if error_code is not None:
+            msg += f" (code {error_code})"
+        msg += f": {message}"
+        super().__init__(msg)

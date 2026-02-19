@@ -26,6 +26,7 @@ dependencies = [    # dev dependencies are in the [tool.pdm.dev-dependencies] se
     "pandas>=2.2.3",
     "pyarrow>=18.0",
     "python-dotenv>=1.0.1",
+    "refinitiv-data>=1.6.2",
 ]
 dynamic = ["version"]
 license = {text = "MIT License"}
