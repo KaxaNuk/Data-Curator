@@ -10,6 +10,7 @@ main:
     Receives injected dependencies and runs the system
 """
 
+import dataclasses
 import logging
 import os
 import types
@@ -28,8 +29,10 @@ from kaxanuk.data_curator.exceptions import (
     ColumnBuilderUnavailableEntityFieldError,
     DataBlockRowEntityErrorGroup,
     DataProviderPaymentError,
+    DataProviderToolkitNoDataError,
     EntityProcessingError,
     InjectedDependencyError,
+    LSEGProviderError,
     PassedArgumentError,
     IdentifierNotFoundError,
 )
@@ -128,110 +131,255 @@ def main(
 
     # @todo: make async using asyncio
     try:
-        market_data_provider.initialize(configuration=configuration)
+        # Try to initialize with ALL tickers first (single bulk download).
+        # If that causes a MemoryError (e.g. fundamental data merge on 500+
+        # tickers), fall back to processing in small chunks defined by the
+        # provider's pipeline_chunk_size.
+        total_identifiers = len(configuration.identifiers)
+        fallback_chunk_size = market_data_provider.pipeline_chunk_size
+        chunk_size = total_identifiers  # Optimistic: try all at once
 
-        if fundamental_data_provider is not None:
-            fundamental_data_provider.initialize(configuration=configuration)
+        chunk_start = 0
+        while chunk_start < total_identifiers:
+            chunk_ids = configuration.identifiers[chunk_start:chunk_start + chunk_size]
+            chunk_config = dataclasses.replace(configuration, identifiers=chunk_ids)
 
-        for main_identifier in configuration.identifiers:
-            logging.getLogger(__name__).info(
-                "Loading data for: %s",
-                main_identifier
-            )
             try:
-                full_market_data = market_data_provider.get_market_data(
-                    main_identifier=main_identifier,
-                    start_date=configuration.start_date,
-                    end_date=configuration.end_date,
+                market_data_provider.initialize(configuration=chunk_config)
+
+                if fundamental_data_provider is not None:
+                    fundamental_data_provider.initialize(configuration=chunk_config)
+            except Exception as e:
+                if fallback_chunk_size is not None and chunk_size > fallback_chunk_size:
+                    logging.getLogger(__name__).warning(
+                        "Bulk initialization failed for %d tickers (%s: %s), "
+                        "falling back to chunks of %d",
+                        len(chunk_ids),
+                        type(e).__name__,
+                        e,
+                        fallback_chunk_size,
+                    )
+                    chunk_size = fallback_chunk_size
+                    continue  # Retry from same chunk_start with smaller chunks
+                raise
+
+            failed_tickers: list[str] = []
+
+            for main_identifier in chunk_ids:
+                logging.getLogger(__name__).info(
+                    "Loading data for: %s",
+                    main_identifier
+                )
+                try:
+                    full_market_data = market_data_provider.get_market_data(
+                        main_identifier=main_identifier,
+                        start_date=configuration.start_date,
+                        end_date=configuration.end_date,
+                    )
+                    if fundamental_data_provider is not None:
+                        full_fundamental_data = fundamental_data_provider.get_fundamental_data(
+                            main_identifier=main_identifier,
+                            period=configuration.period,
+                            start_date=configuration.start_date,
+                            end_date=configuration.end_date,
+                        )
+                        full_dividend_data = fundamental_data_provider.get_dividend_data(
+                            main_identifier=main_identifier,
+                            start_date=configuration.start_date,
+                            end_date=configuration.end_date,
+                        )
+                        full_split_data = fundamental_data_provider.get_split_data(
+                            main_identifier=main_identifier,
+                            start_date=configuration.start_date,
+                            end_date=configuration.end_date,
+                        )
+                    else:
+                        full_fundamental_data = FundamentalData(
+                            main_identifier=MainIdentifier(main_identifier),
+                            rows={}
+                        )
+                        full_dividend_data = DividendData(
+                            main_identifier=MainIdentifier(main_identifier),
+                            rows={}
+                        )
+                        full_split_data = SplitData(
+                            main_identifier=MainIdentifier(main_identifier),
+                            rows={}
+                        )
+                except IdentifierNotFoundError as error:
+                    msg = "\n  ".join([
+                        f"{main_identifier} skipping output as it presented the following error during data retrieval:",
+                        str(error)
+                    ])
+                    logging.getLogger(__name__).error(msg)
+
+                    continue
+                except EntityProcessingError as error:
+                    error_messages = _get_nested_exception_messages(error)
+                    msg = "\n  ".join([
+                        f"{main_identifier} skipping output as it presented the following error during data assembly:",
+                        ": ".join(error_messages)
+                    ])
+                    logging.getLogger(__name__).error(msg)
+
+                    continue
+                except DataProviderPaymentError as error:
+                    msg = "\n  ".join([
+                        f"{main_identifier} skipping output as it presented the following data provider error:",
+                        str(error)
+                    ])
+                    logging.getLogger(__name__).error(msg)
+
+                    continue
+                except DataBlockRowEntityErrorGroup as error_group:
+                    msg = "\n  ".join([
+                        f"{main_identifier} skipping output as it presented the following errors during data assembly:",
+                        str(error_group),
+                        *[
+                            str(error)
+                            for error in error_group.exceptions
+                        ]
+                    ])
+                    logging.getLogger(__name__).error(msg)
+
+                    continue
+                except LSEGProviderError as error:
+                    msg = "\n  ".join([
+                        f"{main_identifier} skipping output as it presented the following data provider error:",
+                        str(error)
+                    ])
+                    logging.getLogger(__name__).error(msg)
+                    failed_tickers.append(main_identifier)
+
+                    continue
+                except DataProviderToolkitNoDataError as error:
+                    msg = "\n  ".join([
+                        f"{main_identifier} skipping output as all endpoint tables were empty:",
+                        str(error)
+                    ])
+                    logging.getLogger(__name__).error(msg)
+                    failed_tickers.append(main_identifier)
+
+                    continue
+
+                column_builder = ColumnBuilder(
+                    calculation_modules=calculation_modules,
+                    configuration=configuration,
+                    dividend_data=full_dividend_data,
+                    fundamental_data=full_fundamental_data,
+                    market_data=full_market_data,
+                    split_data=full_split_data,
+                )
+                output_columns = column_builder.process_columns(configuration.columns)
+
+                for output_handler in output_handlers:
+                    output_handler.output_data(
+                        main_identifier=main_identifier,
+                        columns=output_columns
+                    )
+
+                logging.getLogger(__name__).info(
+                    "Output processed for: %s",
+                    main_identifier
+                )
+
+            # Retry tickers that failed with transient empty-data errors in this chunk
+            if failed_tickers:
+                logging.getLogger(__name__).info(
+                    "Retrying %d tickers that failed during initial processing: %s",
+                    len(failed_tickers),
+                    failed_tickers,
+                )
+                market_data_provider.refetch_tickers(
+                    tickers=tuple(failed_tickers),
+                    configuration=chunk_config,
                 )
                 if fundamental_data_provider is not None:
-                    full_fundamental_data = fundamental_data_provider.get_fundamental_data(
-                        main_identifier=main_identifier,
-                        period=configuration.period,
-                        start_date=configuration.start_date,
-                        end_date=configuration.end_date,
+                    fundamental_data_provider.refetch_tickers(
+                        tickers=tuple(failed_tickers),
+                        configuration=chunk_config,
                     )
-                    full_dividend_data = fundamental_data_provider.get_dividend_data(
-                        main_identifier=main_identifier,
-                        start_date=configuration.start_date,
-                        end_date=configuration.end_date,
+
+                for main_identifier in failed_tickers:
+                    logging.getLogger(__name__).info(
+                        "Retry: loading data for: %s",
+                        main_identifier,
                     )
-                    full_split_data = fundamental_data_provider.get_split_data(
-                        main_identifier=main_identifier,
-                        start_date=configuration.start_date,
-                        end_date=configuration.end_date,
+                    try:
+                        full_market_data = market_data_provider.get_market_data(
+                            main_identifier=main_identifier,
+                            start_date=configuration.start_date,
+                            end_date=configuration.end_date,
+                        )
+                        if fundamental_data_provider is not None:
+                            full_fundamental_data = fundamental_data_provider.get_fundamental_data(
+                                main_identifier=main_identifier,
+                                period=configuration.period,
+                                start_date=configuration.start_date,
+                                end_date=configuration.end_date,
+                            )
+                            full_dividend_data = fundamental_data_provider.get_dividend_data(
+                                main_identifier=main_identifier,
+                                start_date=configuration.start_date,
+                                end_date=configuration.end_date,
+                            )
+                            full_split_data = fundamental_data_provider.get_split_data(
+                                main_identifier=main_identifier,
+                                start_date=configuration.start_date,
+                                end_date=configuration.end_date,
+                            )
+                        else:
+                            full_fundamental_data = FundamentalData(
+                                main_identifier=MainIdentifier(main_identifier),
+                                rows={}
+                            )
+                            full_dividend_data = DividendData(
+                                main_identifier=MainIdentifier(main_identifier),
+                                rows={}
+                            )
+                            full_split_data = SplitData(
+                                main_identifier=MainIdentifier(main_identifier),
+                                rows={}
+                            )
+                    except (
+                        IdentifierNotFoundError,
+                        EntityProcessingError,
+                        DataProviderPaymentError,
+                        DataBlockRowEntityErrorGroup,
+                        LSEGProviderError,
+                        DataProviderToolkitNoDataError,
+                    ) as error:
+                        msg = "\n  ".join([
+                            f"{main_identifier} permanently skipped after retry failure:",
+                            str(error)
+                        ])
+                        logging.getLogger(__name__).error(msg)
+
+                        continue
+
+                    column_builder = ColumnBuilder(
+                        calculation_modules=calculation_modules,
+                        configuration=configuration,
+                        dividend_data=full_dividend_data,
+                        fundamental_data=full_fundamental_data,
+                        market_data=full_market_data,
+                        split_data=full_split_data,
                     )
-                else:
-                    full_fundamental_data = FundamentalData(
-                        main_identifier=MainIdentifier(main_identifier),
-                        rows={}
+                    output_columns = column_builder.process_columns(configuration.columns)
+
+                    for output_handler in output_handlers:
+                        output_handler.output_data(
+                            main_identifier=main_identifier,
+                            columns=output_columns
+                        )
+
+                    logging.getLogger(__name__).info(
+                        "Retry output processed for: %s",
+                        main_identifier,
                     )
-                    full_dividend_data = DividendData(
-                        main_identifier=MainIdentifier(main_identifier),
-                        rows={}
-                    )
-                    full_split_data = SplitData(
-                        main_identifier=MainIdentifier(main_identifier),
-                        rows={}
-                    )
-            except IdentifierNotFoundError as error:
-                msg = "\n  ".join([
-                    f"{main_identifier} skipping output as it presented the following error during data retrieval:",
-                    str(error)
-                ])
-                logging.getLogger(__name__).error(msg)
 
-                continue
-            except EntityProcessingError as error:
-                error_messages = _get_nested_exception_messages(error)
-                msg = "\n  ".join([
-                    f"{main_identifier} skipping output as it presented the following error during data assembly:",
-                    ": ".join(error_messages)
-                ])
-                logging.getLogger(__name__).error(msg)
+            chunk_start += chunk_size
 
-                continue
-            except DataProviderPaymentError as error:
-                msg = "\n  ".join([
-                    f"{main_identifier} skipping output as it presented the following data provider error:",
-                    str(error)
-                ])
-                logging.getLogger(__name__).error(msg)
-
-                continue
-            except DataBlockRowEntityErrorGroup as error_group:
-                msg = "\n  ".join([
-                    f"{main_identifier} skipping output as it presented the following errors during data assembly:",
-                    str(error_group),
-                    *[
-                        str(error)
-                        for error in error_group.exceptions
-                    ]
-                ])
-                logging.getLogger(__name__).error(msg)
-
-                continue
-
-            column_builder = ColumnBuilder(
-                calculation_modules=calculation_modules,
-                configuration=configuration,
-                dividend_data=full_dividend_data,
-                fundamental_data=full_fundamental_data,
-                market_data=full_market_data,
-                split_data=full_split_data,
-            )
-            output_columns = column_builder.process_columns(configuration.columns)
-
-            for output_handler in output_handlers:
-                output_handler.output_data(
-                    main_identifier=main_identifier,
-                    columns=output_columns
-                )
-
-            logging.getLogger(__name__).info(
-                "Output processed for: %s",
-                main_identifier
-            )
     except (
         ApiEndpointError,
         ColumnBuilderCircularDependenciesError,

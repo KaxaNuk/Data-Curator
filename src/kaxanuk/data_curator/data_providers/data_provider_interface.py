@@ -180,6 +180,33 @@ class DataProviderInterface(metaclass=abc.ABCMeta):
         Whether `api_key` is valid
         """
 
+    # Concrete attributes with default values:
+
+    pipeline_chunk_size: int | None = None  # None = no chunking (process all at once)
+
+    # Concrete methods with default implementations:
+
+    def refetch_tickers(
+        self,
+        *,
+        tickers: tuple[str, ...],
+        configuration: Configuration,
+    ) -> None:
+        """
+        Re-download and re-cache data for specific tickers.
+
+        Default implementation does nothing. Providers that support
+        selective re-fetching should override this method.
+
+        Parameters
+        ----------
+        tickers
+            The ticker symbols to re-fetch data for
+        configuration
+            The Configuration entity with all the currently injected settings
+        """
+        return
+
     # Concrete helper attributes and methods:
 
     _ssl_context = None
