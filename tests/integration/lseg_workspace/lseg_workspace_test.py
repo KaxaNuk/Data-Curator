@@ -136,7 +136,12 @@ def initialized_provider(
             return raw_split_df.copy()
         return raw_market_df.copy()
 
-    mock_session = SimpleNamespace(open_state="OpenState.Opened")
+    mock_session = SimpleNamespace(
+        open_state="OpenState.Opened",
+        open=lambda: None,
+        close=lambda: None,
+    )
+    mock_definition = SimpleNamespace(get_session=lambda: mock_session)
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(LsegWorkspace, "_attempt_fetch", staticmethod(mock_attempt_fetch))
@@ -145,10 +150,14 @@ def initialized_provider(
             "_fetch_currency_data",
             staticmethod(lambda tickers: dict.fromkeys(tickers, "USD")),
         )
-        mp.setattr("refinitiv.data.open_session", lambda: None)
+        mp.setattr(
+            "refinitiv.data.session.desktop.Definition",
+            lambda app_key: mock_definition,
+        )
+        mp.setattr("refinitiv.data.session.set_default", lambda session: None)
         mp.setattr("refinitiv.data.session.get_default", lambda: mock_session)
 
-        provider = LsegWorkspace(api_key=None)
+        provider = LsegWorkspace(api_key="test-key")
         provider.initialize(configuration=test_configuration)
 
     return provider
@@ -1074,7 +1083,12 @@ class TestEdgeCases:
             columns=("m_open", "m_close"),
         )
 
-        mock_session = SimpleNamespace(open_state="OpenState.Opened")
+        mock_session = SimpleNamespace(
+            open_state="OpenState.Opened",
+            open=lambda: None,
+            close=lambda: None,
+        )
+        mock_definition = SimpleNamespace(get_session=lambda: mock_session)
 
         monkeypatch.setattr(LsegWorkspace, "_attempt_fetch", staticmethod(mock_attempt_fetch))
         monkeypatch.setattr(
@@ -1082,10 +1096,14 @@ class TestEdgeCases:
             "_fetch_currency_data",
             staticmethod(lambda t: dict.fromkeys(t, "USD")),
         )
-        monkeypatch.setattr("refinitiv.data.open_session", lambda: None)
+        monkeypatch.setattr(
+            "refinitiv.data.session.desktop.Definition",
+            lambda app_key: mock_definition,
+        )
+        monkeypatch.setattr("refinitiv.data.session.set_default", lambda session: None)
         monkeypatch.setattr("refinitiv.data.session.get_default", lambda: mock_session)
 
-        provider = LsegWorkspace(api_key=None)
+        provider = LsegWorkspace(api_key="test-key")
         provider.initialize(configuration=config)
 
         market = provider.get_market_data(
