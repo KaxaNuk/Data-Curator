@@ -2101,7 +2101,7 @@ class LsegWorkspace(DataProviderInterface):
         # Check for fatal message patterns (e.g. unrecognized "PERIOD" value).
         # Only inspect the error description, not the "Requested fields:" dump,
         # to avoid false positives from field parameter names like "Period=FQ0".
-        description_part = error_message.split('Requested universes:')[0]
+        description_part = error_message.split('Requested universes:', maxsplit=1)[0]
         description_upper = description_part.upper()
         for pattern in cls.FATAL_ERROR_MESSAGES:
             if pattern.upper() in description_upper:
