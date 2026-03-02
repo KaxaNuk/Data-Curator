@@ -28,6 +28,7 @@ The system can run either on your local Python (versions `3.12` or `3.13`) or on
 
 ## Supported Data Providers
 * Financial Modeling Prep (free and discounted plans available through [our referral link](https://site.financialmodelingprep.com/pricing-plans?couponCode=xss2L2sI))
+* LSEG Workspace (API key required)
 * Yahoo Finance (requires installing a separate extension package, and doesn't support most data types)
 
 
