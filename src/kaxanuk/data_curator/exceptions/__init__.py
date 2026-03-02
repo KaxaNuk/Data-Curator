@@ -268,17 +268,18 @@ class DataBlockRowEntityErrorGroup(DataCuratorErrorGroup):
     pass
 
 
-class LSEGProviderError(DataCuratorError):
+class DataProviderApiError(DataCuratorError):
     """
-    Base class for all LSEG provider exceptions.
+    Base class for data provider API exceptions with error classification.
 
-    Provides common attributes for LSEG API error classification
-    and retry decision-making.
+    Provides common attributes for API error classification and retry
+    decision-making. Any data provider can use this hierarchy to represent
+    typed API errors.
 
     Parameters
     ----------
     http_code : int | None
-        The HTTP or LSEG-specific error code, if available.
+        The HTTP or provider-specific error code, if available.
     message : str
         Detailed description of the error.
     retryable : bool
@@ -287,7 +288,7 @@ class LSEGProviderError(DataCuratorError):
     Attributes
     ----------
     http_code : int | None
-        The numeric error code from the LSEG API.
+        The numeric error code from the API.
     retryable : bool
         Whether this error type is suitable for retry.
     """
@@ -301,24 +302,24 @@ class LSEGProviderError(DataCuratorError):
     ) -> None:
         self.http_code = http_code
         self.retryable = retryable
-        msg = "LSEG error"
+        msg = "Data provider error"
         if http_code is not None:
             msg += f" (code {http_code})"
         msg += f": {message}"
         super().__init__(msg)
 
 
-class LSEGDataNotFoundError(LSEGProviderError):
+class DataProviderDataNotFoundError(DataProviderApiError):
     """
     Raised when requested data is not available for the given tickers.
 
-    This exception is raised when the API returns successfully but contains
-    no data for the requested instruments.
+    The API returned successfully but contains no data for the
+    requested instruments.
 
     Parameters
     ----------
     tickers : list[str]
-        List of ticker symbols (RICs) for which data was not found.
+        List of ticker symbols for which data was not found.
     message : str, optional
         Custom error message. If not provided, a default message listing
         the tickers will be generated.
@@ -339,25 +340,25 @@ class LSEGDataNotFoundError(LSEGProviderError):
         super().__init__(http_code=None, message=msg, retryable=False)
 
 
-class LSEGFatalError(LSEGProviderError):
+class DataProviderFatalError(DataProviderApiError):
     """
     Raised on fatal errors that should not be retried.
 
-    Certain LSEG API errors indicate fundamental issues that cannot be resolved
-    by retrying, such as invalid field parameters (error code 207), bad request
-    parameters (error code 400) or unrecognized PERIOD values.
+    Indicates fundamental issues that cannot be resolved by retrying,
+    such as invalid field parameters, bad request parameters, or
+    unrecognized query values.
 
     Parameters
     ----------
     error_code : int | None
-        The LSEG error code, if available.
+        The provider error code, if available.
     message : str
         Detailed description of the fatal error.
 
     Attributes
     ----------
     error_code : int | None
-        The numeric error code from the LSEG API.
+        The numeric error code from the provider API.
     """
 
     def __init__(self, error_code: int | None, message: str) -> None:
@@ -365,7 +366,7 @@ class LSEGFatalError(LSEGProviderError):
         super().__init__(http_code=error_code, message=message, retryable=False)
 
 
-class LSEGAuthenticationError(LSEGProviderError):
+class DataProviderAuthenticationError(DataProviderApiError):
     """
     Raised on authentication failures requiring token refresh.
 
@@ -379,23 +380,18 @@ class LSEGAuthenticationError(LSEGProviderError):
         The HTTP error code (typically 401 or 400).
     message : str
         Detailed description of the authentication failure.
-
-    Attributes
-    ----------
-    http_code : int | None
-        The numeric error code from the LSEG API.
     """
 
     def __init__(self, http_code: int | None, message: str) -> None:
         super().__init__(http_code=http_code, message=message, retryable=True)
 
 
-class LSEGSessionQuotaError(LSEGAuthenticationError):
+class DataProviderSessionQuotaError(DataProviderAuthenticationError):
     """
-    Raised when the LSEG session quota has been exceeded.
+    Raised when the provider session quota has been exceeded.
 
-    This is a specific authentication-related error triggered by
-    400 responses containing "session quota" in the error message.
+    A specific authentication-related error triggered by responses
+    indicating the maximum number of concurrent sessions has been reached.
 
     Parameters
     ----------
@@ -403,18 +399,13 @@ class LSEGSessionQuotaError(LSEGAuthenticationError):
         The HTTP error code (typically 400).
     message : str
         Detailed description of the session quota error.
-
-    Attributes
-    ----------
-    http_code : int | None
-        The numeric error code from the LSEG API.
     """
 
     def __init__(self, http_code: int | None, message: str) -> None:
         super().__init__(http_code=http_code, message=message)
 
 
-class LSEGAuthorizationError(LSEGProviderError):
+class DataProviderAuthorizationError(DataProviderApiError):
     """
     Raised on authorization failures that cannot be resolved by retrying.
 
@@ -427,18 +418,13 @@ class LSEGAuthorizationError(LSEGProviderError):
         The HTTP error code (typically 403).
     message : str
         Detailed description of the authorization failure.
-
-    Attributes
-    ----------
-    http_code : int | None
-        The numeric error code from the LSEG API.
     """
 
     def __init__(self, http_code: int | None, message: str) -> None:
         super().__init__(http_code=http_code, message=message, retryable=False)
 
 
-class LSEGRateLimitError(LSEGProviderError):
+class DataProviderRateLimitError(DataProviderApiError):
     """
     Raised when the API rate limit has been exceeded.
 
@@ -457,8 +443,6 @@ class LSEGRateLimitError(LSEGProviderError):
 
     Attributes
     ----------
-    http_code : int | None
-        The numeric error code from the LSEG API.
     retry_after : float | None
         Suggested wait time in seconds before retrying.
     """
@@ -474,56 +458,45 @@ class LSEGRateLimitError(LSEGProviderError):
         super().__init__(http_code=http_code, message=message, retryable=True)
 
 
-class LSEGPlatformOverloadError(LSEGProviderError):
+class DataProviderOverloadError(DataProviderApiError):
     """
-    Raised when the LSEG backend is overloaded.
+    Raised when the data provider backend is overloaded.
 
-    Triggered by 400 responses containing "Backend error" in the message.
-    This error indicates the request should be retried with a smaller
-    ticker batch (ticker chunking).
+    Triggered by responses indicating backend capacity issues.
+    The request should be retried with a smaller ticker batch.
 
     Parameters
     ----------
     http_code : int | None
-        The HTTP error code (typically 400).
+        The HTTP error code.
     message : str
         Detailed description of the backend overload error.
-
-    Attributes
-    ----------
-    http_code : int | None
-        The numeric error code from the LSEG API.
     """
 
     def __init__(self, http_code: int | None, message: str) -> None:
         super().__init__(http_code=http_code, message=message, retryable=True)
 
 
-class LSEGGatewayTimeoutError(LSEGProviderError):
+class DataProviderGatewayTimeoutError(DataProviderApiError):
     """
-    Raised on LSEG gateway timeout errors.
+    Raised on gateway timeout errors.
 
-    Triggered by error code 2504. This error indicates the request
-    should be retried with a smaller ticker batch (ticker chunking).
+    Indicates the upstream server did not respond in time. The request
+    should be retried with a smaller ticker batch.
 
     Parameters
     ----------
     http_code : int | None
-        The HTTP error code (typically 2504).
+        The HTTP or provider-specific timeout error code.
     message : str
         Detailed description of the gateway timeout error.
-
-    Attributes
-    ----------
-    http_code : int | None
-        The numeric error code from the LSEG API.
     """
 
     def __init__(self, http_code: int | None, message: str) -> None:
         super().__init__(http_code=http_code, message=message, retryable=True)
 
 
-class LSEGServerError(LSEGProviderError):
+class DataProviderServerError(DataProviderApiError):
     """
     Raised on generic retryable server errors.
 
@@ -536,18 +509,13 @@ class LSEGServerError(LSEGProviderError):
         The HTTP error code.
     message : str
         Detailed description of the server error.
-
-    Attributes
-    ----------
-    http_code : int | None
-        The numeric error code from the LSEG API.
     """
 
     def __init__(self, http_code: int | None, message: str) -> None:
         super().__init__(http_code=http_code, message=message, retryable=True)
 
 
-class LSEGDataTruncationError(LSEGProviderError):
+class DataProviderDataTruncationError(DataProviderApiError):
     """
     Raised when silent data truncation is detected in the API response.
 
@@ -579,3 +547,31 @@ class LSEGDataTruncationError(LSEGProviderError):
             f"{', '.join(missing_tickers)}"
         )
         super().__init__(http_code=None, message=msg, retryable=True)
+
+
+class DataProviderTooManyTickersError(ApiEndpointError):
+    """
+    Raised when the data provider cannot process the requested ticker list
+    even after internal chunking and retries.
+
+    This signals to the orchestrator (via ApiEndpointError) that the
+    user should reduce the number of tickers in their configuration.
+
+    Parameters
+    ----------
+    total : int
+        Total number of tickers that were requested.
+    failed : int
+        Number of tickers that failed after all retry attempts.
+    message : str, optional
+        Custom error message.
+    """
+
+    def __init__(self, total: int, failed: int, message: str | None = None) -> None:
+        self.total = total
+        self.failed = failed
+        msg = message or (
+            f"Data provider failed for {failed}/{total} tickers after internal "
+            f"chunking. Reduce the number of tickers in your configuration."
+        )
+        super().__init__(msg)

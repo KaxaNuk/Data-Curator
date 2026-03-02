@@ -46,20 +46,21 @@ from kaxanuk.data_curator.entities import (
     SplitDataRow,
 )
 from kaxanuk.data_curator.exceptions import (
+    DataProviderApiError,
+    DataProviderAuthenticationError,
+    DataProviderAuthorizationError,
+    DataProviderFatalError,
+    DataProviderGatewayTimeoutError,
     DataProviderMissingKeyError,
     DataProviderMultiEndpointCommonDataDiscrepancyError,
     DataProviderMultiEndpointCommonDataOrderError,
+    DataProviderOverloadError,
+    DataProviderRateLimitError,
+    DataProviderServerError,
+    DataProviderSessionQuotaError,
     DataProviderToolkitNoDataError,
-    LSEGAuthenticationError,
-    LSEGAuthorizationError,
-    LSEGDataNotFoundError,
-    LSEGFatalError,
-    LSEGGatewayTimeoutError,
-    LSEGPlatformOverloadError,
-    LSEGProviderError,
-    LSEGRateLimitError,
-    LSEGServerError,
-    LSEGSessionQuotaError,
+    DataProviderTooManyTickersError,
+    IdentifierNotFoundError,
 )
 from kaxanuk.data_curator.services.data_provider_toolkit import (
     DataBlockEndpointTagMap,
@@ -210,6 +211,9 @@ class LsegWorkspace(DataProviderInterface):
     #: HTTP 503 Service Unavailable - treat like rate limit
     SERVICE_UNAVAILABLE_ERROR_CODE: typing.Final[int] = 503
 
+    #: Error code 2503: UDF "Service Temporarily Unavailable" - treat like rate limit
+    UDF_SERVICE_UNAVAILABLE_ERROR_CODE: typing.Final[int] = 2503
+
     #: Error code 207: "Field not recognized" - malformed TR field syntax, retry won't help
     FIELD_NOT_RECOGNIZED_ERROR_CODE: typing.Final[int] = 207
 
@@ -220,8 +224,6 @@ class LsegWorkspace(DataProviderInterface):
     #: Prevents OOM on large ticker lists by downloading, processing, and
     #: saving each chunk before moving to the next.
     PIPELINE_CHUNK_SIZE: typing.Final[int] = 5
-
-    pipeline_chunk_size: int = PIPELINE_CHUNK_SIZE
 
     #: Default number of tickers per mini-bulk batch when partitioning a failed bulk request
     MINI_BULK_BATCH_SIZE: typing.Final[int] = 5
@@ -974,8 +976,12 @@ class LsegWorkspace(DataProviderInterface):
         result = result.sort_values(ColumnNames.DATE, ascending=True).reset_index(drop=True)
 
         # Get ex-dividend dates and split-adjusted amounts
-        ex_dates = dividend_data[ColumnNames.DIVIDEND_EX_DATE].dropna().tolist()
-        dividends = dividend_data[ColumnNames.ADJUSTED_GROSS_DIVIDEND].dropna().tolist()
+        # Drop rows where either value is NaN to keep lists aligned
+        valid_dividends = dividend_data[
+            [ColumnNames.DIVIDEND_EX_DATE, ColumnNames.ADJUSTED_GROSS_DIVIDEND]
+        ].dropna()
+        ex_dates = valid_dividends[ColumnNames.DIVIDEND_EX_DATE].tolist()
+        dividends = valid_dividends[ColumnNames.ADJUSTED_GROSS_DIVIDEND].tolist()
 
         # Initialize adjustment factors to 1.0
         adjustment_factors = pandas.Series(1.0, index=result.index)
@@ -1065,7 +1071,7 @@ class LsegWorkspace(DataProviderInterface):
         session.open()
 
         if session is None or str(session.open_state) != 'OpenState.Opened':
-            raise LSEGFatalError(
+            raise DataProviderFatalError(
                 error_code=None,
                 message="Refinitiv session failed to reopen after bulk failure.",
             )
@@ -1079,12 +1085,18 @@ class LsegWorkspace(DataProviderInterface):
         """
         Initialize the LSEG data provider by fetching and caching all data types.
 
-        This method orchestrates the bulk data fetching process:
-        1. Opens the Refinitiv session (requires Workspace running)
-        2. Fetches all data types (market, fundamental, dividend, split, currency)
-        3. Processes the raw data for each ticker
-        4. Calculates dividend-adjusted prices
-        5. Caches the processed data for later retrieval
+        Uses a two-phase strategy to handle large ticker lists resiliently:
+
+        **Phase 1 -- Optimistic bulk fetch**
+            Attempts a single bulk request for all tickers. If the API
+            returns successfully, all data is processed and cached.
+
+        **Phase 2 -- Internal chunking fallback**
+            If Phase 1 fails (gateway timeout, memory error, platform
+            overload, etc.), the ticker list is automatically partitioned
+            into chunks of ``PIPELINE_CHUNK_SIZE`` and each chunk is
+            fetched independently.  After all chunks, tickers with empty
+            market data are retried once.
 
         Parameters
         ----------
@@ -1096,14 +1108,11 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGFatalError
+        DataProviderFatalError
             If unable to connect to Refinitiv Workspace or API returns
             a fatal error (e.g., invalid field syntax).
-
-        Notes
-        -----
-        All data is cached in memory. For large ticker lists or date ranges,
-        consider memory usage implications.
+        DataProviderTooManyTickersError
+            If all tickers fail even after internal chunking.
         """
         # Open Refinitiv Desktop session using the api_key (validated in __init__)
         try:
@@ -1113,12 +1122,12 @@ class LsegWorkspace(DataProviderInterface):
             refinitiv.data.session.set_default(session)
             session.open()
         except KeyboardInterrupt:
-            raise LSEGFatalError(
+            raise DataProviderFatalError(
                 error_code=None,
                 message="Refinitiv session opening was interrupted by user.",
             ) from None
         except Exception as e:
-            raise LSEGFatalError(
+            raise DataProviderFatalError(
                 error_code=None,
                 message=(
                     f"Failed to open Refinitiv Desktop session. "
@@ -1128,7 +1137,7 @@ class LsegWorkspace(DataProviderInterface):
 
         # Verify session actually opened (SDK may fail silently)
         if session is None or str(session.open_state) != 'OpenState.Opened':
-            raise LSEGFatalError(
+            raise DataProviderFatalError(
                 error_code=None,
                 message=(
                     "Refinitiv session failed to open. "
@@ -1140,7 +1149,6 @@ class LsegWorkspace(DataProviderInterface):
         warnings.filterwarnings('ignore', category=FutureWarning, module='refinitiv')
         warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in cast')
 
-        # Free memory from previous chunk before downloading the next one
         self.cache.clear()
 
         tickers = configuration.identifiers
@@ -1168,25 +1176,140 @@ class LsegWorkspace(DataProviderInterface):
             start_date,
             end_date,
         )
+
+        # ----------------------------------------------------------------
+        # Phase 1: Optimistic bulk fetch
+        # ----------------------------------------------------------------
         #@todo: review why close column sometimes is full of nulls (lseg problem)
-        skip_fallback = len(tickers) > self.PIPELINE_CHUNK_SIZE
+        bulk_succeeded = False
+        if len(tickers) <= self.PIPELINE_CHUNK_SIZE:
+            # Small list: fetch directly, let internal retries handle failures
+            try:
+                raw_data = self._fetch_all_raw_data(
+                    tickers=tickers,
+                    start_date=start_date,
+                    end_date=end_date,
+                    skip_partition_fallback=False,
+                )
+                for ticker in tickers:
+                    self._process_and_cache_ticker_data(ticker=ticker, raw_data=raw_data)
+                bulk_succeeded = True
+            except (DataProviderFatalError, DataProviderAuthorizationError):
+                raise
+        else:
+            # Large list: try bulk with skip_partition_fallback so errors
+            # propagate quickly instead of wasting time on internal retries
+            try:
+                raw_data = self._fetch_all_raw_data(
+                    tickers=tickers,
+                    start_date=start_date,
+                    end_date=end_date,
+                    skip_partition_fallback=True,
+                )
+                for ticker in tickers:
+                    self._process_and_cache_ticker_data(ticker=ticker, raw_data=raw_data)
+                bulk_succeeded = True
+            except (DataProviderFatalError, DataProviderAuthorizationError):
+                raise
+            except (MemoryError, DataProviderApiError) as e:
+                logger.warning(
+                    "Bulk fetch failed for %d tickers (%s: %s), "
+                    "falling back to internal chunking (chunks of %d)",
+                    len(tickers),
+                    type(e).__name__,
+                    e,
+                    self.PIPELINE_CHUNK_SIZE,
+                )
+                try:
+                    self._restart_session()
+                except (OSError, RDError) as restart_err:
+                    logger.warning(
+                        "Session restart failed: %s. Continuing with current session.",
+                        restart_err,
+                    )
 
-        # Fetch all raw data
-        raw_data = self._fetch_all_raw_data(
-            tickers=tickers,
-            start_date=start_date,
-            end_date=end_date,
-            skip_partition_fallback=skip_fallback,
-        )
+        # ----------------------------------------------------------------
+        # Phase 2: Internal chunking fallback
+        # ----------------------------------------------------------------
+        if not bulk_succeeded:
+            chunk_size = self.PIPELINE_CHUNK_SIZE
+            for i in range(0, len(tickers), chunk_size):
+                chunk = tickers[i:i + chunk_size]
+                logger.info(
+                    "Chunk %d/%d: fetching %d tickers %s",
+                    (i // chunk_size) + 1,
+                    (len(tickers) + chunk_size - 1) // chunk_size,
+                    len(chunk),
+                    list(chunk),
+                )
+                try:
+                    chunk_raw = self._fetch_all_raw_data(
+                        tickers=tuple(chunk),
+                        start_date=start_date,
+                        end_date=end_date,
+                        skip_partition_fallback=False,
+                    )
+                    for ticker in chunk:
+                        self._process_and_cache_ticker_data(
+                            ticker=ticker,
+                            raw_data=chunk_raw,
+                        )
+                except (DataProviderFatalError, DataProviderAuthorizationError):
+                    raise
+                except (MemoryError, DataProviderApiError) as chunk_err:
+                    logger.error(
+                        "Chunk %d failed (%s): %s — tickers skipped: %s",
+                        (i // chunk_size) + 1,
+                        type(chunk_err).__name__,
+                        chunk_err,
+                        list(chunk),
+                    )
 
-        # Process and cache data for each ticker
-        for ticker in tickers:
-            logger.debug("Processing data for ticker: %s", ticker)
-            self._process_and_cache_ticker_data(
-                ticker=ticker,
-                raw_data=raw_data
+            # Empty-data sweep: retry tickers whose market data is empty
+            empty_tickers = tuple(
+                t for t in tickers
+                if t in self.cache
+                and self.cache[t].get(self.Endpoints.MARKET_DATA_DAILY_UNADJUSTED) is not None
+                and self.cache[t][self.Endpoints.MARKET_DATA_DAILY_UNADJUSTED].empty
             )
+            if empty_tickers:
+                logger.info(
+                    "Retrying %d tickers with empty market data: %s",
+                    len(empty_tickers),
+                    list(empty_tickers),
+                )
+                try:
+                    self._restart_session()
+                except (OSError, RDError) as restart_err:
+                    logger.warning(
+                        "Session restart failed before retry sweep: %s",
+                        restart_err,
+                    )
+                try:
+                    retry_raw = self._fetch_all_raw_data(
+                        tickers=empty_tickers,
+                        start_date=start_date,
+                        end_date=end_date,
+                        skip_partition_fallback=False,
+                    )
+                    for ticker in empty_tickers:
+                        self._process_and_cache_ticker_data(
+                            ticker=ticker,
+                            raw_data=retry_raw,
+                        )
+                except (DataProviderFatalError, DataProviderAuthorizationError):
+                    raise
+                except (MemoryError, DataProviderApiError) as retry_err:
+                    logger.error(
+                        "Retry sweep failed (%s): %s — %d tickers remain empty",
+                        type(retry_err).__name__,
+                        retry_err,
+                        len(empty_tickers),
+                    )
 
+        # ----------------------------------------------------------------
+        # Phase 3: Finalize
+        # ----------------------------------------------------------------
         # Share cache at class level for other instances with same configuration
         LsegWorkspace._shared_cache = dict(self.cache)
         LsegWorkspace._shared_cache_config_key = config_key
@@ -1206,6 +1329,14 @@ class LsegWorkspace(DataProviderInterface):
                 current_session.close()
         except (OSError, RDError):
             logger.debug("Failed to close Refinitiv session during initialize cleanup")
+
+        # If no tickers were cached at all, the configuration is unworkable
+        cached_count = sum(1 for t in tickers if t in self.cache)
+        if cached_count == 0:
+            raise DataProviderTooManyTickersError(
+                total=len(tickers),
+                failed=len(tickers),
+            )
 
     def refetch_tickers(
         self,
@@ -1262,12 +1393,12 @@ class LsegWorkspace(DataProviderInterface):
             refinitiv.data.session.set_default(session)
             session.open()
         except KeyboardInterrupt:
-            raise LSEGFatalError(
+            raise DataProviderFatalError(
                 error_code=None,
                 message="Refinitiv session opening was interrupted by user.",
             ) from None
         except Exception as e:
-            raise LSEGFatalError(
+            raise DataProviderFatalError(
                 error_code=None,
                 message=(
                     f"Failed to open Refinitiv Desktop session for refetch. "
@@ -1276,7 +1407,7 @@ class LsegWorkspace(DataProviderInterface):
             ) from e
 
         if session is None or str(session.open_state) != 'OpenState.Opened':
-            raise LSEGFatalError(
+            raise DataProviderFatalError(
                 error_code=None,
                 message=(
                     "Refinitiv session failed to open for refetch. "
@@ -1862,9 +1993,9 @@ class LsegWorkspace(DataProviderInterface):
         }
 
     @classmethod
-    def _classify_lseg_error(cls, error: RDError) -> LSEGProviderError:
+    def _classify_lseg_error(cls, error: RDError) -> DataProviderApiError:
         """
-        Classify an ``RDError`` into a specific ``LSEGProviderError`` subclass.
+        Classify an ``RDError`` into a specific ``DataProviderApiError`` subclass.
 
         The classification determines the appropriate recovery strategy for
         each error type. For HTTP 400 errors, the message is inspected to
@@ -1878,90 +2009,109 @@ class LsegWorkspace(DataProviderInterface):
 
         Returns
         -------
-        LSEGProviderError
+        DataProviderApiError
             The appropriate exception subclass for the error.
 
         Notes
         -----
-        Classification priority for error code 400:
+        Classification priority:
 
-        1. "Backend error" in message -> ``LSEGPlatformOverloadError``
-        2. "invalid_grant" / "invalid_client" -> ``LSEGAuthenticationError``
-        3. "session quota" -> ``LSEGSessionQuotaError``
-        4. Other 400 -> ``LSEGFatalError``
+        1. Code-specific checks (207, 2504, 401, 403, 429/503)
+        2. HTTP 400 sub-classification by message content:
+           a. "Backend error" -> ``DataProviderOverloadError``
+           b. "invalid_grant" / "invalid_client" -> ``DataProviderAuthenticationError``
+           c. "session quota" -> ``DataProviderSessionQuotaError``
+           d. Other 400 -> ``DataProviderFatalError``
+        3. Fatal message patterns (e.g. unrecognized "PERIOD")
+        4. Fallback -> ``DataProviderServerError``
+
+        The HTTP 400 block runs before the fatal message pattern check
+        to prevent false positives from field names (e.g. ``Period=FQ0``)
+        in error message dumps.
         """
         error_code = getattr(error, 'code', None)
         error_message = str(error)
 
-        # Check for fatal PERIOD message pattern first (any error code)
-        error_message_upper = error_message.upper()
-        for pattern in cls.FATAL_ERROR_MESSAGES:
-            if pattern.upper() in error_message_upper:
-                return LSEGFatalError(
-                    error_code=error_code,
-                    message=error_message,
-                )
-
         # Field not recognized (207) — always fatal
         if error_code == cls.FIELD_NOT_RECOGNIZED_ERROR_CODE:
-            return LSEGFatalError(
+            return DataProviderFatalError(
                 error_code=error_code,
                 message=error_message,
             )
 
         # Gateway timeout (2504) — triggers ticker chunking
         if error_code == cls.GATEWAY_TIMEOUT_ERROR_CODE:
-            return LSEGGatewayTimeoutError(
+            return DataProviderGatewayTimeoutError(
                 http_code=error_code,
                 message=error_message,
             )
 
         # Authentication failure (401)
         if error_code == cls.AUTHENTICATION_ERROR_CODE:
-            return LSEGAuthenticationError(
+            return DataProviderAuthenticationError(
                 http_code=error_code,
                 message=error_message,
             )
 
         # Authorization failure (403)
         if error_code == cls.AUTHORIZATION_ERROR_CODE:
-            return LSEGAuthorizationError(
+            return DataProviderAuthorizationError(
                 http_code=error_code,
                 message=error_message,
             )
 
-        # Rate limit (429) or service unavailable (503)
-        if error_code in (cls.RATE_LIMIT_ERROR_CODE, cls.SERVICE_UNAVAILABLE_ERROR_CODE):
-            return LSEGRateLimitError(
+        # Rate limit (429), service unavailable (503), or UDF unavailable (2503)
+        rate_limit_codes = (
+            cls.RATE_LIMIT_ERROR_CODE,
+            cls.SERVICE_UNAVAILABLE_ERROR_CODE,
+            cls.UDF_SERVICE_UNAVAILABLE_ERROR_CODE,
+        )
+        if error_code in rate_limit_codes:
+            return DataProviderRateLimitError(
                 http_code=error_code,
                 message=error_message,
             )
 
-        # HTTP 400 — sub-classify by message content
+        # HTTP 400 — sub-classify by message content (must run BEFORE the
+        # generic FATAL_ERROR_MESSAGES check, because error dumps include
+        # requested field names like "Period=FQ0" which would false-positive
+        # on the "PERIOD" pattern)
         if error_code == cls.BAD_REQUEST_ERROR_CODE:
             if cls._BACKEND_ERROR_PATTERN.search(error_message):
-                return LSEGPlatformOverloadError(
+                return DataProviderOverloadError(
                     http_code=error_code,
                     message=error_message,
                 )
             if cls._AUTH_ERROR_PATTERN.search(error_message):
-                return LSEGAuthenticationError(
+                return DataProviderAuthenticationError(
                     http_code=error_code,
                     message=error_message,
                 )
             if cls._SESSION_QUOTA_PATTERN.search(error_message):
-                return LSEGSessionQuotaError(
+                return DataProviderSessionQuotaError(
                     http_code=error_code,
                     message=error_message,
                 )
             # Other 400 errors are fatal (bad request parameters)
-            return LSEGFatalError(
+            return DataProviderFatalError(
                 error_code=error_code,
                 message=error_message,
             )
 
+        # Check for fatal message patterns (e.g. unrecognized "PERIOD" value).
+        # Only inspect the error description, not the "Requested fields:" dump,
+        # to avoid false positives from field parameter names like "Period=FQ0".
+        description_part = error_message.split('Requested universes:')[0]
+        description_upper = description_part.upper()
+        for pattern in cls.FATAL_ERROR_MESSAGES:
+            if pattern.upper() in description_upper:
+                return DataProviderFatalError(
+                    error_code=error_code,
+                    message=error_message,
+                )
+
         # Server error (500, 408) or any unknown code — generic retryable
-        return LSEGServerError(
+        return DataProviderServerError(
             http_code=error_code,
             message=error_message,
         )
@@ -2062,7 +2212,7 @@ class LsegWorkspace(DataProviderInterface):
         retried internally; their tickers are accumulated into a
         *failed_rics* list so the caller can decide how to handle them.
 
-        ``LSEGFatalError`` and ``LSEGAuthorizationError`` propagate
+        ``DataProviderFatalError`` and ``DataProviderAuthorizationError`` propagate
         immediately.
 
         Parameters
@@ -2086,9 +2236,9 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGFatalError
+        DataProviderFatalError
             On fatal Refinitiv API errors.
-        LSEGAuthorizationError
+        DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         """
         effective_size = min(
@@ -2145,10 +2295,10 @@ class LsegWorkspace(DataProviderInterface):
                         len(ticker_batches),
                     )
 
-            except (LSEGFatalError, LSEGAuthorizationError):
+            except (DataProviderFatalError, DataProviderAuthorizationError):
                 raise
 
-            except LSEGProviderError as e:
+            except DataProviderApiError as e:
                 failed_rics.extend(batch_tuple)
                 logger.warning(
                     "Mini-bulk batch %d/%d failed with %s for %d tickers",
@@ -2251,9 +2401,9 @@ class LsegWorkspace(DataProviderInterface):
         Fetch bulk data from Refinitiv with retry logic and exponential backoff.
 
         Attempts to fetch data up to ``MAX_FETCH_ATTEMPTS`` times.  Non-retryable
-        errors (``LSEGFatalError``, ``LSEGAuthorizationError``) abort immediately.
-        ``LSEGRateLimitError`` uses doubled backoff (``2^(attempt+1)``).
-        Other retryable ``LSEGProviderError`` subclasses use standard backoff.
+        errors (``DataProviderFatalError``, ``DataProviderAuthorizationError``) abort immediately.
+        ``DataProviderRateLimitError`` uses doubled backoff (``2^(attempt+1)``).
+        Other retryable ``DataProviderApiError`` subclasses use standard backoff.
 
         When all retry attempts are exhausted the **classified exception is
         raised** so that callers can make error-driven fallback decisions.
@@ -2275,16 +2425,16 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGFatalError
+        DataProviderFatalError
             On fatal Refinitiv API errors (code 207, bad 400, PERIOD errors).
-        LSEGAuthorizationError
+        DataProviderAuthorizationError
             On HTTP 403 authorization failures.
-        LSEGProviderError
+        DataProviderApiError
             On retryable LSEG errors after all retry attempts are exhausted.
         ValueError
             On fatal parameter validation errors.
         """
-        last_lseg_error: LSEGProviderError | None = None
+        last_lseg_error: DataProviderApiError | None = None
         last_error: Exception | None = None
         start_time = time.perf_counter()
 
@@ -2337,7 +2487,7 @@ class LsegWorkspace(DataProviderInterface):
                     raise classified from e
 
                 # Rate limit: doubled backoff 2^(attempt+1)
-                if isinstance(classified, LSEGRateLimitError):
+                if isinstance(classified, DataProviderRateLimitError):
                     if not is_last_attempt:
                         wait_time = 2 ** (attempt + 1)
                         logger.warning(
@@ -2408,8 +2558,8 @@ class LsegWorkspace(DataProviderInterface):
         - A batch succeeds
         - Individual tickers fail (logged and skipped)
 
-        ``LSEGFatalError`` and ``LSEGAuthorizationError`` propagate immediately.
-        All other ``LSEGProviderError`` subclasses are caught and converted to
+        ``DataProviderFatalError`` and ``DataProviderAuthorizationError`` propagate immediately.
+        All other ``DataProviderApiError`` subclasses are caught and converted to
         empty-DataFrame signals so that splitting can continue.
 
         Parameters
@@ -2430,9 +2580,9 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGFatalError
+        DataProviderFatalError
             On fatal Refinitiv API errors (code 207, PERIOD errors).
-        LSEGAuthorizationError
+        DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         ValueError
             On fatal parameter validation errors.
@@ -2456,9 +2606,9 @@ class LsegWorkspace(DataProviderInterface):
                 tickers=tickers,
                 fields=fields,
             )
-        except (LSEGFatalError, LSEGAuthorizationError):
+        except (DataProviderFatalError, DataProviderAuthorizationError):
             raise
-        except LSEGProviderError as e:
+        except DataProviderApiError as e:
             # All other LSEG errors: treat as empty for continued splitting
             logger.debug(
                 "Tier 3: %s for %d tickers, will split",
@@ -2546,7 +2696,7 @@ class LsegWorkspace(DataProviderInterface):
             (``2 ** round`` seconds) is applied between rounds.  The loop
             exits early when no failed tickers remain.
 
-        ``LSEGFatalError`` and ``LSEGAuthorizationError`` propagate
+        ``DataProviderFatalError`` and ``DataProviderAuthorizationError`` propagate
         immediately at any step.
 
         Parameters
@@ -2571,11 +2721,11 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGFatalError
+        DataProviderFatalError
             On fatal Refinitiv API errors (code 207, PERIOD errors).
-        LSEGAuthorizationError
+        DataProviderAuthorizationError
             On authorization failures (HTTP 403).
-        LSEGProviderError
+        DataProviderApiError
             When ``skip_partition_fallback=True`` and Step 1 fails with a
             retryable error.
         ValueError
@@ -2586,7 +2736,7 @@ class LsegWorkspace(DataProviderInterface):
 
         all_results: list[pandas.DataFrame] = []
         failed_rics: list[str] = []
-        step1_error: LSEGProviderError | None = None
+        step1_error: DataProviderApiError | None = None
 
         # ---- Step 1: single bulk request for ALL tickers ----
         logger.info("Step 1: bulk request for tickers: %s", list(tickers))
@@ -2617,10 +2767,10 @@ class LsegWorkspace(DataProviderInterface):
                 )
                 failed_rics.extend(tickers)
 
-        except (LSEGFatalError, LSEGAuthorizationError):
+        except (DataProviderFatalError, DataProviderAuthorizationError):
             raise
 
-        except LSEGProviderError as e:
+        except DataProviderApiError as e:
             step1_error = e
             logger.warning(
                 "Step 1 failed with %s, "
@@ -2752,11 +2902,11 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGFatalError
+        DataProviderFatalError
             On fatal Refinitiv API errors.
-        LSEGAuthorizationError
+        DataProviderAuthorizationError
             On authorization failures (HTTP 403).
-        LSEGProviderError
+        DataProviderApiError
             When ``skip_partition_fallback=True`` and Tier 1 fails with a
             retryable error.
         """
@@ -2808,10 +2958,10 @@ class LsegWorkspace(DataProviderInterface):
                 "falling back to grid",
             )
 
-        except (LSEGFatalError, LSEGAuthorizationError):
+        except (DataProviderFatalError, DataProviderAuthorizationError):
             raise
 
-        except LSEGProviderError as e:
+        except DataProviderApiError as e:
             if skip_partition_fallback:
                 raise
             logger.warning(
@@ -2882,9 +3032,9 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGFatalError
+        DataProviderFatalError
             On fatal Refinitiv API errors.
-        LSEGAuthorizationError
+        DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         """
         # Split tickers into chunks
@@ -3017,9 +3167,9 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGFatalError
+        DataProviderFatalError
             On fatal Refinitiv API errors.
-        LSEGAuthorizationError
+        DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         """
         try:
@@ -3030,10 +3180,10 @@ class LsegWorkspace(DataProviderInterface):
             if not data.empty:
                 return data
 
-        except (LSEGFatalError, LSEGAuthorizationError):
+        except (DataProviderFatalError, DataProviderAuthorizationError):
             raise
 
-        except LSEGProviderError as e:
+        except DataProviderApiError as e:
             logger.warning(
                 "Grid cell failed with %s for %d tickers, "
                 "falling back to adaptive chunking",
@@ -3147,13 +3297,13 @@ class LsegWorkspace(DataProviderInterface):
                         len(field_batches)
                     )
 
-            except (LSEGFatalError, LSEGAuthorizationError):
+            except (DataProviderFatalError, DataProviderAuthorizationError):
                 # Re-raise fatal/authorization errors - these indicate
                 # unrecoverable issues
                 raise
 
             except (
-                LSEGProviderError,
+                DataProviderApiError,
                 RDError,
                 KeyError,
                 ValueError,
@@ -3222,7 +3372,7 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGDataNotFoundError
+        IdentifierNotFoundError
             If the ticker is not found in the cache or its data is empty.
         """
         try:
@@ -3230,16 +3380,12 @@ class LsegWorkspace(DataProviderInterface):
                 self.Endpoints.MARKET_DATA_DAILY_UNADJUSTED
             ]
         except KeyError as e:
-            raise LSEGDataNotFoundError(
-                tickers=[main_identifier],
-                message=f"Market data not found for ticker: {main_identifier}"
-            ) from e
+            msg = f"LSEG error: Market data not found for ticker: {main_identifier}"
+            raise IdentifierNotFoundError(msg) from e
 
         if market_raw_data.empty:
-            raise LSEGDataNotFoundError(
-                tickers=[main_identifier],
-                message=f"Market data is empty for ticker: {main_identifier}"
-            )
+            msg = f"LSEG error: Market data is empty for ticker: {main_identifier}"
+            raise IdentifierNotFoundError(msg)
 
         endpoint_tables = {
             self.Endpoints.MARKET_DATA_DAILY_UNADJUSTED:
@@ -3301,7 +3447,7 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGDataNotFoundError
+        IdentifierNotFoundError
             If the ticker is not found in the cache.
         DataProviderToolkitRuntimeError
             If there's an error in data provider logic.
@@ -3309,10 +3455,8 @@ class LsegWorkspace(DataProviderInterface):
         try:
             fundamental_raw_data = self.cache[main_identifier][self.Endpoints.FUNDAMENTAL_DATA]
         except KeyError as e:
-            raise LSEGDataNotFoundError(
-                tickers=[main_identifier],
-                message=f"Fundamental data not found for ticker: {main_identifier}"
-            ) from e
+            msg = f"LSEG error: Fundamental data not found for ticker: {main_identifier}"
+            raise IdentifierNotFoundError(msg) from e
 
         # Create empty fundamental data for cases with no data
         empty_fundamental_data = FundamentalData(
@@ -3436,7 +3580,7 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGDataNotFoundError
+        IdentifierNotFoundError
             If the ticker is not found in the cache.
         DataProviderToolkitRuntimeError
             If there's an error in data provider logic.
@@ -3444,10 +3588,8 @@ class LsegWorkspace(DataProviderInterface):
         try:
             dividend_raw_data = self.cache[main_identifier][self.Endpoints.STOCK_DIVIDEND]
         except KeyError as e:
-            raise LSEGDataNotFoundError(
-                tickers=[main_identifier],
-                message=f"Dividend data not found for ticker: {main_identifier}"
-            ) from e
+            msg = f"LSEG error: Dividend data not found for ticker: {main_identifier}"
+            raise IdentifierNotFoundError(msg) from e
 
         # Create empty dividend data for cases with no data
         empty_dividend_data = DividendData(
@@ -3521,7 +3663,7 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        LSEGDataNotFoundError
+        IdentifierNotFoundError
             If the ticker is not found in the cache.
         DataProviderToolkitRuntimeError
             If there's an error in data provider logic.
@@ -3529,10 +3671,8 @@ class LsegWorkspace(DataProviderInterface):
         try:
             split_raw_data = self.cache[main_identifier][self.Endpoints.STOCK_SPLIT]
         except KeyError as e:
-            raise LSEGDataNotFoundError(
-                tickers=[main_identifier],
-                message=f"Split data not found for ticker: {main_identifier}"
-            ) from e
+            msg = f"LSEG error: Split data not found for ticker: {main_identifier}"
+            raise IdentifierNotFoundError(msg) from e
 
         # Create empty split data for cases with no data
         empty_split_data = SplitData(
