@@ -59,7 +59,7 @@ configurator = kaxanuk.data_curator.config_handlers.ExcelConfigurator(
         },
         'lseg_workspace': {
             'class': kaxanuk.data_curator.data_providers.LsegWorkspace,
-            'api_key': '', #@todo: fix this, it should be None
+            'api_key': os.getenv('KNDC_API_KEY_LSEG'), # set this up in the Config/.env file
         }
     },
     output_handlers={
