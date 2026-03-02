@@ -43,9 +43,11 @@ class ConfiguratorInterface(metaclass=abc.ABCMeta):
     CONFIGURATION_PROVIDER_NONE = 'none'
     CONFIGURATION_PROVIDERS_FUNDAMENTAL = (
         'financial_modeling_prep',
+        'lseg_workspace',
         CONFIGURATION_PROVIDER_NONE,
     )
     CONFIGURATION_PROVIDERS_MARKET = (
         'financial_modeling_prep',
+        'lseg_workspace',
         'yahoo_finance'
     )
