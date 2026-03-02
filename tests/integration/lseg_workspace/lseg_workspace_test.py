@@ -2,7 +2,7 @@
 Integration tests for LsegWorkspace data provider.
 
 These tests exercise the full LsegWorkspace processing pipeline using real
-pickle fixtures instead of the live Refinitiv API.  Only the API transport
+pickle fixtures instead of the live LSEG API.  Only the API transport
 layer (session management, HTTP fetch, currency lookup) is mocked; all data
 parsing, filtering, deduplication, dividend-adjustment, and entity assembly
 run through the production code.
@@ -151,11 +151,11 @@ def initialized_provider(
             staticmethod(lambda tickers: dict.fromkeys(tickers, "USD")),
         )
         mp.setattr(
-            "refinitiv.data.session.desktop.Definition",
+            "lseg.data.session.desktop.Definition",
             lambda app_key: mock_definition,
         )
-        mp.setattr("refinitiv.data.session.set_default", lambda session: None)
-        mp.setattr("refinitiv.data.session.get_default", lambda: mock_session)
+        mp.setattr("lseg.data.session.set_default", lambda session: None)
+        mp.setattr("lseg.data.session.get_default", lambda: mock_session)
 
         provider = LsegWorkspace(api_key="test-key")
         provider.initialize(configuration=test_configuration)
@@ -1097,11 +1097,11 @@ class TestEdgeCases:
             staticmethod(lambda t: dict.fromkeys(t, "USD")),
         )
         monkeypatch.setattr(
-            "refinitiv.data.session.desktop.Definition",
+            "lseg.data.session.desktop.Definition",
             lambda app_key: mock_definition,
         )
-        monkeypatch.setattr("refinitiv.data.session.set_default", lambda session: None)
-        monkeypatch.setattr("refinitiv.data.session.get_default", lambda: mock_session)
+        monkeypatch.setattr("lseg.data.session.set_default", lambda session: None)
+        monkeypatch.setattr("lseg.data.session.get_default", lambda: mock_session)
 
         provider = LsegWorkspace(api_key="test-key")
         provider.initialize(configuration=config)

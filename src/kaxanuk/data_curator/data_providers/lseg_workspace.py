@@ -1,8 +1,8 @@
 """
-LSEG/Refinitiv Workspace data provider implementation.
+LSEG Workspace data provider implementation.
 
 This module provides integration with the LSEG (London Stock Exchange Group)
-Refinitiv Workspace API for fetching market data, fundamental data, dividend
+Workspace API for fetching market data, fundamental data, dividend
 data, and split data for financial instruments.
 
 The implementation uses a bulk-fetch-first strategy with adaptive chunking
@@ -22,8 +22,8 @@ import httpx
 import pandas
 import pyarrow
 import pyarrow.compute
-import refinitiv.data
-from refinitiv.data.errors import RDError
+import lseg.data
+from lseg.data.errors import LDError
 
 from kaxanuk.data_curator.data_blocks.dividends import DividendsDataBlock
 from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
@@ -129,10 +129,10 @@ class ColumnNames(enum.StrEnum):
 
 class LsegWorkspace(DataProviderInterface):
     """
-    LSEG/Refinitiv Workspace data provider for financial market data.
+    LSEG Workspace data provider for financial market data.
 
     This class implements the DataProviderInterface for fetching market data,
-    fundamental data, dividend data, and split data from the LSEG Refinitiv
+    fundamental data, dividend data, and split data from the LSEG
     Workspace API.
 
     Data Fetching Strategy
@@ -153,7 +153,7 @@ class LsegWorkspace(DataProviderInterface):
 
     Error Handling
     --------------
-    - Fatal errors (RDError code 207, PERIOD unrecognized) abort immediately
+    - Fatal errors (LDError code 207, PERIOD unrecognized) abort immediately
     - Non-fatal errors trigger retry up to MAX_FETCH_ATTEMPTS times
     - After retries exhausted, unresolved tickers are collected and
       retried through the mini-bulk pipeline described above
@@ -741,7 +741,7 @@ class LsegWorkspace(DataProviderInterface):
         r'TR.F.DebtTot(Period=FQ0,SDate={start_date},EDate={end_date},Frq=FQ)',
         r'TR.F.NetDebt(Period=FQ0,SDate={start_date},EDate={end_date},Frq=FQ)',
         r'TR.F.DebtLTTot(Period=FQ0,SDate={start_date},EDate={end_date},Frq=FQ)',
-        # TR.F.TotCapital removed - field not available in Refinitiv API
+        # TR.F.TotCapital removed - field not available in LSEG API
         r'TR.F.PrefShHoldEq(Period=FQ0,SDate={start_date},EDate={end_date},Frq=FQ)',
         # Additional balance sheet fields from KaxaNuk_Tags
         r'TR.F.ComprIncAccumTot(Period=FQ0,SDate={start_date},EDate={end_date},Frq=FQ)',
@@ -833,7 +833,7 @@ class LsegWorkspace(DataProviderInterface):
     @classmethod
     def _get_market_data_fields(cls, start_date: str, end_date: str) -> list[str]:
         """
-        Build the list of Refinitiv fields with date parameters.
+        Build the list of LSEG fields with date parameters.
 
         Parameters
         ----------
@@ -844,7 +844,7 @@ class LsegWorkspace(DataProviderInterface):
 
         Returns
         -------
-        List of formatted Refinitiv field strings
+        List of formatted LSEG field strings
         """
         return [
             field.format(start_date=start_date, end_date=end_date)
@@ -854,7 +854,7 @@ class LsegWorkspace(DataProviderInterface):
     @classmethod
     def _get_fundamental_data_fields(cls, start_date: str, end_date: str) -> list[str]:
         """
-        Build the list of Refinitiv fundamental data fields with date parameters.
+        Build the list of LSEG fundamental data fields with date parameters.
 
         Combines income statement, balance sheet, and cash flow fields.
 
@@ -867,7 +867,7 @@ class LsegWorkspace(DataProviderInterface):
 
         Returns
         -------
-        List of formatted Refinitiv field strings for fundamental data
+        List of formatted LSEG field strings for fundamental data
         """
         all_fields = (
             cls.INCOME_STATEMENT_FIELDS_LIST
@@ -882,7 +882,7 @@ class LsegWorkspace(DataProviderInterface):
     @classmethod
     def _get_dividend_fields(cls, start_date: str, end_date: str) -> list[str]:
         """
-        Build the list of Refinitiv dividend data fields with date parameters.
+        Build the list of LSEG dividend data fields with date parameters.
 
         Parameters
         ----------
@@ -893,7 +893,7 @@ class LsegWorkspace(DataProviderInterface):
 
         Returns
         -------
-        List of formatted Refinitiv field strings for dividend data
+        List of formatted LSEG field strings for dividend data
         """
         return [
             field.format(start_date=start_date, end_date=end_date)
@@ -903,7 +903,7 @@ class LsegWorkspace(DataProviderInterface):
     @classmethod
     def _get_split_fields(cls, start_date: str, end_date: str) -> list[str]:
         """
-        Build the list of Refinitiv split data fields with date parameters.
+        Build the list of LSEG split data fields with date parameters.
 
         Parameters
         ----------
@@ -914,7 +914,7 @@ class LsegWorkspace(DataProviderInterface):
 
         Returns
         -------
-        List of formatted Refinitiv field strings for split data
+        List of formatted LSEG field strings for split data
         """
         return [
             field.format(start_date=start_date, end_date=end_date)
@@ -1056,26 +1056,26 @@ class LsegWorkspace(DataProviderInterface):
         self.cache: LsegWorkspace.TickerCacheType = {}
 
     def _restart_session(self) -> None:
-        """Close the current default Refinitiv session and open a fresh one."""
+        """Close the current default LSEG session and open a fresh one."""
         try:
-            current_session = refinitiv.data.session.get_default()
+            current_session = lseg.data.session.get_default()
             if current_session is not None:
                 current_session.close()
-        except (OSError, RDError):
-            logger.debug("Failed to close existing Refinitiv session; proceeding with new session")
+        except (OSError, LDError):
+            logger.debug("Failed to close existing LSEG session; proceeding with new session")
 
-        session = refinitiv.data.session.desktop.Definition(
+        session = lseg.data.session.desktop.Definition(
             app_key=self.api_key,
         ).get_session()
-        refinitiv.data.session.set_default(session)
+        lseg.data.session.set_default(session)
         session.open()
 
         if session is None or str(session.open_state) != 'OpenState.Opened':
             raise DataProviderFatalError(
                 error_code=None,
-                message="Refinitiv session failed to reopen after bulk failure.",
+                message="LSEG session failed to reopen after bulk failure.",
             )
-        logger.info("Refinitiv session restarted successfully")
+        logger.info("LSEG session restarted successfully")
 
     def initialize(
             self,
@@ -1109,28 +1109,28 @@ class LsegWorkspace(DataProviderInterface):
         Raises
         ------
         DataProviderFatalError
-            If unable to connect to Refinitiv Workspace or API returns
+            If unable to connect to LSEG Workspace or API returns
             a fatal error (e.g., invalid field syntax).
         DataProviderTooManyTickersError
             If all tickers fail even after internal chunking.
         """
-        # Open Refinitiv Desktop session using the api_key (validated in __init__)
+        # Open LSEG Desktop session using the api_key (validated in __init__)
         try:
-            session = refinitiv.data.session.desktop.Definition(
+            session = lseg.data.session.desktop.Definition(
                 app_key=self.api_key,
             ).get_session()
-            refinitiv.data.session.set_default(session)
+            lseg.data.session.set_default(session)
             session.open()
         except KeyboardInterrupt:
             raise DataProviderFatalError(
                 error_code=None,
-                message="Refinitiv session opening was interrupted by user.",
+                message="LSEG session opening was interrupted by user.",
             ) from None
         except Exception as e:
             raise DataProviderFatalError(
                 error_code=None,
                 message=(
-                    f"Failed to open Refinitiv Desktop session. "
+                    f"Failed to open LSEG Desktop session. "
                     f"Ensure Workspace is running and you are logged in. {e}"
                 ),
             ) from e
@@ -1140,13 +1140,13 @@ class LsegWorkspace(DataProviderInterface):
             raise DataProviderFatalError(
                 error_code=None,
                 message=(
-                    "Refinitiv session failed to open. "
+                    "LSEG session failed to open. "
                     "Ensure Workspace is running and you are logged in."
                 ),
             )
-        #@todo: review if it is a logic to fix from our part or refinitiv
-        # Suppress known Refinitiv library warnings that don't affect functionality
-        warnings.filterwarnings('ignore', category=FutureWarning, module='refinitiv')
+        #@todo: review if it is a logic to fix from our part or lseg
+        # Suppress known LSEG library warnings that don't affect functionality
+        warnings.filterwarnings('ignore', category=FutureWarning, module='lseg')
         warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in cast')
 
         self.cache.clear()
@@ -1222,7 +1222,7 @@ class LsegWorkspace(DataProviderInterface):
                 )
                 try:
                     self._restart_session()
-                except (OSError, RDError) as restart_err:
+                except (OSError, LDError) as restart_err:
                     logger.warning(
                         "Session restart failed: %s. Continuing with current session.",
                         restart_err,
@@ -1280,7 +1280,7 @@ class LsegWorkspace(DataProviderInterface):
                 )
                 try:
                     self._restart_session()
-                except (OSError, RDError) as restart_err:
+                except (OSError, LDError) as restart_err:
                     logger.warning(
                         "Session restart failed before retry sweep: %s",
                         restart_err,
@@ -1321,14 +1321,14 @@ class LsegWorkspace(DataProviderInterface):
             elapsed,
         )
 
-        # Close the current default Refinitiv session
+        # Close the current default LSEG session
         # (may differ from local `session` if _restart_session was called)
         try:
-            current_session = refinitiv.data.session.get_default()
+            current_session = lseg.data.session.get_default()
             if current_session is not None:
                 current_session.close()
-        except (OSError, RDError):
-            logger.debug("Failed to close Refinitiv session during initialize cleanup")
+        except (OSError, LDError):
+            logger.debug("Failed to close LSEG session during initialize cleanup")
 
         # If no tickers were cached at all, the configuration is unworkable
         cached_count = sum(1 for t in tickers if t in self.cache)
@@ -1347,7 +1347,7 @@ class LsegWorkspace(DataProviderInterface):
         """
         Re-download and re-cache data for specific tickers.
 
-        Opens a new Refinitiv session, re-fetches all data types for the
+        Opens a new LSEG session, re-fetches all data types for the
         given tickers using the same bulk pipeline as ``initialize()``,
         processes the raw data, and updates both the instance cache and the
         class-level shared cache.
@@ -1385,23 +1385,23 @@ class LsegWorkspace(DataProviderInterface):
             )
             return
 
-        # Open a new Refinitiv Desktop session
+        # Open a new LSEG Desktop session
         try:
-            session = refinitiv.data.session.desktop.Definition(
+            session = lseg.data.session.desktop.Definition(
                 app_key=self.api_key,
             ).get_session()
-            refinitiv.data.session.set_default(session)
+            lseg.data.session.set_default(session)
             session.open()
         except KeyboardInterrupt:
             raise DataProviderFatalError(
                 error_code=None,
-                message="Refinitiv session opening was interrupted by user.",
+                message="LSEG session opening was interrupted by user.",
             ) from None
         except Exception as e:
             raise DataProviderFatalError(
                 error_code=None,
                 message=(
-                    f"Failed to open Refinitiv Desktop session for refetch. "
+                    f"Failed to open LSEG Desktop session for refetch. "
                     f"Ensure Workspace is running and you are logged in. {e}"
                 ),
             ) from e
@@ -1410,12 +1410,12 @@ class LsegWorkspace(DataProviderInterface):
             raise DataProviderFatalError(
                 error_code=None,
                 message=(
-                    "Refinitiv session failed to open for refetch. "
+                    "LSEG session failed to open for refetch. "
                     "Ensure Workspace is running and you are logged in."
                 ),
             )
 
-        warnings.filterwarnings('ignore', category=FutureWarning, module='refinitiv')
+        warnings.filterwarnings('ignore', category=FutureWarning, module='lseg')
         warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in cast')
 
         # Re-fetch all raw data for the failed tickers only
@@ -1439,14 +1439,14 @@ class LsegWorkspace(DataProviderInterface):
                 LsegWorkspace._shared_cache[ticker] = self.cache[ticker]
         LsegWorkspace._shared_refetch_key = refetch_key
 
-        # Close the current default Refinitiv session
+        # Close the current default LSEG session
         # (may differ from local `session` if _restart_session was called)
         try:
-            current_session = refinitiv.data.session.get_default()
+            current_session = lseg.data.session.get_default()
             if current_session is not None:
                 current_session.close()
-        except (OSError, RDError):
-            logger.debug("Failed to close Refinitiv session during refetch cleanup")
+        except (OSError, LDError):
+            logger.debug("Failed to close LSEG session during refetch cleanup")
 
         logger.info(
             "Re-fetch complete for %d tickers",
@@ -1580,7 +1580,7 @@ class LsegWorkspace(DataProviderInterface):
         """
         Fetch currency information for each ticker.
 
-        CF_CURR is a static/pricing field that requires refinitiv.data.get_data()
+        CF_CURR is a static/pricing field that requires lseg.data.get_data()
         rather than the fundamental_and_reference API.
 
         Parameters
@@ -1598,7 +1598,7 @@ class LsegWorkspace(DataProviderInterface):
         currency_map: dict[str, str] = {}
 
         try:
-            currency_data = refinitiv.data.get_data(
+            currency_data = lseg.data.get_data(
                 universe=tickers,
                 fields=[ColumnNames.CF_CURR]
             )
@@ -1611,7 +1611,7 @@ class LsegWorkspace(DataProviderInterface):
 
             logger.debug("Currency mapping retrieved for %d tickers", len(currency_map))
 
-        except RDError as e:
+        except LDError as e:
             logger.warning(
                 "Failed to fetch currency data (LSEG error): %s. Using default '%s'.",
                 e,
@@ -1993,9 +1993,9 @@ class LsegWorkspace(DataProviderInterface):
         }
 
     @classmethod
-    def _classify_lseg_error(cls, error: RDError) -> DataProviderApiError:
+    def _classify_lseg_error(cls, error: LDError) -> DataProviderApiError:
         """
-        Classify an ``RDError`` into a specific ``DataProviderApiError`` subclass.
+        Classify an ``LDError`` into a specific ``DataProviderApiError`` subclass.
 
         The classification determines the appropriate recovery strategy for
         each error type. For HTTP 400 errors, the message is inspected to
@@ -2004,8 +2004,8 @@ class LsegWorkspace(DataProviderInterface):
 
         Parameters
         ----------
-        error : RDError
-            The Refinitiv API error to classify.
+        error : LDError
+            The LSEG API error to classify.
 
         Returns
         -------
@@ -2220,7 +2220,7 @@ class LsegWorkspace(DataProviderInterface):
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs) to fetch.
         fields : list[str]
-            List of Refinitiv fields to fetch (with parameters embedded).
+            List of LSEG fields to fetch (with parameters embedded).
         batch_size : int | None, optional
             Number of tickers per mini-bulk batch.  Defaults to
             ``MINI_BULK_BATCH_SIZE`` and is clamped to
@@ -2237,7 +2237,7 @@ class LsegWorkspace(DataProviderInterface):
         Raises
         ------
         DataProviderFatalError
-            On fatal Refinitiv API errors.
+            On fatal LSEG API errors.
         DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         """
@@ -2322,14 +2322,14 @@ class LsegWorkspace(DataProviderInterface):
         fields: list[str],
     ) -> pandas.DataFrame:
         """
-        Attempt a single fetch from Refinitiv API.
+        Attempt a single fetch from LSEG API.
 
         Parameters
         ----------
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs).
         fields : list[str]
-            List of Refinitiv fields to fetch (with parameters embedded).
+            List of LSEG fields to fetch (with parameters embedded).
 
         Returns
         -------
@@ -2338,10 +2338,10 @@ class LsegWorkspace(DataProviderInterface):
 
         Raises
         ------
-        RDError
-            On Refinitiv API errors.
+        LDError
+            On LSEG API errors.
         """
-        response = refinitiv.data.content.fundamental_and_reference.Definition(
+        response = lseg.data.content.fundamental_and_reference.Definition(
             universe=tickers,
             fields=fields
         ).get_data()
@@ -2368,7 +2368,7 @@ class LsegWorkspace(DataProviderInterface):
         is_last_attempt : bool
             Whether this is the final retry attempt.
         error_code : int | None, optional
-            API error code, if available (e.g. from RDError).
+            API error code, if available (e.g. from LDError).
         """
         code_info = f" (code {error_code})" if error_code is not None else ""
         if not is_last_attempt:
@@ -2398,7 +2398,7 @@ class LsegWorkspace(DataProviderInterface):
             fields: list[str],
     ) -> pandas.DataFrame:
         """
-        Fetch bulk data from Refinitiv with retry logic and exponential backoff.
+        Fetch bulk data from LSEG with retry logic and exponential backoff.
 
         Attempts to fetch data up to ``MAX_FETCH_ATTEMPTS`` times.  Non-retryable
         errors (``DataProviderFatalError``, ``DataProviderAuthorizationError``) abort immediately.
@@ -2415,7 +2415,7 @@ class LsegWorkspace(DataProviderInterface):
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs) to fetch.
         fields : list[str]
-            List of Refinitiv fields to fetch (with parameters embedded).
+            List of LSEG fields to fetch (with parameters embedded).
 
         Returns
         -------
@@ -2426,7 +2426,7 @@ class LsegWorkspace(DataProviderInterface):
         Raises
         ------
         DataProviderFatalError
-            On fatal Refinitiv API errors (code 207, bad 400, PERIOD errors).
+            On fatal LSEG API errors (code 207, bad 400, PERIOD errors).
         DataProviderAuthorizationError
             On HTTP 403 authorization failures.
         DataProviderApiError
@@ -2477,7 +2477,7 @@ class LsegWorkspace(DataProviderInterface):
                 logger.error("Fatal validation error: %s", e)
                 raise
 
-            except RDError as e:
+            except LDError as e:
                 classified = cls._classify_lseg_error(error=e)
                 last_lseg_error = classified
                 last_error = classified
@@ -2567,7 +2567,7 @@ class LsegWorkspace(DataProviderInterface):
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs) to fetch.
         fields : list[str]
-            List of Refinitiv fields to fetch (with parameters embedded).
+            List of LSEG fields to fetch (with parameters embedded).
         failed_tickers : list[str] | None, optional
             Accumulator for tickers that failed even at single-ticker level.
             Used internally during recursion.
@@ -2581,7 +2581,7 @@ class LsegWorkspace(DataProviderInterface):
         Raises
         ------
         DataProviderFatalError
-            On fatal Refinitiv API errors (code 207, PERIOD errors).
+            On fatal LSEG API errors (code 207, PERIOD errors).
         DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         ValueError
@@ -2704,7 +2704,7 @@ class LsegWorkspace(DataProviderInterface):
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs) to fetch.
         fields : list[str]
-            List of Refinitiv fields to fetch (with parameters embedded).
+            List of LSEG fields to fetch (with parameters embedded).
         mini_bulk_batch_size : int | None, optional
             Override the default ``MINI_BULK_BATCH_SIZE`` for partition rounds.
             Clamped to ``MINI_BULK_MAX_BATCH_SIZE``.
@@ -2722,7 +2722,7 @@ class LsegWorkspace(DataProviderInterface):
         Raises
         ------
         DataProviderFatalError
-            On fatal Refinitiv API errors (code 207, PERIOD errors).
+            On fatal LSEG API errors (code 207, PERIOD errors).
         DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         DataProviderApiError
@@ -2796,7 +2796,7 @@ class LsegWorkspace(DataProviderInterface):
             logger.info("Restarting session before partition rounds")
             try:
                 session_restart_callback()
-            except (OSError, RDError) as e:
+            except (OSError, LDError) as e:
                 logger.warning("Session restart failed: %s. Continuing with current session.", e)
 
         # ---- Step 2: partitioned retry rounds for failed RICs ----
@@ -2890,7 +2890,7 @@ class LsegWorkspace(DataProviderInterface):
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs) to fetch.
         fields : list[str]
-            List of Refinitiv fields for this batch.
+            List of LSEG fields for this batch.
         skip_partition_fallback : bool, optional
             When ``True``, skip the grid fallback and re-raise Tier 1
             errors.  Defaults to ``False``.
@@ -2903,7 +2903,7 @@ class LsegWorkspace(DataProviderInterface):
         Raises
         ------
         DataProviderFatalError
-            On fatal Refinitiv API errors.
+            On fatal LSEG API errors.
         DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         DataProviderApiError
@@ -2978,7 +2978,7 @@ class LsegWorkspace(DataProviderInterface):
             logger.info("Restarting session before fundamental grid fallback")
             try:
                 session_restart_callback()
-            except (OSError, RDError) as e:
+            except (OSError, LDError) as e:
                 logger.warning("Session restart failed: %s. Continuing with current session.", e)
 
         # ---- Grid fallback for all tickers ----
@@ -3023,7 +3023,7 @@ class LsegWorkspace(DataProviderInterface):
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs) to fetch.
         fields : list[str]
-            List of Refinitiv fields to fetch.
+            List of LSEG fields to fetch.
 
         Returns
         -------
@@ -3033,7 +3033,7 @@ class LsegWorkspace(DataProviderInterface):
         Raises
         ------
         DataProviderFatalError
-            On fatal Refinitiv API errors.
+            On fatal LSEG API errors.
         DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         """
@@ -3158,7 +3158,7 @@ class LsegWorkspace(DataProviderInterface):
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs) for this cell.
         fields : list[str]
-            List of Refinitiv fields for this cell.
+            List of LSEG fields for this cell.
 
         Returns
         -------
@@ -3168,7 +3168,7 @@ class LsegWorkspace(DataProviderInterface):
         Raises
         ------
         DataProviderFatalError
-            On fatal Refinitiv API errors.
+            On fatal LSEG API errors.
         DataProviderAuthorizationError
             On authorization failures (HTTP 403).
         """
@@ -3210,7 +3210,7 @@ class LsegWorkspace(DataProviderInterface):
         """
         Fetch fundamental data in field batches to avoid API limits.
 
-        The Refinitiv API limits the number of fields per request.
+        The LSEG API limits the number of fields per request.
         This method:
         1. Splits fields into batches of FUNDAMENTAL_BATCH_SIZE
         2. Ensures Period End Date is in every batch (required for merging)
@@ -3222,7 +3222,7 @@ class LsegWorkspace(DataProviderInterface):
         tickers : tuple[str, ...]
             Tuple of ticker symbols (RICs) to fetch.
         fields : list[str]
-            List of Refinitiv fields to fetch (with parameters embedded).
+            List of LSEG fields to fetch (with parameters embedded).
         batch_size : int | None, optional
             Maximum fields per API call. Defaults to FUNDAMENTAL_BATCH_SIZE.
 
@@ -3304,7 +3304,7 @@ class LsegWorkspace(DataProviderInterface):
 
             except (
                 DataProviderApiError,
-                RDError,
+                LDError,
                 KeyError,
                 ValueError,
                 TypeError,
@@ -3724,7 +3724,7 @@ class LsegWorkspace(DataProviderInterface):
         """
         Validate that the API key used to init the class is valid.
 
-        LSEG Workspace doesn't use API keys - it uses Refinitiv session authentication.
+        LSEG Workspace doesn't use API keys - it uses LSEG session authentication.
 
         Returns
         -------
