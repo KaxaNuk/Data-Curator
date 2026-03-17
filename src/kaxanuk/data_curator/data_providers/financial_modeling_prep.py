@@ -33,6 +33,7 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderPaymentError,
     DataProviderToolkitNoDataError,
     DataProviderToolkitRuntimeError,
+    IdentifierNotFoundError,
 )
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
 from kaxanuk.data_curator.services.data_provider_toolkit import (
@@ -761,6 +762,7 @@ class FinancialModelingPrep(
         Raises
         ------
         ConnectionError
+        IdentifierNotFoundError
         """
         market_raw_unadjusted_data = self._request_data(
             self.Endpoints.MARKET_DATA_DAILY_UNADJUSTED.name,
@@ -804,11 +806,17 @@ class FinancialModelingPrep(
                 market_raw_unadjusted_data,
         })
 
-        processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
-            data_block=MarketDailyDataBlock,
-            endpoint_field_map=self._market_data_endpoint_map,
-            endpoint_tables=endpoint_tables,
-        )
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=MarketDailyDataBlock,
+                endpoint_field_map=self._market_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError as error:
+            msg = f"{main_identifier} market data endpoints returned no data"
+
+            raise IdentifierNotFoundError(msg) from error
+
         consolidated_market_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=processed_endpoint_tables,
             table_merge_fields=[MarketDailyDataBlock.clock_sync_field],
