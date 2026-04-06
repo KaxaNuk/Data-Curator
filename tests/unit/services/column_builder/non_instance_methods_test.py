@@ -133,7 +133,7 @@ def example_entity_rows_fundamental_data():
             investments_purchase=decimal.Decimal('550'),
             net_business_acquisition_payments=decimal.Decimal('3400'),
             net_cash_from_operating_activities=decimal.Decimal('980'),
-            net_cash_from_investing_activites=decimal.Decimal('20'),
+            net_cash_from_investing_activities=decimal.Decimal('20'),
             net_cash_from_financing_activities=decimal.Decimal('70'),
             net_common_stock_issuance_proceeds=decimal.Decimal('10'),
             net_debt_issuance_proceeds=decimal.Decimal('500'),

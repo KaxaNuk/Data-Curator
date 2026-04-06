@@ -564,7 +564,7 @@ class LsegWorkspace(DataProviderInterface):
                 'Investment Securities - Purchased - Unclassified - Cash Flow',
             FundamentalDataRowCashFlow.net_business_acquisition_payments:
                 'Acquisition of Business - Cash Flow',
-            FundamentalDataRowCashFlow.net_cash_from_investing_activites:
+            FundamentalDataRowCashFlow.net_cash_from_investing_activities:
                 'Net Cash Flow from Investing Activities',
             FundamentalDataRowCashFlow.net_cash_from_financing_activities:
                 'Net Cash Flow from Financing Activities',
