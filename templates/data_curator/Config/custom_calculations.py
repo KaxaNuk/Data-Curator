@@ -33,7 +33,7 @@ src/kaxanuk/data_curator/features/calculations.py
 from kaxanuk.data_curator.features import helpers
 
 
-def c_test(m_open, m_close):
+def c_test(m_open_split_adjusted, m_close_split_adjusted):
     """
     Example features calculation function.
 
@@ -46,8 +46,8 @@ def c_test(m_open, m_close):
 
     Parameters
     ----------
-    m_open : kaxanuk.data_curator.DataColumn
-    m_close : kaxanuk.data_curator.DataColumn
+    m_open_split_adjusted : kaxanuk.data_curator.DataColumn
+    m_close_split_adjusted : kaxanuk.data_curator.DataColumn
 
     Returns
     -------
@@ -55,4 +55,4 @@ def c_test(m_open, m_close):
     """
     # we're just doing a subtraction here, but you can implement any logic
     # just remember to return the same number of rows in a single column!
-    return m_close - m_open
+    return m_close_split_adjusted - m_open_split_adjusted
