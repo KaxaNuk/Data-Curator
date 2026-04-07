@@ -26,7 +26,7 @@ class FundamentalDataRowCashFlow(BaseDataEntity):
     investments_purchase: decimal.Decimal | None
     net_business_acquisition_payments: decimal.Decimal | None
     net_cash_from_operating_activities: decimal.Decimal | None
-    net_cash_from_investing_activites: decimal.Decimal | None
+    net_cash_from_investing_activities: decimal.Decimal | None
     net_cash_from_financing_activities: decimal.Decimal | None
     net_common_stock_issuance_proceeds: decimal.Decimal | None
     net_debt_issuance_proceeds: decimal.Decimal | None
