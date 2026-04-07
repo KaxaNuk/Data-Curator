@@ -10,7 +10,7 @@ The system can run either on your local Python environment or on Docker.
 
 **Requirements for Local Installation**
 
-- Python 3.12 or 3.13
+- Python 3.12, 3.13, or 3.14
 
 **Installing on Python**
 
