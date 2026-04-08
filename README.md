@@ -2,7 +2,7 @@
 
 |                                                                                                                                                                                                                                                                                                                                                                                |
 |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue?logo=python&logoColor=ffdd54)](https://www.python.org) [![PyPI - License](https://img.shields.io/pypi/l/kaxanuk.data-curator?color=blue)](LICENSE)                                                                                                                                                       |
+| [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=ffdd54)](https://www.python.org) [![PyPI - License](https://img.shields.io/pypi/l/kaxanuk.data-curator?color=blue)](LICENSE)                                                                                                                                          |
 | [![Build Status](https://github.com/KaxaNuk/Data-Curator/actions/workflows/main.yml/badge.svg)](https://github.com/KaxaNuk/Data-Curator/actions/workflows/main.yml) [![Read the Docs](https://app.readthedocs.org/projects/kaxanuk-data-curator/badge/?version=stable)](https://kaxanuk-data-curator.readthedocs.io/en/stable/)                                                |
 | [![PyPI - Version](https://img.shields.io/pypi/v/kaxanuk.data-curator?logo=pypi)](https://pypi.org/project/kaxanuk.data-curator) [![PyPI Downloads](https://static.pepy.tech/badge/kaxanuk-data-curator)](https://pepy.tech/projects/kaxanuk-data-curator) [![Powered by KaxaNuk](https://img.shields.io/badge/powered%20by-KaxaNuk-orange?colorB=orange)](https://kaxanuk.mx) |
 
@@ -23,7 +23,7 @@ Features:
 Full documentation is available at [kaxanuk-data-curator.readthedocs.io](https://kaxanuk-data-curator.readthedocs.io/en/stable/).
 
 ## Requirements
-The system can run either on your local Python (versions `3.12` or `3.13`) or on Docker.
+The system can run either on your local Python (versions `3.12`, `3.13`, or `3.14`) or on Docker.
 
 
 ## Supported Data Providers
