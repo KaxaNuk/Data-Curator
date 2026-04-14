@@ -50,6 +50,7 @@ COPY --from=lib_builder /kaxanuk /usr/local/kaxanuk
 RUN \
   LIB_FILE=$(find /usr/local/kaxanuk -name 'kaxanuk_data_curator-*.whl' | head -n 1) \
   && pip install "${LIB_FILE}" \
+  && pip install kaxanuk.data_curator_extensions.yahoo_finance\
 ;
 
 

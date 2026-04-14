@@ -31,7 +31,7 @@ dependencies = [    # dev dependencies are in the [tool.pdm.dev-dependencies] se
 dynamic = ["version"]
 license = {text = "MIT License"}
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 
 [project.scripts]
 "kaxanuk.data_curator" = "kaxanuk.data_curator:cli"

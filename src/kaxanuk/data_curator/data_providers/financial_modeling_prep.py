@@ -189,7 +189,7 @@ class FinancialModelingPrep(
             FundamentalDataRowCashFlow.investments_purchase: 'purchasesOfInvestments',
             FundamentalDataRowCashFlow.net_business_acquisition_payments: 'acquisitionsNet',
             FundamentalDataRowCashFlow.net_cash_from_operating_activities: 'netCashProvidedByOperatingActivities',
-            FundamentalDataRowCashFlow.net_cash_from_investing_activites: 'netCashProvidedByInvestingActivities',
+            FundamentalDataRowCashFlow.net_cash_from_investing_activities: 'netCashProvidedByInvestingActivities',
             FundamentalDataRowCashFlow.net_cash_from_financing_activities: 'netCashProvidedByFinancingActivities',
             FundamentalDataRowCashFlow.net_common_stock_issuance_proceeds: 'netCommonStockIssuance',
             FundamentalDataRowCashFlow.net_debt_issuance_proceeds: 'netDebtIssuance',

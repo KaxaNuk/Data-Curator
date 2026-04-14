@@ -1,5 +1,5 @@
-__version__ = '0.46.1'
-__parameters_format_version__ = '0.40.0'
+__version__ = '0.47.0'
+__parameters_format_version__ = '0.47.0'
 
 __package_name__ = 'kaxanuk.data_curator'
 __package_title__ = 'KaxaNuk Data Curator'
