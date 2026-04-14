@@ -8,8 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- Breaking: `parameters_datacurator.xlsx` configuration file renamed to `data_curator_parameters.xlsx`
 - Breaking: `FundamentalDataRowCashFlow.net_cash_from_investing_activites` renamed to `FundamentalDataRowCashFlow.net_cash_from_investing_activities` to fix typo
 - `custom_calculations` template `c_test` calculation now uses split adjusted prices for better provider compatibility
+- Simplified Excel configuration entry script template
 
 
 ## [0.46.1] - 2026-03-17

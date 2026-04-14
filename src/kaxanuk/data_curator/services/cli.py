@@ -28,7 +28,7 @@ DATA_DIR = sysconfig.get_path('data')
 DEV_TEMPLATES_SUBDIR = 'templates/data_curator'
 ENTRY_SCRIPT_DEFAULT_NAME = '__main__.py'
 OUTPUT_SUBDIR = 'Output'
-PARAMETERS_EXCEL_FILE = 'parameters_datacurator.xlsx'
+PARAMETERS_EXCEL_FILE = 'data_curator_parameters.xlsx'
 TEMPLATES_DIR = f'{DATA_DIR}/data_curator'
 
 INIT_DIRS = (
