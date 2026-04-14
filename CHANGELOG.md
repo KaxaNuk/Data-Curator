@@ -6,12 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.47.0] - 2026-04-14
+### Added
+- Official support for Python 3.14
+
 ### Changed
 - Breaking: `parameters_datacurator.xlsx` configuration file renamed to `data_curator_parameters.xlsx`
 - Breaking: `FundamentalDataRowCashFlow.net_cash_from_investing_activites` renamed to `FundamentalDataRowCashFlow.net_cash_from_investing_activities` to fix typo
-- `custom_calculations` template `c_test` calculation now uses split adjusted prices for better provider compatibility
+- `custom_calculations.py` template `c_test` calculation now uses split adjusted prices for better provider compatibility
 - Simplified Excel configuration entry script template
+- Include Yahoo Finance data provider in the production docker image
 
 
 ## [0.46.1] - 2026-03-17
