@@ -34,7 +34,7 @@ The system can run either on your local Python (versions `3.12`, `3.13`, or `3.1
 
 ## Running on Local Python
 ### Installation
-1. Make sure you're running the required version of Python, preferably in its own virtual environment.
+1. Make sure you're running one of the required versions of Python, preferably in its own virtual environment.
 2. Open a terminal and run:
     ```
     pip install --upgrade pip
@@ -52,8 +52,8 @@ The system can run either on your local Python (versions `3.12`, `3.13`, or `3.1
     ```
     kaxanuk.data_curator init excel
     ```
-    This should create 2 subdirectories, `Config` and `Output`, as well as the entry script `__main__.py` in the current directory.
-2. Open the `Config/parameters_datacurator.xlsx` file in Excel, fill out the fields in all the sheets, save the file and close it.
+    This should create two subdirectories, `Config` and `Output`, as well as the entry script `__main__.py` in the current directory.
+2. Open the `Config/data_curator_parameters.xlsx` file in Excel, fill out the fields in all the sheets, save the file, and close it.
 3. If your data provider requires an API key, open the `Config/.env` file in a text editor, and paste the key after
     the `=` sign of the provider's corresponding `API_KEY` variable. Don't add any quotes or spaces before or after the key.
 
@@ -89,11 +89,13 @@ You need to mount the following volume to the container:
 If your data provider requires an API key, you need to pass it as an environment variable when running the container.
 * Name: `KNDC_API_KEY_FMP`
 * Value: API key for the Financial Modeling Prep data provider, as a string.
+* Name: `KNDC_API_KEY_LSEG`
+* Value: API key for the LSEG Workspace data provider, as a string.
 
 #### Running the Container
 1. On the first run, the container will create the `Config` and `Output` subdirectories in the mounted volume, as well as
 the entry script `__main__.py`.
-2. Open the `Config/parameters_datacurator.xlsx` file in Excel, fill out the fields in all the sheets, save the file and close it.
+2. Open the `Config/data_curator_parameters.xlsx` file in Excel, fill out the fields in all the sheets, save the file, and close it.
 
 Now that the configuration is set up, each time you run the container again, it will download the data for the tickers/identifiers
 as configured in the parameters file, and save it to the `Output` folder.
@@ -104,7 +106,7 @@ The `__main__.py` entry script is customizable, so you can implement your own da
 handlers, and inject them from there.
 
 You can also create your own calculated feature functions by adding them to the `Config/custom_calculations.py` file,
-and adding their function name to the `Columns` sheet in the `Config/parameters_datacurator.xlsx` file.
+and adding their function name to the `Columns` sheet in the `Config/data_curator_parameters.xlsx` file.
 As long as the names start with the `c_` prefix, the system will use them as any other feature.
 
 Check the [API Reference](https://kaxanuk-data-curator.readthedocs.io/en/stable/api_reference/index.html) to learn how to easily implement your own calculated features.
