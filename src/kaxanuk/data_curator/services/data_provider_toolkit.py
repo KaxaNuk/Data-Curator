@@ -1535,20 +1535,18 @@ class DataProviderToolkit:
             if table.num_rows == 0:
                 continue
 
-            # Filter out rows with any null primary-key column: they cannot be
-            # deterministically ordered against fully-populated keys, and joins
-            # would collapse them together by treating nulls as equal.
-            any_null_mask = pyarrow.compute.is_null(
+            # Filter out rows where all columns are null, as they are not valid keys
+            all_null_mask = pyarrow.compute.is_null(
                 table[column_names[0]]
             )
             for col_name in column_names[1:]:
-                any_null_mask = pyarrow.compute.or_(
-                    any_null_mask,
+                all_null_mask = pyarrow.compute.and_(
+                    all_null_mask,
                     pyarrow.compute.is_null(
                         table[col_name]
                     )
                 )
-            keep_mask = pyarrow.compute.invert(any_null_mask)
+            keep_mask = pyarrow.compute.invert(all_null_mask)
             filtered_table = table.filter(keep_mask)
 
             if filtered_table.num_rows == 0:
@@ -1581,6 +1579,22 @@ class DataProviderToolkit:
         if not graph.nodes:
             return pyarrow.Table.from_pylist([], schema=schema)
 
+        # Null PK components can't be compared directly against real values (e.g.
+        # None < date raises TypeError). When any PK is null, wrap each component
+        # as (0, None) or (1, value) so tuple comparison short-circuits on the
+        # flag before touching the payload. Skip the wrapping when there are no
+        # nulls so the common case pays zero overhead.
+        has_null_key = any(
+            component is None
+            for node in graph.nodes
+            for component in node
+        )
+        sort_key = (
+            (lambda node: tuple((0, None) if c is None else (1, c) for c in node))
+            if has_null_key
+            else None
+        )
+
         try:
             if predominant_order_descending:
                 # For descending order, we topologically sort the reversed graph
@@ -1589,14 +1603,15 @@ class DataProviderToolkit:
                     reversed(
                         list(
                             networkx.lexicographical_topological_sort(
-                                graph.reverse(copy=True)
+                                graph.reverse(copy=True),
+                                key=sort_key,
                             )
                         )
                     )
                 )
             else:
                 sorted_rows = list(
-                    networkx.lexicographical_topological_sort(graph)
+                    networkx.lexicographical_topological_sort(graph, key=sort_key)
                 )
         except networkx.NetworkXUnfeasible:
             msg = "Inconsistent key order between tables results in a circular dependency."
