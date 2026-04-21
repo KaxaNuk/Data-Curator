@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## Unreleased
+### Fixed
+- FMP fundamentals: handle all-null columns that would crash with `pyarrow.lib.ArrowInvalid: Data type null is not supported in join non-key field`
+- FMP fundamentals: handle duplicate statement periods crashing with `DataProviderToolkitRuntimeError: Primary key merge table contains duplicate rows.`
+- FMP fundamentals: handle some but not all endpoints having no rows, crashing with `KeyError: 'Field "FundamentalDataRow.filing_date$filingDate" does not exist in schema'`
+- FMP fundamentals: handle duplicate statement primary keys crashing with `pyarrow.lib.ArrowInvalid: Filter inputs must all be the same length`
+- FMP fundamentals: handle mismatched statement key columns crashing with `TypeError: '<' not supported between instances of 'NoneType' and 'datetime.date'`
+
+
 ## [0.47.0] - 2026-04-14
 ### Added
 - Official support for Python 3.14
