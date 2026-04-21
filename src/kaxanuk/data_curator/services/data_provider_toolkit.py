@@ -1530,18 +1530,20 @@ class DataProviderToolkit:
             if table.num_rows == 0:
                 continue
 
-            # Filter out rows where all columns are null, as they are not valid keys
-            all_null_mask = pyarrow.compute.is_null(
+            # Filter out rows with any null primary-key column: they cannot be
+            # deterministically ordered against fully-populated keys, and joins
+            # would collapse them together by treating nulls as equal.
+            any_null_mask = pyarrow.compute.is_null(
                 table[column_names[0]]
             )
             for col_name in column_names[1:]:
-                all_null_mask = pyarrow.compute.and_(
-                    all_null_mask,
+                any_null_mask = pyarrow.compute.or_(
+                    any_null_mask,
                     pyarrow.compute.is_null(
                         table[col_name]
                     )
                 )
-            keep_mask = pyarrow.compute.invert(all_null_mask)
+            keep_mask = pyarrow.compute.invert(any_null_mask)
             filtered_table = table.filter(keep_mask)
 
             if filtered_table.num_rows == 0:
