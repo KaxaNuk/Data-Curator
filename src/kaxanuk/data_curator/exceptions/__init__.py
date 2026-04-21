@@ -347,6 +347,27 @@ class DataProviderMultiEndpointCommonDataOrderError(DataCuratorError):
     pass
 
 
+class DataProviderMultiEndpointNullColumnsError(DataCuratorError):
+    """
+    The data provider returned one or more columns whose every value is null.
+
+    Parameters
+    ----------
+    null_type_columns
+        Mapping from endpoint identifier to the list of all-null column
+        names that endpoint returned.
+    """
+
+    def __init__(
+        self,
+        null_type_columns: dict[str, list[str]],
+    ):
+        self.null_type_columns = null_type_columns
+        super().__init__(
+            f"Endpoints returned all-null columns: {null_type_columns}"
+        )
+
+
 class DataProviderOverloadError(DataProviderApiError):
     """
     Raised when the data provider backend is overloaded.

@@ -507,12 +507,21 @@ class BaseDataBlock:
 
         for (entity, entity_dependencies) in ordered_entities.items():
             if entity not in entity_table_map:
-                msg = " ".join([
-                    f"Ordered entities structure contains unused entity '{entity.__name__}'",
-                    f"for data block '{cls.__name__}'"
-                ])
+                if entity is clock_sync_entity:
+                    msg = " ".join([
+                        f"Clock sync entity '{entity.__name__}' missing from entity tables",
+                        f"for data block '{cls.__name__}'"
+                    ])
 
-                raise DataBlockIncorrectPackingStructureError(msg)
+                    raise DataBlockIncorrectPackingStructureError(msg)
+
+                # Entity has no columns in the consolidated table (e.g. a
+                # fundamental endpoint returned zero records). Pack as None for
+                # every clock row; parent entities must declare this child as
+                # Optional to accept the null.
+                dependency_rows[entity] = [None] * len(clock_column)
+
+                continue
 
             table = entity_table_map[entity]
             column_names = set(table.column_names)

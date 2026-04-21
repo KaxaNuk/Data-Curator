@@ -30,6 +30,7 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderMissingKeyError,
     DataProviderMultiEndpointCommonDataOrderError,
     DataProviderMultiEndpointCommonDataDiscrepancyError,
+    DataProviderMultiEndpointNullColumnsError,
     DataProviderPaymentError,
     DataProviderToolkitNoDataError,
     DataProviderToolkitRuntimeError,
@@ -600,6 +601,32 @@ class FinancialModelingPrep(
             msg = " ".join([
                 f"{main_identifier} fundamental data endpoints have inconsistent filing_date order for common data,",
                 "omitting its fundamental data"
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            return empty_fundamental_data
+
+        except DataProviderMultiEndpointNullColumnsError as error:
+            endpoint_tag_reports = []
+            for (endpoint_name, entity_column_names) in error.null_type_columns.items():
+                endpoint = self.Endpoints(endpoint_name)
+                provider_tags = [
+                    DataProviderToolkit.get_provider_tag_for_entity_column(
+                        data_block=FundamentalsDataBlock,
+                        endpoint=endpoint,
+                        endpoint_field_map=self._fundamental_data_endpoint_map,
+                        entity_column_name=entity_column_name,
+                    )
+                    for entity_column_name in entity_column_names
+                ]
+                endpoint_tag_reports.append(
+                    f"{endpoint.value}: {', '.join(provider_tags)}"
+                )
+            msg = "\n".join([
+                f"{main_identifier} fundamental data endpoints returned all-null columns,",
+                "omitting its fundamental data. Affected tags per endpoint: ",
+                # f"Affected tags per endpoint: {'; '.join(endpoint_tag_reports)}",
+                *endpoint_tag_reports
             ])
             logging.getLogger(__name__).error(msg)
 
