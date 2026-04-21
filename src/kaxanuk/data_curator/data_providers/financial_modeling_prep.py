@@ -707,25 +707,35 @@ class FinancialModelingPrep(
         # @todo filter rows where filing date is before period end date
 
         # catch empty income statement rows
-        missing_income_statement_rows_mask = DataProviderToolkit.find_common_table_missing_rows_mask(
-            consolidated_fundamental_table.select([
+        income_statement_table = processed_endpoint_tables[self.Endpoints.INCOME_STATEMENT]
+        consolidated_keys_table = consolidated_fundamental_table.select([
+            FundamentalsDataBlock.get_field_qualified_name(
+                FundamentalsDataBlock.clock_sync_field
+            ),
+            FundamentalsDataBlock.get_field_qualified_name(
+                FundamentalDataRow.period_end_date
+            ),
+        ])
+        if income_statement_table.num_rows == 0:
+            # Income endpoint returned no records, so no consolidated row has a
+            # matching income statement. Treat every row as missing-income and
+            # let the existing warning path log & drop them.
+            missing_income_statement_rows_mask = pyarrow.array(
+                [True] * consolidated_keys_table.num_rows,
+                type=pyarrow.bool_()
+            )
+        else:
+            missing_income_statement_rows_mask = DataProviderToolkit.find_common_table_missing_rows_mask(
+                consolidated_keys_table,
+                income_statement_table.select([
                     FundamentalsDataBlock.get_field_qualified_name(
                         FundamentalsDataBlock.clock_sync_field
                     ),
                     FundamentalsDataBlock.get_field_qualified_name(
                         FundamentalDataRow.period_end_date
                     ),
-                ]
-            ),
-            processed_endpoint_tables[self.Endpoints.INCOME_STATEMENT].select([
-                FundamentalsDataBlock.get_field_qualified_name(
-                    FundamentalsDataBlock.clock_sync_field
-                ),
-                FundamentalsDataBlock.get_field_qualified_name(
-                    FundamentalDataRow.period_end_date
-                ),
-            ]),
-        )
+                ]),
+            )
         if missing_income_statement_rows_mask is not None:
             missing_income_statement_rows_table = (
                 consolidated_fundamental_table
@@ -773,6 +783,9 @@ class FinancialModelingPrep(
             regularized_fundamental_table = full_income_fundamental_table.filter(regular_rows_mask)
         else:
             regularized_fundamental_table = full_income_fundamental_table
+
+        if regularized_fundamental_table.num_rows == 0:
+            return empty_fundamental_data
 
         fundamental_data = FundamentalsDataBlock.assemble_entities_from_consolidated_table(
             consolidated_table=regularized_fundamental_table,
