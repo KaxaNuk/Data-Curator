@@ -21,6 +21,7 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderIncorrectMappingTypeError,
     DataProviderMultiEndpointCommonDataDiscrepancyError,
     DataProviderMultiEndpointCommonDataOrderError,
+    DataProviderMultiEndpointDuplicateKeysError,
     DataProviderMultiEndpointNullColumnsError,
     DataProviderParsingError,
     DataProviderToolkitArgumentError,
@@ -255,6 +256,8 @@ class DataProviderToolkit:
         ------
         DataProviderMultiEndpointCommonDataDiscrepancyError
             When common columns have inconsistent values across endpoints
+        DataProviderMultiEndpointDuplicateKeysError
+            When an endpoint table has multiple rows sharing the same primary key
         DataProviderMultiEndpointNullColumnsError
             When any endpoint table contains a column whose every value is null
         DataProviderToolkitRuntimeError
@@ -1497,8 +1500,10 @@ class DataProviderToolkit:
         Raises
         ------
         DataProviderToolkitRuntimeError
-            When tables have incompatible schemas, contain duplicates, or
-            have no columns
+            When tables have incompatible schemas or have no columns
+        DataProviderMultiEndpointDuplicateKeysError
+            When a single input table has multiple rows sharing the same
+            primary key
         DataProviderMultiEndpointCommonDataOrderError
             When input orderings create circular dependencies
         """
@@ -1550,13 +1555,18 @@ class DataProviderToolkit:
                 continue
 
             # Check for duplicate rows in the valid key data
-            if (
-                filtered_table.group_by(column_names).aggregate([]).num_rows
-                != filtered_table.num_rows
-            ):
-                msg = "Primary key merge table contains duplicate rows."
+            group_counts = filtered_table.group_by(column_names).aggregate([
+                ([], "count_all"),
+            ])
+            if group_counts.num_rows != filtered_table.num_rows:
+                duplicate_keys_table = group_counts.filter(
+                    pyarrow.compute.greater(group_counts["count_all"], 1)
+                ).drop(["count_all"])
 
-                raise DataProviderToolkitRuntimeError(msg)
+                raise DataProviderMultiEndpointDuplicateKeysError(
+                    duplicate_keys_table=duplicate_keys_table,
+                    key_column_names=list(column_names),
+                )
 
             rows_as_dicts = filtered_table.to_pylist()
             rows_as_tuples = [

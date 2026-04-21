@@ -30,6 +30,7 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderMissingKeyError,
     DataProviderMultiEndpointCommonDataOrderError,
     DataProviderMultiEndpointCommonDataDiscrepancyError,
+    DataProviderMultiEndpointDuplicateKeysError,
     DataProviderMultiEndpointNullColumnsError,
     DataProviderPaymentError,
     DataProviderToolkitNoDataError,
@@ -592,6 +593,28 @@ class FinancialModelingPrep(
                 ],
                 predominant_order_descending=True
             )
+        except DataProviderMultiEndpointDuplicateKeysError as error:
+            key_rename_map = {
+                FundamentalsDataBlock.get_field_qualified_name(
+                    FundamentalsDataBlock.clock_sync_field
+                ): 'filing_date',
+                FundamentalsDataBlock.get_field_qualified_name(
+                    FundamentalDataRow.period_end_date
+                ): 'period_end_date',
+            }
+            duplicate_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=error.duplicate_keys_table.select(key_rename_map.keys()),
+                output_column_renames=key_rename_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} fundamental data endpoints returned duplicate filings for the same primary key,",
+                "omitting its fundamental data. Duplicated filings:",
+                duplicate_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            return empty_fundamental_data
+
         except DataProviderToolkitRuntimeError:
             # reraise as problem is with data provider logic
 
@@ -625,7 +648,6 @@ class FinancialModelingPrep(
             msg = "\n".join([
                 f"{main_identifier} fundamental data endpoints returned all-null columns,",
                 "omitting its fundamental data. Affected tags per endpoint: ",
-                # f"Affected tags per endpoint: {'; '.join(endpoint_tag_reports)}",
                 *endpoint_tag_reports
             ])
             logging.getLogger(__name__).error(msg)

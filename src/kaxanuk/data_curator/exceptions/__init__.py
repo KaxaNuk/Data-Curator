@@ -483,6 +483,31 @@ class DataProviderToolkitRuntimeError(DataProviderToolkitError):
     pass
 
 
+class DataProviderMultiEndpointDuplicateKeysError(DataProviderToolkitRuntimeError):
+    """
+    A data provider endpoint returned multiple rows sharing the same primary key.
+
+    Parameters
+    ----------
+    duplicate_keys_table
+        Table containing the offending primary key rows that appeared more
+        than once in a single endpoint's output.
+    key_column_names
+        Names of the primary key columns whose combination must be unique.
+    """
+
+    def __init__(
+        self,
+        duplicate_keys_table: pyarrow.Table,
+        key_column_names: list[str],
+    ):
+        self.duplicate_keys_table = duplicate_keys_table
+        self.key_column_names = key_column_names
+        super().__init__(
+            "Primary key merge table contains duplicate rows."
+        )
+
+
 class DataProviderTooManyTickersError(ApiEndpointError):
     """
     Raised when the data provider cannot process the requested ticker list
