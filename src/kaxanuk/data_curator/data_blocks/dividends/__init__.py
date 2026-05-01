@@ -1,3 +1,8 @@
+__all__ = [
+    'DividendsDataBlock',
+]
+
+
 import typing
 
 from kaxanuk.data_curator.data_blocks.base_data_block import (
@@ -74,8 +79,3 @@ class DividendsDataBlock(BaseDataBlock):
             raise EntityProcessingError(msg) from error
 
         return data_entity
-
-
-__all__ = [
-    'DividendsDataBlock',
-]

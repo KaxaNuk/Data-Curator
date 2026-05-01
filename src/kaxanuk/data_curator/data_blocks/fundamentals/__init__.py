@@ -1,3 +1,8 @@
+__all__ = [
+    'FundamentalsDataBlock',
+]
+
+
 import typing
 
 import pyarrow
@@ -203,8 +208,3 @@ class FundamentalsDataBlock(BaseDataBlock):
             mask,
             type=pyarrow.bool_()
         )
-
-
-__all__ = [
-    'FundamentalsDataBlock',
-]

@@ -24,7 +24,7 @@ dependencies = [    # dev dependencies are in the [tool.pdm.dev-dependencies] se
     "openpyxl>=3.1.5",
     "packaging>=24.2",
     "pandas>=2.2.3",
-    "pyarrow>=18.0",
+    "pyarrow>=18.0,<24",    # PyArrow 24 issue: https://github.com/apache/arrow/issues/49826
     "python-dotenv>=1.0.1",
     "lseg-data>=2.1.1",
 ]

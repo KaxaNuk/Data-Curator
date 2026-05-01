@@ -30,6 +30,8 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderMissingKeyError,
     DataProviderMultiEndpointCommonDataOrderError,
     DataProviderMultiEndpointCommonDataDiscrepancyError,
+    DataProviderMultiEndpointDuplicateKeysError,
+    DataProviderMultiEndpointNullColumnsError,
     DataProviderPaymentError,
     DataProviderToolkitNoDataError,
     DataProviderToolkitRuntimeError,
@@ -591,6 +593,28 @@ class FinancialModelingPrep(
                 ],
                 predominant_order_descending=True
             )
+        except DataProviderMultiEndpointDuplicateKeysError as error:
+            key_rename_map = {
+                FundamentalsDataBlock.get_field_qualified_name(
+                    FundamentalsDataBlock.clock_sync_field
+                ): 'filing_date',
+                FundamentalsDataBlock.get_field_qualified_name(
+                    FundamentalDataRow.period_end_date
+                ): 'period_end_date',
+            }
+            duplicate_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=error.duplicate_keys_table.select(key_rename_map.keys()),
+                output_column_renames=key_rename_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} fundamental data endpoints returned duplicate filings for the same primary key,",
+                "omitting its fundamental data. Duplicated filings:",
+                duplicate_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            return empty_fundamental_data
+
         except DataProviderToolkitRuntimeError:
             # reraise as problem is with data provider logic
 
@@ -600,6 +624,31 @@ class FinancialModelingPrep(
             msg = " ".join([
                 f"{main_identifier} fundamental data endpoints have inconsistent filing_date order for common data,",
                 "omitting its fundamental data"
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            return empty_fundamental_data
+
+        except DataProviderMultiEndpointNullColumnsError as error:
+            endpoint_tag_reports = []
+            for (endpoint_name, entity_column_names) in error.null_type_columns.items():
+                endpoint = self.Endpoints(endpoint_name)
+                provider_tags = [
+                    DataProviderToolkit.get_provider_tag_for_entity_column(
+                        data_block=FundamentalsDataBlock,
+                        endpoint=endpoint,
+                        endpoint_field_map=self._fundamental_data_endpoint_map,
+                        entity_column_name=entity_column_name,
+                    )
+                    for entity_column_name in entity_column_names
+                ]
+                endpoint_tag_reports.append(
+                    f"{endpoint.value}: {', '.join(provider_tags)}"
+                )
+            msg = "\n".join([
+                f"{main_identifier} fundamental data endpoints returned all-null columns,",
+                "omitting its fundamental data. Affected tags per endpoint: ",
+                *endpoint_tag_reports
             ])
             logging.getLogger(__name__).error(msg)
 
@@ -658,25 +707,35 @@ class FinancialModelingPrep(
         # @todo filter rows where filing date is before period end date
 
         # catch empty income statement rows
-        missing_income_statement_rows_mask = DataProviderToolkit.find_common_table_missing_rows_mask(
-            consolidated_fundamental_table.select([
+        income_statement_table = processed_endpoint_tables[self.Endpoints.INCOME_STATEMENT]
+        consolidated_keys_table = consolidated_fundamental_table.select([
+            FundamentalsDataBlock.get_field_qualified_name(
+                FundamentalsDataBlock.clock_sync_field
+            ),
+            FundamentalsDataBlock.get_field_qualified_name(
+                FundamentalDataRow.period_end_date
+            ),
+        ])
+        if income_statement_table.num_rows == 0:
+            # Income endpoint returned no records, so no consolidated row has a
+            # matching income statement. Treat every row as missing-income and
+            # let the existing warning path log & drop them.
+            missing_income_statement_rows_mask = pyarrow.array(
+                [True] * consolidated_keys_table.num_rows,
+                type=pyarrow.bool_()
+            )
+        else:
+            missing_income_statement_rows_mask = DataProviderToolkit.find_common_table_missing_rows_mask(
+                consolidated_keys_table,
+                income_statement_table.select([
                     FundamentalsDataBlock.get_field_qualified_name(
                         FundamentalsDataBlock.clock_sync_field
                     ),
                     FundamentalsDataBlock.get_field_qualified_name(
                         FundamentalDataRow.period_end_date
                     ),
-                ]
-            ),
-            processed_endpoint_tables[self.Endpoints.INCOME_STATEMENT].select([
-                FundamentalsDataBlock.get_field_qualified_name(
-                    FundamentalsDataBlock.clock_sync_field
-                ),
-                FundamentalsDataBlock.get_field_qualified_name(
-                    FundamentalDataRow.period_end_date
-                ),
-            ]),
-        )
+                ]),
+            )
         if missing_income_statement_rows_mask is not None:
             missing_income_statement_rows_table = (
                 consolidated_fundamental_table
@@ -724,6 +783,9 @@ class FinancialModelingPrep(
             regularized_fundamental_table = full_income_fundamental_table.filter(regular_rows_mask)
         else:
             regularized_fundamental_table = full_income_fundamental_table
+
+        if regularized_fundamental_table.num_rows == 0:
+            return empty_fundamental_data
 
         fundamental_data = FundamentalsDataBlock.assemble_entities_from_consolidated_table(
             consolidated_table=regularized_fundamental_table,

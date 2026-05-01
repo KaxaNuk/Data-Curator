@@ -63,6 +63,15 @@ COPY pyproject.toml ./
 COPY README.md ./
 COPY src/ ./src/
 
+# install useful libraries for dev
+RUN \
+  apt-get update \
+  && apt-get install -y --no-install-recommends \
+    curl \
+  && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/* \
+;
+
 # Cf. https://github.com/pdm-project/pdm/discussions/2277
 RUN \
   pip install pdm \

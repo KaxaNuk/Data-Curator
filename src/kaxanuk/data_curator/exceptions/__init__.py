@@ -347,6 +347,27 @@ class DataProviderMultiEndpointCommonDataOrderError(DataCuratorError):
     pass
 
 
+class DataProviderMultiEndpointNullColumnsError(DataCuratorError):
+    """
+    The data provider returned one or more columns whose every value is null.
+
+    Parameters
+    ----------
+    null_type_columns
+        Mapping from endpoint identifier to the list of all-null column
+        names that endpoint returned.
+    """
+
+    def __init__(
+        self,
+        null_type_columns: dict[str, list[str]],
+    ):
+        self.null_type_columns = null_type_columns
+        super().__init__(
+            f"Endpoints returned all-null columns: {null_type_columns}"
+        )
+
+
 class DataProviderOverloadError(DataProviderApiError):
     """
     Raised when the data provider backend is overloaded.
@@ -460,6 +481,31 @@ class DataProviderToolkitNoDataError(DataProviderToolkitError):
 
 class DataProviderToolkitRuntimeError(DataProviderToolkitError):
     pass
+
+
+class DataProviderMultiEndpointDuplicateKeysError(DataProviderToolkitRuntimeError):
+    """
+    A data provider endpoint returned multiple rows sharing the same primary key.
+
+    Parameters
+    ----------
+    duplicate_keys_table
+        Table containing the offending primary key rows that appeared more
+        than once in a single endpoint's output.
+    key_column_names
+        Names of the primary key columns whose combination must be unique.
+    """
+
+    def __init__(
+        self,
+        duplicate_keys_table: pyarrow.Table,
+        key_column_names: list[str],
+    ):
+        self.duplicate_keys_table = duplicate_keys_table
+        self.key_column_names = key_column_names
+        super().__init__(
+            "Primary key merge table contains duplicate rows."
+        )
 
 
 class DataProviderTooManyTickersError(ApiEndpointError):

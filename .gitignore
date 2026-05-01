@@ -171,3 +171,8 @@ __main__*.py
 !templates/**/.env
 Config/*
 Output/*
+
+# Temporary ignores
+.agents/
+AGENTS.md
+CLAUDE.md

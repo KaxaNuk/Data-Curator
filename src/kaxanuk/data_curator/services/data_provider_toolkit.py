@@ -21,6 +21,8 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderIncorrectMappingTypeError,
     DataProviderMultiEndpointCommonDataDiscrepancyError,
     DataProviderMultiEndpointCommonDataOrderError,
+    DataProviderMultiEndpointDuplicateKeysError,
+    DataProviderMultiEndpointNullColumnsError,
     DataProviderParsingError,
     DataProviderToolkitArgumentError,
     DataProviderToolkitNoDataError,
@@ -254,9 +256,28 @@ class DataProviderToolkit:
         ------
         DataProviderMultiEndpointCommonDataDiscrepancyError
             When common columns have inconsistent values across endpoints
+        DataProviderMultiEndpointDuplicateKeysError
+            When an endpoint table has multiple rows sharing the same primary key
+        DataProviderMultiEndpointNullColumnsError
+            When any endpoint table contains a column whose every value is null
         DataProviderToolkitRuntimeError
             When no tables contain required primary key columns
         """
+        null_type_columns = {
+            str(endpoint): [
+                field.name
+                for field in table.schema
+                if field.type == pyarrow.null()
+            ]
+            for (endpoint, table) in processed_endpoint_tables.items()
+            if any(
+                field.type == pyarrow.null()
+                for field in table.schema
+            )
+        }
+        if null_type_columns:
+            raise DataProviderMultiEndpointNullColumnsError(null_type_columns)
+
         # if single table, return it
         if not processed_endpoint_tables:
             return pyarrow.table({})
@@ -816,25 +837,26 @@ class DataProviderToolkit:
         for column_name in column_names:
             try:
                 if '$' in column_name:
-                    (endpoint_name, rest) = column_name.split('$', 1)
-                    (entity_name, field_name) = rest.split('.', 1)
+                    (endpoint_name, entity_column_name) = column_name.split('$', 1)
+                    field_name = None
                 else:
-                    (entity_name, field_name) = column_name.split('.', 1)
                     endpoint_name = None
+                    entity_column_name = column_name
+                    (_, field_name) = column_name.split('.', 1)
             except ValueError as error:
                 # split failed for some reason
                 msg = f"Failed to format discrepancy table column name '{column_name}': {error}"
 
                 raise DataProviderToolkitRuntimeError(msg) from error
 
-            entity = data_block.get_entity_class_name_map()[entity_name]
-            field = getattr(entity, field_name)
-
             if endpoint_name is not None:
                 endpoint = endpoints_enum[endpoint_name]
-                tag_name = endpoint_field_map[endpoint][field]
-                if isinstance(tag_name, PreprocessedFieldMapping): # PreprocessedFieldMapping
-                    tag_name = "+".join(tag_name.tags)
+                tag_name = cls.get_provider_tag_for_entity_column(
+                    data_block=data_block,
+                    endpoint=endpoint,
+                    endpoint_field_map=endpoint_field_map,
+                    entity_column_name=entity_column_name,
+                )
                 column_new_names.append(f"{endpoint.value}.{tag_name}")
             else:
                 column_new_names.append(field_name)
@@ -844,6 +866,60 @@ class DataProviderToolkit:
             output_column_renames=column_new_names,
             csv_separator=csv_separator,
         )
+
+    @classmethod
+    def get_provider_tag_for_entity_column(
+        cls,
+        *,
+        data_block: type[BaseDataBlock],
+        endpoint: Endpoint,
+        endpoint_field_map: EndpointFieldMap,
+        entity_column_name: str,
+    ) -> TagName:
+        """
+        Return the provider tag for an endpoint's entity field column.
+
+        Parameters
+        ----------
+        data_block
+            Data block class defining the entity structure
+        endpoint
+            Endpoint whose field map should be consulted
+        endpoint_field_map
+            Mapping from entity fields to provider tags per endpoint
+        entity_column_name
+            Column name in `EntityName.field_name` format
+
+        Returns
+        -------
+        TagName
+            Provider tag for the given column. For fields whose mapping is a
+            `PreprocessedFieldMapping`, a plus-joined composite of its input
+            tags is returned.
+
+        Raises
+        ------
+        DataProviderToolkitRuntimeError
+            When `entity_column_name` is not in `EntityName.field_name` format
+        """
+        try:
+            (entity_name, field_name) = entity_column_name.split('.', 1)
+        except ValueError as error:
+            msg = " ".join([
+                f"Invalid entity column name '{entity_column_name}':",
+                "expected 'EntityName.field_name' format",
+            ])
+
+            raise DataProviderToolkitRuntimeError(msg) from error
+
+        entity = data_block.get_entity_class_name_map()[entity_name]
+        field = getattr(entity, field_name)
+        tag_name = endpoint_field_map[endpoint][field]
+
+        if isinstance(tag_name, PreprocessedFieldMapping):
+            return "+".join(tag_name.tags)
+
+        return tag_name
 
     @classmethod
     def process_endpoint_tables(
@@ -1424,8 +1500,10 @@ class DataProviderToolkit:
         Raises
         ------
         DataProviderToolkitRuntimeError
-            When tables have incompatible schemas, contain duplicates, or
-            have no columns
+            When tables have incompatible schemas or have no columns
+        DataProviderMultiEndpointDuplicateKeysError
+            When a single input table has multiple rows sharing the same
+            primary key
         DataProviderMultiEndpointCommonDataOrderError
             When input orderings create circular dependencies
         """
@@ -1475,13 +1553,18 @@ class DataProviderToolkit:
                 continue
 
             # Check for duplicate rows in the valid key data
-            if (
-                filtered_table.group_by(column_names).aggregate([]).num_rows
-                != filtered_table.num_rows
-            ):
-                msg = "Primary key merge table contains duplicate rows."
+            group_counts = filtered_table.group_by(column_names).aggregate([
+                ([], "count_all"),
+            ])
+            if group_counts.num_rows != filtered_table.num_rows:
+                duplicate_keys_table = group_counts.filter(
+                    pyarrow.compute.greater(group_counts["count_all"], 1)
+                ).drop(["count_all"])
 
-                raise DataProviderToolkitRuntimeError(msg)
+                raise DataProviderMultiEndpointDuplicateKeysError(
+                    duplicate_keys_table=duplicate_keys_table,
+                    key_column_names=list(column_names),
+                )
 
             rows_as_dicts = filtered_table.to_pylist()
             rows_as_tuples = [
@@ -1496,6 +1579,22 @@ class DataProviderToolkit:
         if not graph.nodes:
             return pyarrow.Table.from_pylist([], schema=schema)
 
+        # Null PK components can't be compared directly against real values (e.g.
+        # None < date raises TypeError). When any PK is null, wrap each component
+        # as (0, None) or (1, value) so tuple comparison short-circuits on the
+        # flag before touching the payload. Skip the wrapping when there are no
+        # nulls so the common case pays zero overhead.
+        has_null_key = any(
+            component is None
+            for node in graph.nodes
+            for component in node
+        )
+        sort_key = (
+            (lambda node: tuple((0, None) if c is None else (1, c) for c in node))
+            if has_null_key
+            else None
+        )
+
         try:
             if predominant_order_descending:
                 # For descending order, we topologically sort the reversed graph
@@ -1504,14 +1603,15 @@ class DataProviderToolkit:
                     reversed(
                         list(
                             networkx.lexicographical_topological_sort(
-                                graph.reverse(copy=True)
+                                graph.reverse(copy=True),
+                                key=sort_key,
                             )
                         )
                     )
                 )
             else:
                 sorted_rows = list(
-                    networkx.lexicographical_topological_sort(graph)
+                    networkx.lexicographical_topological_sort(graph, key=sort_key)
                 )
         except networkx.NetworkXUnfeasible:
             msg = "Inconsistent key order between tables results in a circular dependency."
@@ -1565,6 +1665,14 @@ class DataProviderToolkit:
         processed_tables: EndpointTables = {}
 
         for (endpoint, table) in remapped_endpoint_tables.items():
+            if table.num_rows == 0:
+                # Empty endpoint response: no values to preprocess, and the
+                # schemaless table has none of the tag input columns. Pass
+                # through so downstream consolidation can drop it cleanly.
+                processed_tables[endpoint] = table
+
+                continue
+
             # Get preprocessors for this endpoint (if any)
             field_preprocessors = endpoint_field_preprocessors.get(endpoint, {})
 
