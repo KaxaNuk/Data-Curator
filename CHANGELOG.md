@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## Unreleased
+### Changed
+- Moved `__all__` declarations to the top of the files
+
 ### Fixed
 - FMP fundamentals: handle all-null columns that would crash with `pyarrow.lib.ArrowInvalid: Data type null is not supported in join non-key field`
 - FMP fundamentals: handle duplicate statement periods crashing with `DataProviderToolkitRuntimeError: Primary key merge table contains duplicate rows.`
