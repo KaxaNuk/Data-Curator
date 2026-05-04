@@ -36,7 +36,7 @@ class FundamentalData(BaseDataEntity):
             )
             for row in self.rows.values()
         ):
-            msg = "Incorrect data in FundamentalData.rows"
+            msg = f"Incorrect data in {self.__class__.__name__}.rows"
 
             raise EntityValueError(msg)
 
@@ -44,7 +44,7 @@ class FundamentalData(BaseDataEntity):
             not validator.is_date_pattern(key)
             for key in self.rows
         ):
-            msg = "FundamentalData.rows keys need to be date strings in 'YYYY-MM-DD' format"
+            msg = f"{self.__class__.__name__}.rows keys need to be date strings in 'YYYY-MM-DD' format"
 
             raise EntityValueError(msg)
 

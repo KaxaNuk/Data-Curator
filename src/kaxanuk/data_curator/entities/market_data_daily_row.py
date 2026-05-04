@@ -42,7 +42,7 @@ class MarketDataDailyRow(BaseDataEntity):
 
             raise EntityTypeError(msg)
 
-        for field in dataclasses.fields(self):
+        for field in dataclasses.fields(MarketDataDailyRow):
             if field.name == 'date':
                 continue
 
@@ -52,7 +52,7 @@ class MarketDataDailyRow(BaseDataEntity):
                 field_value is not None
                 and field_value < type(field_value)(0)
             ):
-                msg = f"Negative MarketDataDailyRow.{field.name} for date {self.date!s}"
+                msg = f"Negative {self.__class__.__name__}.{field.name} for date {self.date!s}"
 
                 raise EntityValueError(msg)
 
@@ -70,6 +70,6 @@ class MarketDataDailyRow(BaseDataEntity):
                 and high_value is not None
                 and low_value > high_value
             ):
-                msg = f"MarketDataDailyRow {low_field} > {high_field} for date {self.date!s}"
+                msg = f"{self.__class__.__name__} {low_field} > {high_field} for date {self.date!s}"
 
                 raise EntityValueError(msg)

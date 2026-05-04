@@ -40,7 +40,7 @@ class Configuration:
             not isinstance(self.start_date, datetime.date)
             or isinstance(self.start_date, datetime.datetime)
         ):
-            msg = "Incorrect Configuration.start_date type, expecting datetime.date"
+            msg = f"Incorrect {self.__class__.__name__}.start_date type, expecting datetime.date"
 
             raise ConfigurationError(msg)
 
@@ -48,13 +48,13 @@ class Configuration:
             not isinstance(self.end_date, datetime.date)
             or isinstance(self.end_date, datetime.datetime)
         ):
-            msg = "Incorrect Configuration.end_date type, expecting datetime.date"
+            msg = f"Incorrect {self.__class__.__name__}.end_date type, expecting datetime.date"
 
             raise ConfigurationError(msg)
 
         if self.period not in CONFIGURATION_PERIODS:
             possible_periods = ', '.join(CONFIGURATION_PERIODS)
-            msg = f"Incorrect Configuration.interval, expecting one of: {possible_periods}"
+            msg = f"Incorrect {self.__class__.__name__}.interval, expecting one of: {possible_periods}"
 
             raise ConfigurationError(msg)
 
@@ -68,7 +68,7 @@ class Configuration:
         ]
         if len(incorrect_columns) > 0:
             msg = " ".join([
-                "Incorrect column name in Configuration.columns:",
+                f"Incorrect column name in {self.__class__.__name__}.columns:",
                 ", ".join(incorrect_columns)
             ])
 

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.48.1] - 2026-05-04
+### Fixed
+- `MarketDataDailyRow` non-negative value validation was leaking to fields added to extended entities
+- Entity validation error messages now mention the correct entity name for extended entities
+
+
 ## [0.48.0] - 2026-05-01
 ### Changed
 - Moved `__all__` declarations to the top of the files
