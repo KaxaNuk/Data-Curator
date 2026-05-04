@@ -32,7 +32,7 @@ class SplitData(BaseDataEntity):
             not validator.is_date_pattern(key)
             for key in self.rows
         ):
-            msg = "SplitData.rows keys need to be date strings in 'YYYY-MM-DD' format"
+            msg = f"{self.__class__.__name__}.rows keys need to be date strings in 'YYYY-MM-DD' format"
 
             raise EntityValueError(msg)
 
@@ -40,6 +40,6 @@ class SplitData(BaseDataEntity):
             isinstance(row, SplitDataRow)
             for row in self.rows.values()
         ):
-            msg = "Incorrect data in SplitData.rows"
+            msg = f"Incorrect data in {self.__class__.__name__}.rows"
 
             raise EntityValueError(msg)

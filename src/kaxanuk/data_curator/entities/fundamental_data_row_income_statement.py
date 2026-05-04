@@ -62,6 +62,6 @@ class FundamentalDataRowIncomeStatement(BaseDataEntity):
                 field_value is not None
                 and field_value < decimal.Decimal(0)
             ):
-                msg = f"Negative FundamentalDataRowIncome.{field_name} detected"
+                msg = f"Negative {self.__class__.__name__}.{field_name} detected"
 
                 raise EntityValueError(msg)
