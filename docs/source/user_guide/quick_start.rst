@@ -1,7 +1,9 @@
 .. _quick_start:
 
 Quick Start
-=========================
+===========
+
+.. GET_STARTED_SUMMARY_BEGIN
 
 Installation
 ------------
@@ -29,9 +31,9 @@ The system can run either on your local Python environment or on Docker.
 
 4. Set the path where Data Curator should generate its configuration files
 
-    .. code-block:: bash
+   .. code-block:: bash
 
-        cd /path/to/your/datacurator/project
+      cd /path/to/your/datacurator/project
 
 **Excel Configuration**
 
@@ -41,9 +43,19 @@ The system can run either on your local Python environment or on Docker.
 
       kaxanuk.data_curator init excel
 
-   This will create two subdirectories: ``Config`` and ``Output``, along with the entry script ``__main__.py``.
+   This creates the following structure:
 
-2. Edit the ``Config/parameters_datacurator.xlsx`` file to specify your settings.
+   .. code-block:: text
+
+      your-project/
+      ├── Config/
+      │   ├── data_curator_parameters.xlsx   ← edit this to configure tickers and settings
+      │   └── .env                          ← add your API key here (if required)
+      └── Output/                           ← your results will appear here
+
+.. GET_STARTED_SUMMARY_END
+
+2. Edit the ``Config/data_curator_parameters.xlsx`` file to specify your settings.
 
 3. If any provider requires an API key, edit the ``Config/.env`` file and set the key using the variable indicated in the provider documentation. Do not add quotes or extra spaces.
 

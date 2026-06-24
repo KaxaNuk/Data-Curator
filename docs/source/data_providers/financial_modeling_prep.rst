@@ -400,7 +400,7 @@ Cash Flow
      - :abbr:`acquisitionsNet (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_cash_from_financing_activities
      - :abbr:`netCashProvidedByFinancingActivities (https://financialmodelingprep.com/stable/cash-flow-statement)`
-   * - fcf_net_cash_from_investing_activites
+   * - fcf_net_cash_from_investing_activities
      - :abbr:`netCashProvidedByInvestingActivities (https://financialmodelingprep.com/stable/cash-flow-statement)`
    * - fcf_net_cash_from_operating_activities
      - :abbr:`netCashProvidedByOperatingActivities (https://financialmodelingprep.com/stable/cash-flow-statement)`

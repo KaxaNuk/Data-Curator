@@ -10,6 +10,7 @@ Each module in this section documents the available classes, functions, and beha
 What you’ll find here:
 
 - :ref:`features` – all available calculation functions
+- :ref:`helpers` – all underlying calculation helper functions
 - :ref:`feature_naming` – naming conventions and patterns for defining output features
 - :ref:`custom_calculations` – how to write your own functions using `DataColumn`
 - :ref:`data_column` – our core column abstraction that powers all arithmetic and logical operations
@@ -21,6 +22,7 @@ What you’ll find here:
    :hidden:
 
    features
+   helpers
    feature_naming
    custom_calcs
    data_column

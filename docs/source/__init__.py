@@ -7,4 +7,5 @@ __all__ = [
     'conf',
     'features_extension',
     'fmp_extension',
+    "helpers_extension",
 ]
