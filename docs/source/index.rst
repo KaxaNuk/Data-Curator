@@ -11,6 +11,7 @@ Data Curator includes a set of **prebuilt calculation functions**, see the :ref:
 
 Currently supported data providers:
 
+- **LSEG Workspace** (see :ref:`lseg`)
 - **Financial Modeling Prep** (see :ref:`fmp`)
 - **Yahoo Finance** (via separate extension: `kaxanuk.data-curator-extensions.yahoo-finance <https://pypi.org/project/kaxanuk.data-curator-extensions.yahoo-finance/>`_, supports limited data types)
 
@@ -19,6 +20,21 @@ Currently supported data providers:
 Interested in collaborating on a custom project? Get in touch at software@kaxanuk.mx
 
 Check the `official release on PyPI <https://pypi.org/project/kaxanuk.data-curator/>`_ for the latest version.
+
+----
+
+.. _get_started_index:
+
+Get Started
+============
+
+.. include:: user_guide/quick_start.rst
+   :start-after: GET_STARTED_SUMMARY_BEGIN
+   :end-before: GET_STARTED_SUMMARY_END
+
+For the full setup walkthrough, see :ref:`quick_start`.
+
+----
 
 .. grid:: 1 2 2 2
    :gutter: 4

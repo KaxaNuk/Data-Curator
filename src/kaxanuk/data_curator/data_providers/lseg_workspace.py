@@ -283,8 +283,6 @@ class LsegWorkspace(DataProviderInterface):
             MarketDataDailyRow.high_split_adjusted: ColumnNames.HIGH_PRICE_SPLIT,
             MarketDataDailyRow.low_split_adjusted: ColumnNames.LOW_PRICE_SPLIT,
             MarketDataDailyRow.close_split_adjusted: ColumnNames.CLOSE_PRICE_SPLIT,
-            MarketDataDailyRow.volume_split_adjusted: ColumnNames.VOLUME,
-            MarketDataDailyRow.vwap_split_adjusted: ColumnNames.VWAP,
         },
         Endpoints.MARKET_DATA_DAILY_DIVIDEND_AND_SPLIT_ADJUSTED: {
             MarketDataDailyRow.date: ColumnNames.DATE,
@@ -294,8 +292,6 @@ class LsegWorkspace(DataProviderInterface):
             MarketDataDailyRow.high_dividend_and_split_adjusted: ColumnNames.HIGH_PRICE_DIV_SPLIT,
             MarketDataDailyRow.low_dividend_and_split_adjusted: ColumnNames.LOW_PRICE_DIV_SPLIT,
             MarketDataDailyRow.close_dividend_and_split_adjusted: ColumnNames.CLOSE_PRICE_DIV_SPLIT,
-            MarketDataDailyRow.volume_dividend_and_split_adjusted: ColumnNames.VOLUME,
-            MarketDataDailyRow.vwap_dividend_and_split_adjusted: ColumnNames.VWAP,
         },
     }
 

@@ -3,6 +3,131 @@
 V0 Changelog
 ============
 
+0.49.0 (2026-05-26)
+-------------------
+
+Added
+~~~~~
+
+* ``DataProviderToolkit.drop_discrepant_processed_endpoint_tables_rows`` for dropping the discrepant rows
+
+Changed
+~~~~~~~
+
+* FMP and LSEG fundamentals: on ``CommonDataDiscrepancyError``, drop the discrepant rows entirely instead of nulling their non-key columns and retrying.
+* ``DataProviderToolkit.format_consolidated_discrepancy_table_for_output`` is now a class method
+* Added visual separators before and after discrepancy table logs for better visual separation and consistency 
+
+Fixed
+~~~~~
+
+* Handle FMP "Column 'FundamentalDataRow.filing_date' not found in table." errors
+* ``DataProviderToolkit.consolidate_processed_endpoint_tables`` crashed with ``pyarrow.lib.ArrowInvalid: Data type null is not supported in join non-key field __indicator_for_validity`` when an endpoint table had zero rows; the validity indicator array is now explicitly typed as ``bool``.
+
+Removed
+~~~~~~~
+
+* ``DataProviderToolkit.clear_discrepant_processed_endpoint_tables_rows``
+* ``DataProviderToolkit._clear_table_rows_by_primary_key``
+
+
+
+0.48.1 (2026-05-04)
+-------------------
+
+Fixed
+~~~~~
+
+* ``MarketDataDailyRow`` non-negative value validation was leaking to fields added to extended entities
+* Entity validation error messages now mention the correct entity name for extended entities
+
+
+
+0.48.0 (2026-05-01)
+-------------------
+
+Changed
+~~~~~~~
+
+* Moved ``__all__`` declarations to the top of the files
+
+Fixed
+~~~~~
+
+* FMP fundamentals: handle all-null columns that would crash with ``pyarrow.lib.ArrowInvalid: Data type null is not supported in join non-key field``
+* FMP fundamentals: handle duplicate statement periods crashing with ``DataProviderToolkitRuntimeError: Primary key merge table contains duplicate rows.``
+* FMP fundamentals: handle some but not all endpoints having no rows, crashing with ``KeyError: 'Field "FundamentalDataRow.filing_date$filingDate" does not exist in schema'``
+* FMP fundamentals: handle duplicate statement primary keys crashing with ``pyarrow.lib.ArrowInvalid: Filter inputs must all be the same length``
+* FMP fundamentals: handle mismatched statement key columns crashing with ``TypeError: '<' not supported between instances of 'NoneType' and 'datetime.date'``
+
+
+
+0.47.0 (2026-04-14)
+-------------------
+
+Added
+~~~~~
+
+* Official support for Python 3.14
+
+Changed
+~~~~~~~
+
+* Breaking: ``parameters_datacurator.xlsx`` configuration file renamed to ``data_curator_parameters.xlsx``
+* Breaking: ``FundamentalDataRowCashFlow.net_cash_from_investing_activites`` renamed to ``FundamentalDataRowCashFlow.net_cash_from_investing_activities`` to fix typo
+* ``custom_calculations.py`` template ``c_test`` calculation now uses split adjusted prices for better provider compatibility
+* Simplified Excel configuration entry script template
+* Include Yahoo Finance data provider in the production docker image
+
+
+
+0.46.1 (2026-03-17)
+-------------------
+
+Fixed
+~~~~~
+
+* Handle error when FMP data provider returns empty market data 
+
+
+
+0.46.0 (2026-03-02)
+-------------------
+
+Added
+~~~~~
+
+* LSEG Workspace data provider
+* More data provider error exceptions
+
+
+
+0.45.1 (2026-02-09)
+-------------------
+
+Fixed
+~~~~~
+
+* Handle error ``pyarrow.lib.ArrowInvalid: Filter inputs must all be the same length`` when there's duplicate filing dates for different statements in FinancialModelingPrep fundamental data
+
+
+
+0.45.0 (2025-12-16)
+-------------------
+
+Changed
+~~~~~~~
+
+* Load ReadTheDocs dependencies from ``pyproject.toml`` instead of ``requirements.txt``
+
+Fixed
+~~~~~
+
+* ``DataProviderToolkit`` entity field mapping methods fail on subclassed entities
+* ``BaseDataBlock`` entity packing methods fail on subclassed entities
+
+
+
 0.44.0 (2025-12-11)
 -------------------
 

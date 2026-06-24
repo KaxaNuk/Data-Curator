@@ -45,8 +45,10 @@ extensions = [
     'sphinxcontrib.mermaid',
     "features_extension",
     "fmp_extension",
+    "lseg_extension",
     "changelog_extension",
     'sphinx_click',
+    "helpers_extension",
 ]
 
 add_module_names = False
