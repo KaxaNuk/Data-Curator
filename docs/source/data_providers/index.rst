@@ -9,6 +9,7 @@ Each provider is documented with its technical details, including the methods av
 
 What you’ll find here:
 
+- :ref:`lseg` – LSEG Workspace integration, supported fields and setup
 - :ref:`fmp` – Financial Modeling Prep integration, supported fields and setup
 - :ref:`data_tag_homogenization` – standard naming conventions applied to unify external tags
 
@@ -17,4 +18,5 @@ What you’ll find here:
    :hidden:
 
    financial_modeling_prep
+   lseg_workspace
    data_tag_homogenization
