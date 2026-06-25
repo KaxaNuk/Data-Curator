@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.49.1] - 2026-06-25
+### Changed
+- Improved docs, especially for helpers and LSEG
+
+### Fixed
+- LSEG provider was incorrectly duplicating volume and vwap into the adjusted tags. Removed them while we check if there's a way to get the actual adjusted values.
+
+
 ## [0.49.0] - 2026-05-26
 ### Added
 - `DataProviderToolkit.drop_discrepant_processed_endpoint_tables_rows` for dropping the discrepant rows
