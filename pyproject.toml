@@ -45,6 +45,9 @@ Changelog = "https://github.com/KaxaNuk/Data-Curator/blob/main/CHANGELOG.md"
 
 
 [dependency-groups]
+ai = [
+    "apm-cli>=0.24.0",
+]
 debug = [
     "pydevd-pycharm>=252.26830.99"
 ]
@@ -124,7 +127,7 @@ data = [
 # Run these with pdm run <script_name>
 docs.cmd = "python -c \"import os, sys; os.system(('make.bat' if sys.platform == 'win32' else 'make') + ' ' + ' '.join(sys.argv[1:]))\""
 docs.working_dir = "docs"
-install_dev = "pdm install --dev --no-lock --project ."
+install_dev = "pdm install --global -G:all --frozen-lockfile --project ."
 lint = "ruff check"
 test = "pytest --cov=src --cov=tests --cov-report=term-missing:skip-covered tests"
 

@@ -1,0 +1,10 @@
+name: kaxanuk-data-curator
+version: 1.0.0
+description: APM project for KaxaNuk Data Curator
+author: Developer
+dependencies:
+  apm:
+    - KaxaNuk/KaxaNuk-APM/common
+  mcp: []
+includes: auto
+scripts: {}
