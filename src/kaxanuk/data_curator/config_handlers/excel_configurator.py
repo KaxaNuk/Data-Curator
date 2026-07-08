@@ -165,6 +165,15 @@ class ExcelConfigurator(ConfiguratorInterface):
                 market_data_provider_name
             ]
 
+            if market_data_provider['api_key'] is not None:
+                market_data_provider_params = {'api_key': market_data_provider['api_key']}
+            else:
+                market_data_provider_params = {}
+            # noinspection PyArgumentList
+            self._market_data_provider = market_data_provider['class'](
+                **market_data_provider_params
+            )
+
             fundamental_data_provider_name = sheet_key_values['General']['fundamental_data_provider']
 
             if fundamental_data_provider_name == self.NONE_DATA_PROVIDER:
@@ -176,6 +185,10 @@ class ExcelConfigurator(ConfiguratorInterface):
                 msg = "Fundamental data provider selected in configuration file not found"
 
                 raise ConfigurationError(msg)
+
+            elif fundamental_data_provider_name == market_data_provider_name:
+                # The same provider was selected for both the market and fundamental roles
+                self._fundamental_data_provider = self._market_data_provider
 
             else:
                 fundamental_data_provider = data_providers[
@@ -190,15 +203,6 @@ class ExcelConfigurator(ConfiguratorInterface):
                 self._fundamental_data_provider = fundamental_data_provider['class'](
                     **fundamental_data_provider_params
                 )
-
-            if market_data_provider['api_key'] is not None:
-                market_data_provider_params = {'api_key': market_data_provider['api_key']}
-            else:
-                market_data_provider_params = {}
-            # noinspection PyArgumentList
-            self._market_data_provider = market_data_provider['class'](
-                **market_data_provider_params
-            )
 
             selected_providers = {
                 provider.__class__.__name__: provider

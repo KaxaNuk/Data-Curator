@@ -130,7 +130,10 @@ def main(
     try:
         market_data_provider.initialize(configuration=configuration)
 
-        if fundamental_data_provider is not None:
+        if (
+            fundamental_data_provider is not None
+            and fundamental_data_provider is not market_data_provider
+        ):
             fundamental_data_provider.initialize(configuration=configuration)
 
         for main_identifier in configuration.identifiers:
