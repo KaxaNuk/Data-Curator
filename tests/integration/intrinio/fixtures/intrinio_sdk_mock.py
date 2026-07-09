@@ -1,6 +1,7 @@
 import datetime
 import pathlib
 import pickle
+import types
 
 import intrinio_sdk
 import intrinio_sdk.rest
@@ -57,6 +58,23 @@ class AccountApi:
             ],
             account=account,
         )
+
+
+class ApiClient:
+    def __init__(
+        self,
+    ):
+        self.configuration = types.SimpleNamespace(
+            api_key={
+                'api_key': None,
+            },
+        )
+
+    def allow_retries(
+        self,
+        setting,
+    ):
+        pass
 
 
 class CompanyApi:

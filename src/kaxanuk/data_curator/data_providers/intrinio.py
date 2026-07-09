@@ -1,5 +1,6 @@
 import datetime
 import enum
+import http
 import logging
 import types
 import typing
@@ -30,6 +31,7 @@ from kaxanuk.data_curator.entities import (
     MainIdentifier,
 )
 from kaxanuk.data_curator.exceptions import (
+    ApiEndpointError,
     DataProviderMissingKeyError,
     DataProviderMultiEndpointCommonDataOrderError,
     DataProviderMultiEndpointCommonDataDiscrepancyError,
@@ -53,6 +55,11 @@ from kaxanuk.data_curator.services.data_provider_toolkit import (
 class Intrinio(
     DataProviderInterface,      # this is the interface all data providers have to implement
 ):
+    # frequency requested from the stock prices endpoint
+    STOCK_PRICE_FREQUENCY: typing.Final = 'daily'
+    # max number of records requested per stock prices endpoint page
+    STOCK_PRICE_PAGE_SIZE: typing.Final = 10000
+
     _intrinio_sdk: types.ModuleType = intrinio_sdk
 
     class Endpoints(enum.StrEnum):
@@ -112,7 +119,8 @@ class Intrinio(
         ):
             raise DataProviderMissingKeyError
 
-        self._intrinio_sdk.ApiClient().configuration.api_key['api_key']
+        self._intrinio_sdk.ApiClient().configuration.api_key['api_key'] = api_key
+        self._intrinio_sdk.ApiClient().allow_retries(True)
 
     @classmethod
     def get_data_block_endpoint_tag_map(cls) -> DataBlockEndpointTagMap:
@@ -196,7 +204,54 @@ class Intrinio(
         Returns
         -------
         The MarketData entity containing the data
+
+        Raises
+        ------
+        IdentifierNotFoundError
+            When the stock prices endpoint returns no data for the identifier
         """
+        stock_price_records = self._request_stock_prices(
+            main_identifier=main_identifier,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        stock_price_tag_names = list(
+            self._market_data_endpoint_map[self.Endpoints.STOCK_PRICES].values()
+        )
+        endpoint_tables = {
+            self.Endpoints.STOCK_PRICES: self._create_endpoint_table_from_records(
+                records=stock_price_records,
+                tag_names=stock_price_tag_names,
+            ),
+        }
+
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=MarketDailyDataBlock,
+                endpoint_field_map=self._market_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError as error:
+            msg = f"{main_identifier} market data endpoints returned no data"
+
+            raise IdentifierNotFoundError(msg) from error
+
+        consolidated_market_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+            processed_endpoint_tables=processed_endpoint_tables,
+            table_merge_fields=[MarketDailyDataBlock.clock_sync_field],
+            predominant_order_descending=True,
+        )
+        consolidated_market_data = consolidated_market_data_descending[::-1]
+        market_data = MarketDailyDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_market_data,
+            common_field_data={
+                MarketData: {
+                    MarketData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return market_data  # noqa: RET504
 
     def get_split_data(
         self,
@@ -260,3 +315,117 @@ class Intrinio(
             # @todo log problem to logger
 
             return False
+
+    @staticmethod
+    def _create_endpoint_table_from_records(
+        *,
+        records: list[typing.Any],
+        tag_names: list[str],
+    ) -> pyarrow.Table:
+        """
+        Build a PyArrow table from data provider SDK response records.
+
+        Extracts the given provider tags from each record's attributes into a
+        row-oriented mapping and lets PyArrow infer each column's type, so the
+        resulting table can feed the shared toolkit remapping pipeline.
+
+        Parameters
+        ----------
+        records
+            The SDK model objects returned by an endpoint
+        tag_names
+            The provider tag names (SDK attribute names) to extract as columns
+
+        Returns
+        -------
+        pyarrow.Table
+            Table whose columns are named by provider tag, empty when there are
+            no records
+        """
+        row_mappings = [
+            {
+                tag_name: getattr(record, tag_name)
+                for tag_name in tag_names
+            }
+            for record in records
+        ]
+
+        return pyarrow.Table.from_pylist(row_mappings)
+
+    def _request_stock_prices(
+        self,
+        *,
+        main_identifier: str,
+        start_date: datetime.date,
+        end_date: datetime.date,
+    ) -> list[
+        intrinio_sdk.models.stock_price_summary.StockPriceSummary
+    ]:
+        """
+        Download every stock prices page for `main_identifier` in the date range.
+
+        Follows the endpoint's `next_page` cursor until it is exhausted,
+        accumulating the daily stock price records from all pages.
+
+        Parameters
+        ----------
+        main_identifier
+            The security's main identifier (ticker, etc.) used by the data provider
+        start_date
+            The first date whose prices we're requesting
+        end_date
+            The last date whose prices we're requesting
+
+        Returns
+        -------
+        The accumulated stock price records across all pages
+
+        Raises
+        ------
+        IdentifierNotFoundError
+            When the endpoint reports the identifier does not exist
+        DataProviderPaymentError
+            When the endpoint requires a paid plan for the request
+        ApiEndpointError
+            When the endpoint returns any other API error
+        """
+        security_api = self._intrinio_sdk.SecurityApi()
+        stock_price_records = []
+        next_page = ''
+
+        while True:
+            try:
+                response = security_api.get_security_stock_prices(
+                    main_identifier,
+                    start_date=start_date,
+                    end_date=end_date,
+                    frequency=self.STOCK_PRICE_FREQUENCY,
+                    page_size=self.STOCK_PRICE_PAGE_SIZE,
+                    next_page=next_page,
+                )
+            except intrinio_sdk.rest.ApiException as error:
+                if error.status == http.HTTPStatus.NOT_FOUND.value:
+                    msg = f"Intrinio stock prices endpoint could not find identifier {main_identifier}"
+
+                    raise IdentifierNotFoundError(msg) from error
+
+                if error.status == http.HTTPStatus.PAYMENT_REQUIRED.value:
+                    msg = f"Intrinio stock prices endpoint requires a paid plan for identifier {main_identifier}"
+
+                    raise DataProviderPaymentError(msg) from error
+
+                msg = " ".join([
+                    f"Intrinio stock prices endpoint returned HTTP status {error.status}",
+                    f"for identifier {main_identifier}: {error.reason}",
+                ])
+
+                raise ApiEndpointError(msg) from error
+
+            stock_price_records.extend(response.stock_prices)
+
+            if not response.next_page:
+                break
+
+            next_page = response.next_page
+
+        return stock_price_records
