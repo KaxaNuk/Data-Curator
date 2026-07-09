@@ -261,6 +261,7 @@ ignore = [
     "PLR2004",  # No problem if magic values are usen in tests
     "RET",      # No need for return strictness in tests
     "S101",     # Permit use of pytest assert
+    "S301",     # Permit use of picle fixtures
     "SLF",      # Tests need private member access
     "TID252",   # Don't care about relative imports in tests
 ]

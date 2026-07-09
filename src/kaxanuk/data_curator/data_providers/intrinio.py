@@ -93,6 +93,20 @@ class Intrinio(
         },
     }
 
+    _split_data_endpoint_map: typing.Final[EndpointFieldMap] = {
+        Endpoints.STOCK_SPLITS: {
+            SplitDataRow.split_date: 'date',
+            SplitDataRow.numerator: PreprocessedFieldMapping(
+                ['split_ratio'],
+                [DataProviderFieldPreprocessors.extract_ratio_numerator]
+            ),
+            SplitDataRow.denominator: PreprocessedFieldMapping(
+                ['split_ratio'],
+                [DataProviderFieldPreprocessors.extract_ratio_denominator]
+            ),
+        },
+    }
+
     def __init__(
         self,
         *,
@@ -152,13 +166,13 @@ class Intrinio(
             start_date=start_date,
             end_date=end_date,
         )
-        dividend_tag_names = list(
+        dividend_field_mappings = list(
             self._dividend_data_endpoint_map[self.Endpoints.STOCK_DIVIDENDS].values()
         )
         endpoint_tables = {
             self.Endpoints.STOCK_DIVIDENDS: self._create_endpoint_table_from_records(
                 records=dividend_records,
-                tag_names=dividend_tag_names,
+                field_mappings=dividend_field_mappings,
             ),
         }
         empty_dividend_data = DividendData(
@@ -255,13 +269,13 @@ class Intrinio(
             start_date=start_date,
             end_date=end_date,
         )
-        stock_price_tag_names = list(
+        stock_price_field_mappings = list(
             self._market_data_endpoint_map[self.Endpoints.STOCK_PRICES].values()
         )
         endpoint_tables = {
             self.Endpoints.STOCK_PRICES: self._create_endpoint_table_from_records(
                 records=stock_price_records,
-                tag_names=stock_price_tag_names,
+                field_mappings=stock_price_field_mappings,
             ),
         }
 
@@ -316,6 +330,53 @@ class Intrinio(
         -------
         The SplitData entity containing the data
         """
+        split_records = self._request_splits(
+            main_identifier=main_identifier,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        split_field_mappings = list(
+            self._split_data_endpoint_map[self.Endpoints.STOCK_SPLITS].values()
+        )
+        endpoint_tables = {
+            self.Endpoints.STOCK_SPLITS: self._create_endpoint_table_from_records(
+                records=split_records,
+                field_mappings=split_field_mappings,
+            ),
+        }
+        empty_split_data = SplitData(
+            main_identifier=MarketInstrumentIdentifier(main_identifier),
+            rows={},
+        )
+
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=SplitsDataBlock,
+                endpoint_field_map=self._split_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError:
+            msg = f"{main_identifier} split data endpoints returned no data"
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_split_data
+
+        consolidated_split_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+            processed_endpoint_tables=processed_endpoint_tables,
+            table_merge_fields=[SplitsDataBlock.clock_sync_field],
+            predominant_order_descending=True,
+        )
+        consolidated_split_data = consolidated_split_data_descending[::-1]
+        split_data = SplitsDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_split_data,
+            common_field_data={
+                SplitData: {
+                    SplitData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return split_data  # noqa: RET504
 
     def initialize(
         self,
@@ -334,7 +395,7 @@ class Intrinio(
         -------
         None
         """
-        ...
+        pass
 
     def validate_api_key(
         self,
@@ -360,21 +421,26 @@ class Intrinio(
     def _create_endpoint_table_from_records(
         *,
         records: list[typing.Any],
-        tag_names: list[str],
+        field_mappings: list[str | PreprocessedFieldMapping],
     ) -> pyarrow.Table:
         """
         Build a PyArrow table from data provider SDK response records.
 
-        Extracts the given provider tags from each record's attributes into a
-        row-oriented mapping and lets PyArrow infer each column's type, so the
-        resulting table can feed the shared toolkit remapping pipeline.
+        Resolves each field mapping to the provider tags it draws from: a plain
+        tag name maps to itself, while a `PreprocessedFieldMapping` contributes
+        each of its source tags. Those tags are then extracted from every
+        record's attributes into a row-oriented mapping, letting PyArrow infer
+        each column's type so the resulting table can feed the shared toolkit
+        remapping pipeline.
 
         Parameters
         ----------
         records
             The SDK model objects returned by an endpoint
-        tag_names
-            The provider tag names (SDK attribute names) to extract as columns
+        field_mappings
+            The endpoint's entity-field mappings, each either a provider tag
+            name (SDK attribute name) or a `PreprocessedFieldMapping` wrapping
+            its source tags
 
         Returns
         -------
@@ -382,6 +448,13 @@ class Intrinio(
             Table whose columns are named by provider tag, empty when there are
             no records
         """
+        tag_names = []
+        for field_mapping in field_mappings:
+            if isinstance(field_mapping, PreprocessedFieldMapping):
+                tag_names.extend(field_mapping.tags)
+            else:
+                tag_names.append(field_mapping)
+
         row_mappings = [
             {
                 tag_name: getattr(record, tag_name)
@@ -470,6 +543,85 @@ class Intrinio(
             next_page = response.next_page
 
         return dividend_records
+
+    def _request_splits(
+        self,
+        *,
+        main_identifier: str,
+        start_date: datetime.date,
+        end_date: datetime.date,
+    ) -> list[
+        intrinio_sdk.models.stock_price_adjustment.StockPriceAdjustment
+    ]:
+        """
+        Download every split adjustment page for `main_identifier` in the date range.
+
+        Follows the endpoint's `next_page` cursor until it is exhausted,
+        accumulating the split adjustment records from all pages. The endpoint
+        filters by `start_date` and `end_date` server-side, so no further
+        trimming is required.
+
+        Parameters
+        ----------
+        main_identifier
+            The security's main identifier (ticker, etc.) used by the data provider
+        start_date
+            The first date whose split adjustments we're requesting
+        end_date
+            The last date whose split adjustments we're requesting
+
+        Returns
+        -------
+        The accumulated split adjustment records across all pages
+
+        Raises
+        ------
+        IdentifierNotFoundError
+            When the endpoint reports the identifier does not exist
+        DataProviderPaymentError
+            When the endpoint requires a paid plan for the request
+        ApiEndpointError
+            When the endpoint returns any other API error
+        """
+        security_api = self._intrinio_sdk.SecurityApi()
+        split_records = []
+        next_page = ''
+
+        while True:
+            try:
+                response = security_api.get_security_stock_price_adjustments_splits(
+                    main_identifier,
+                    start_date=start_date,
+                    end_date=end_date,
+                    page_size=self.STOCK_PRICE_PAGE_SIZE,
+                    next_page=next_page,
+                )
+            except intrinio_sdk.rest.ApiException as error:
+                if error.status == http.HTTPStatus.NOT_FOUND.value:
+                    msg = f"Intrinio splits endpoint could not find identifier {main_identifier}"
+
+                    raise IdentifierNotFoundError(msg) from error
+
+                if error.status == http.HTTPStatus.PAYMENT_REQUIRED.value:
+                    msg = f"Intrinio splits endpoint requires a paid plan for identifier {main_identifier}"
+
+                    raise DataProviderPaymentError(msg) from error
+
+                msg = " ".join([
+                    f"Intrinio splits endpoint returned HTTP status {error.status}",
+                    f"for identifier {main_identifier}: {error.reason}",
+                ])
+
+                raise ApiEndpointError(msg) from error
+
+            split_records.extend(response.stock_price_adjustments)
+
+            if not response.next_page:
+                break
+
+            next_page = response.next_page
+
+        return split_records
 
     def _request_stock_prices(
         self,

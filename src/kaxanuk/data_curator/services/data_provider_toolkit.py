@@ -1,6 +1,8 @@
 import dataclasses
 import enum
+import fractions
 import io
+import math
 import re
 import typing
 
@@ -124,7 +126,17 @@ type EntityFieldToMostSpecificEntity = dict[
 ]
 
 
+@dataclasses.dataclass(slots=True, frozen=True)
+class ReconstructedRatioFraction:
+    numerator_column: DataColumn
+    denominator_column: DataColumn
+
+
 class DataProviderFieldPreprocessors:
+    # maximum denominator allowed when reconstructing a fraction from a ratio;
+    # high enough to cover extreme real-world splits such as 1-for-9200 reverse splits
+    RATIO_RECONSTRUCTION_MAX_DENOMINATOR: typing.Final = 10000
+
     @staticmethod
     def convert_millions_to_units(column: DataColumn) -> DataColumn:
         """
@@ -165,6 +177,104 @@ class DataProviderFieldPreprocessors:
         """
         return DataColumn.load(
             column.to_pyarrow().cast(pyarrow.date32())
+        )
+
+    @staticmethod
+    def extract_ratio_denominator(column: DataColumn) -> DataColumn:
+        """
+        Reconstruct the exact denominator of each ratio in the column.
+
+        Recovers the small integer denominator of the simple fraction that each
+        floating-point ratio approximates, e.g. a ratio of 0.1 yields a denominator of 10.
+
+        Parameters
+        ----------
+        column
+            Column of floating-point ratios
+
+        Returns
+        -------
+        DataColumn
+            Column with the reconstructed denominators as floats
+        """
+        reconstructed_fraction = DataProviderFieldPreprocessors._reconstruct_ratio_fraction(column)
+
+        return reconstructed_fraction.denominator_column
+
+    @staticmethod
+    def extract_ratio_numerator(column: DataColumn) -> DataColumn:
+        """
+        Reconstruct the exact numerator of each ratio in the column.
+
+        Recovers the small integer numerator of the simple fraction that each
+        floating-point ratio approximates, e.g. a ratio of 1.5 yields a numerator of 3.
+
+        Parameters
+        ----------
+        column
+            Column of floating-point ratios
+
+        Returns
+        -------
+        DataColumn
+            Column with the reconstructed numerators as floats
+        """
+        reconstructed_fraction = DataProviderFieldPreprocessors._reconstruct_ratio_fraction(column)
+
+        return reconstructed_fraction.numerator_column
+
+    @staticmethod
+    def _reconstruct_ratio_fraction(column: DataColumn) -> ReconstructedRatioFraction:
+        """
+        Reconstruct the numerator and denominator of each ratio in the column.
+
+        Casts the column to floats, then reconstructs each ratio's simplest fraction with
+        `fractions.Fraction.limit_denominator`, bounding the denominator to the maximum
+        denominator so that noisy floating-point ratios snap back to their exact small
+        integer fractions. Null and NaN ratios propagate as nulls.
+
+        Parameters
+        ----------
+        column
+            Column of floating-point ratios
+
+        Returns
+        -------
+        ReconstructedRatioFraction
+            The reconstructed numerator and denominator columns as floats
+        """
+        ratios = (
+            pyarrow.compute.cast(
+                column.to_pyarrow(),
+                pyarrow.float64()
+            )
+            .to_pylist()
+        )
+        maximum_denominator = DataProviderFieldPreprocessors.RATIO_RECONSTRUCTION_MAX_DENOMINATOR
+        numerators = []
+        denominators = []
+        for ratio in ratios:
+            if (
+                ratio is None
+                or math.isnan(ratio)
+            ):
+                numerators.append(None)
+                denominators.append(None)
+
+                continue
+
+            exact_fraction = fractions.Fraction(ratio)
+            reduced_fraction = exact_fraction.limit_denominator(maximum_denominator)
+            numerators.append(
+                float(reduced_fraction.numerator)
+            )
+            denominators.append(
+                float(reduced_fraction.denominator)
+            )
+
+        return ReconstructedRatioFraction(
+            numerator_column=DataColumn.load(numerators, dtype=pyarrow.float64()),
+            denominator_column=DataColumn.load(denominators, dtype=pyarrow.float64())
         )
 
 
