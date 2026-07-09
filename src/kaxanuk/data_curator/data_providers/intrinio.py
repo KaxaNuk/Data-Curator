@@ -72,15 +72,8 @@ class Intrinio(
 
     _dividend_data_endpoint_map: typing.Final[EndpointFieldMap] = {
         Endpoints.STOCK_DIVIDENDS: {
-            DividendDataRow.declaration_date: 'declarationDate',
-            DividendDataRow.ex_dividend_date: PreprocessedFieldMapping(  # compensate pyarrow casting issues
-                ['date'],
-                [DataProviderFieldPreprocessors.cast_datetime_to_date]
-            ),
-            DividendDataRow.record_date: 'recordDate',
-            DividendDataRow.payment_date: 'paymentDate',
+            DividendDataRow.ex_dividend_date: 'date',
             DividendDataRow.dividend: 'dividend',
-            DividendDataRow.dividend_split_adjusted: 'adjDividend',
         },
     }
 
@@ -154,6 +147,53 @@ class Intrinio(
         -------
         The DividendData entity containing the data
         """
+        dividend_records = self._request_dividends(
+            main_identifier=main_identifier,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        dividend_tag_names = list(
+            self._dividend_data_endpoint_map[self.Endpoints.STOCK_DIVIDENDS].values()
+        )
+        endpoint_tables = {
+            self.Endpoints.STOCK_DIVIDENDS: self._create_endpoint_table_from_records(
+                records=dividend_records,
+                tag_names=dividend_tag_names,
+            ),
+        }
+        empty_dividend_data = DividendData(
+            main_identifier=MarketInstrumentIdentifier(main_identifier),
+            rows={},
+        )
+
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=DividendsDataBlock,
+                endpoint_field_map=self._dividend_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError:
+            msg = f"{main_identifier} dividend data endpoints returned no data"
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_dividend_data
+
+        consolidated_dividend_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
+            processed_endpoint_tables=processed_endpoint_tables,
+            table_merge_fields=[DividendsDataBlock.clock_sync_field],
+            predominant_order_descending=True,
+        )
+        consolidated_dividend_data = consolidated_dividend_data_descending[::-1]
+        dividend_data = DividendsDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_dividend_data,
+            common_field_data={
+                DividendData: {
+                    DividendData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return dividend_data  # noqa: RET504
 
     def get_fundamental_data(
         self,
@@ -351,6 +391,85 @@ class Intrinio(
         ]
 
         return pyarrow.Table.from_pylist(row_mappings)
+
+    def _request_dividends(
+        self,
+        *,
+        main_identifier: str,
+        start_date: datetime.date,
+        end_date: datetime.date,
+    ) -> list[
+        intrinio_sdk.models.stock_price_adjustment.StockPriceAdjustment
+    ]:
+        """
+        Download every dividend adjustment page for `main_identifier` in the date range.
+
+        Follows the endpoint's `next_page` cursor until it is exhausted,
+        accumulating the dividend adjustment records from all pages. The endpoint
+        filters by `start_date` and `end_date` server-side, so no further trimming
+        is required.
+
+        Parameters
+        ----------
+        main_identifier
+            The security's main identifier (ticker, etc.) used by the data provider
+        start_date
+            The first date whose dividend adjustments we're requesting
+        end_date
+            The last date whose dividend adjustments we're requesting
+
+        Returns
+        -------
+        The accumulated dividend adjustment records across all pages
+
+        Raises
+        ------
+        IdentifierNotFoundError
+            When the endpoint reports the identifier does not exist
+        DataProviderPaymentError
+            When the endpoint requires a paid plan for the request
+        ApiEndpointError
+            When the endpoint returns any other API error
+        """
+        security_api = self._intrinio_sdk.SecurityApi()
+        dividend_records = []
+        next_page = ''
+
+        while True:
+            try:
+                response = security_api.get_security_stock_price_adjustments_dividends(
+                    main_identifier,
+                    start_date=start_date,
+                    end_date=end_date,
+                    page_size=self.STOCK_PRICE_PAGE_SIZE,
+                    next_page=next_page,
+                )
+            except intrinio_sdk.rest.ApiException as error:
+                if error.status == http.HTTPStatus.NOT_FOUND.value:
+                    msg = f"Intrinio dividends endpoint could not find identifier {main_identifier}"
+
+                    raise IdentifierNotFoundError(msg) from error
+
+                if error.status == http.HTTPStatus.PAYMENT_REQUIRED.value:
+                    msg = f"Intrinio dividends endpoint requires a paid plan for identifier {main_identifier}"
+
+                    raise DataProviderPaymentError(msg) from error
+
+                msg = " ".join([
+                    f"Intrinio dividends endpoint returned HTTP status {error.status}",
+                    f"for identifier {main_identifier}: {error.reason}",
+                ])
+
+                raise ApiEndpointError(msg) from error
+
+            dividend_records.extend(response.stock_price_adjustments)
+
+            if not response.next_page:
+                break
+
+            next_page = response.next_page
+
+        return dividend_records
 
     def _request_stock_prices(
         self,
