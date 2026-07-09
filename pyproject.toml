@@ -20,13 +20,14 @@ classifiers = [
 ]
 dependencies = [    # dev dependencies are in the [tool.pdm.dev-dependencies] section
     "click>=8.1.7",
+    "intrinio-sdk>=7.2.0",
+    "lseg-data>=2.1.1",
     "networkx>=3.5",
     "openpyxl>=3.1.5",
     "packaging>=24.2",
     "pandas>=2.2.3",
     "pyarrow>=18.0,<24",    # PyArrow 24 issue: https://github.com/apache/arrow/issues/49826
     "python-dotenv>=1.0.1",
-    "lseg-data>=2.1.1",
 ]
 dynamic = ["version"]
 license = {text = "MIT License"}

@@ -8,4 +8,6 @@ services:
 
     environment:
       - KNDC_API_KEY_FMP
+      - KNDC_API_KEY_LSEG
+      - KNDC_API_KEY_INTRINIO
       - KNDC_DEBUG_PORT

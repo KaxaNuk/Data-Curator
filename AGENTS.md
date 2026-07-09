@@ -53,7 +53,9 @@ Consult these whenever you need to check a dependency's latest API or general do
 
 ### Libraries
 - [click API](https://click.palletsprojects.com/en/stable/api/)
-- [lseg-data API](https://developers.lseg.com/en/api-catalog/lseg-data-platform/lseg-data-library-for-python/documentation)
+- [Intrinio Python SDK](https://docs.intrinio.com/documentation/python)
+- [lseg-data Overview](https://developers.lseg.com/en/api-catalog/lseg-data-platform/lseg-data-library-for-python/documentation)
+- [lseg-data Reference Guide](https://cdn.refinitiv.com/public/lseg-lib-python-doc/2.0.0.2/book/en/index.html)
 - [networkx API](https://networkx.org/documentation/stable/reference/index.html)
 - [openpyxl API](https://openpyxl.readthedocs.io/en/stable/api/openpyxl.html)
 - [packaging API](https://packaging.pypa.io/en/stable/)
