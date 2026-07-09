@@ -34,6 +34,7 @@ from kaxanuk.data_curator.modules.data_column import DataColumn
 type ColumnRemap = str   # new entity.field or entity.field$tag column name
 
 type Endpoint = enum.StrEnum    # identifier of a particular endpoint
+type EndpointsEnum = type[Endpoint]    # a provider's Endpoints enum class, which owns all of its endpoint members
 # column names are either "entity.field" for primary keys, or "endpoint_name$entity.field" for specific endpoints
 type EndpointDiscrepanciesTable = pyarrow.Table    # mostly for error handler use
 type PrimaryKeyTable = pyarrow.Table     # table with primary key columns for table merges
@@ -64,7 +65,10 @@ type EndpointColumnRemaps = dict[
 ]
 type DataBlockEndpointColumnRemaps = dict[
         type[BaseDataBlock],
-        EndpointColumnRemaps
+        dict[
+            EndpointsEnum,      # provider dimension: same data block, different providers cache separately
+            EndpointColumnRemaps
+        ]
     ]
 type EndpointFieldPreprocessors = dict[
     Endpoint,
@@ -75,7 +79,10 @@ type EndpointFieldPreprocessors = dict[
 ]
 type DataBlockEndpointFieldPreprocessors = dict[
     type[BaseDataBlock],
-    EndpointFieldPreprocessors
+    dict[
+        EndpointsEnum,      # provider dimension: same data block, different providers cache separately
+        EndpointFieldPreprocessors
+    ]
 ]
 type EndpointTables = dict[
     Endpoint,
@@ -988,19 +995,28 @@ class DataProviderToolkit:
 
             raise DataProviderToolkitNoDataError(msg)
 
-        # get map from tags to remapped columns
-        if data_block not in cls._data_block_endpoint_column_remaps:
-            cls._data_block_endpoint_column_remaps[data_block] = cls._calculate_endpoint_column_remaps(
-            endpoint_field_map
+        # The remaps and preprocessors are derived from the provider-specific endpoint field map, so different
+        # providers that share the same data block must cache separately. Every endpoint in a map belongs to the
+        # provider's Endpoints enum, so that enum class identifies the provider within a given data block.
+        endpoints_enum = type(
+            next(iter(endpoint_field_map))
         )
-        endpoint_column_remaps = cls._data_block_endpoint_column_remaps[data_block]
+
+        # get map from tags to remapped columns
+        data_block_column_remaps = cls._data_block_endpoint_column_remaps.setdefault(data_block, {})
+        if endpoints_enum not in data_block_column_remaps:
+            data_block_column_remaps[endpoints_enum] = cls._calculate_endpoint_column_remaps(
+                endpoint_field_map
+            )
+        endpoint_column_remaps = data_block_column_remaps[endpoints_enum]
 
         # get preprocessors
-        if data_block not in cls._data_block_endpoint_field_preprocessors:
-            cls._data_block_endpoint_field_preprocessors[data_block] = cls._calculate_endpoint_field_preprocessors(
-            endpoint_field_map
-        )
-        endpoint_field_preprocessors = cls._data_block_endpoint_field_preprocessors[data_block]
+        data_block_field_preprocessors = cls._data_block_endpoint_field_preprocessors.setdefault(data_block, {})
+        if endpoints_enum not in data_block_field_preprocessors:
+            data_block_field_preprocessors[endpoints_enum] = cls._calculate_endpoint_field_preprocessors(
+                endpoint_field_map
+            )
+        endpoint_field_preprocessors = data_block_field_preprocessors[endpoints_enum]
 
         # get entity field to most specific entity mapping
         entity_field_to_most_specific_entity = cls._get_entity_field_to_most_specific_entity(
