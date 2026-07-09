@@ -8,6 +8,8 @@ Environment Variables
 ---------------------
 KNDC_API_KEY_FMP : str
     Api key for the Financial Modeling Prep data provider
+KNDC_API_KEY_INTRINIO : str
+    Api key for the Intrinio data provider
 KNDC_API_KEY_LSEG : str
     Api key for the LSEG Workspace data provider
 """
@@ -38,11 +40,15 @@ configurator = kaxanuk.data_curator.config_handlers.ExcelConfigurator(
     data_providers={
         'financial_modeling_prep': {
             'class': kaxanuk.data_curator.data_providers.FinancialModelingPrep,
-            'api_key': os.getenv('KNDC_API_KEY_FMP'),   # set this up in the Config/.env file
+            'api_key': os.getenv('KNDC_API_KEY_FMP'),       # set this up in the Config/.env file
+        },
+        'intrinio': {
+            'class': kaxanuk.data_curator.data_providers.Intrinio,
+            'api_key': os.getenv('KNDC_API_KEY_INTRINIO')   # set this up in the Config/.env file
         },
         'lseg_workspace': {
             'class': kaxanuk.data_curator.data_providers.LsegWorkspace,
-            'api_key': os.getenv('KNDC_API_KEY_LSEG'), # set this up in the Config/.env file
+            'api_key': os.getenv('KNDC_API_KEY_LSEG'),      # set this up in the Config/.env file
         },
         'yahoo_finance': {
             'class': kaxanuk.data_curator.load_data_provider_extension(
