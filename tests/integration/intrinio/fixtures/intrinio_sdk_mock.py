@@ -113,16 +113,17 @@ class CompanyApi:
 class FundamentalsApi:
     def get_fundamental_standardized_financials(
         self,
-        financial_id: str,
+        id,
+        **kwargs
     ) -> intrinio_sdk.models.api_response_standardized_financials.ApiResponseStandardizedFinancials:
-        if financial_id not in _STANDARDIZED_FINANCIALS_RECORDS:
+        if id not in _STANDARDIZED_FINANCIALS_RECORDS:
 
             raise intrinio_sdk.rest.ApiException(
                 status=404,
                 reason='Not Found',
             )
 
-        record = _STANDARDIZED_FINANCIALS_RECORDS[financial_id]
+        record = _STANDARDIZED_FINANCIALS_RECORDS[id]
         standardized_financials = [
             intrinio_sdk.models.standardized_financial.StandardizedFinancial(
                 data_tag=intrinio_sdk.models.data_tag_summary.DataTagSummary(
@@ -198,15 +199,18 @@ class SecurityApi:
             split_ratio=1.0,
         )
 
-        return intrinio_sdk.models.api_response_security_stock_price_adjustments.ApiResponseSecurityStockPriceAdjustments(
-            stock_price_adjustments=[
-                first_adjustment,
-                second_adjustment,
-                third_adjustment,
-                fourth_adjustment,
-            ],
-            security=None,
-            next_page=None,
+        return (
+            intrinio_sdk.models.api_response_security_stock_price_adjustments
+            .ApiResponseSecurityStockPriceAdjustments(
+                stock_price_adjustments=[
+                    first_adjustment,
+                    second_adjustment,
+                    third_adjustment,
+                    fourth_adjustment,
+                ],
+                security=None,
+                next_page=None,
+            )
         )
 
     def get_security_stock_price_adjustments_splits(
@@ -229,13 +233,16 @@ class SecurityApi:
             split_ratio=0.1,
         )
 
-        return intrinio_sdk.models.api_response_security_stock_price_adjustments.ApiResponseSecurityStockPriceAdjustments(
-            stock_price_adjustments=[
-                first_adjustment,
-                second_adjustment,
-            ],
-            security=None,
-            next_page=None,
+        return (
+            intrinio_sdk.models.api_response_security_stock_price_adjustments
+            .ApiResponseSecurityStockPriceAdjustments(
+                stock_price_adjustments=[
+                    first_adjustment,
+                    second_adjustment,
+                ],
+                security=None,
+                next_page=None,
+            )
         )
 
     def get_security_stock_prices(

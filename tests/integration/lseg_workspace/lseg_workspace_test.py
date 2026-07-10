@@ -66,7 +66,7 @@ def raw_market_df():
     stores them as YYYY-MM-DD strings, so we convert here to match the
     format expected by the production processing pipeline.
     """
-    df = pandas.read_pickle(PICKLE_MARKET_PATH)  # noqa: S301
+    df = pandas.read_pickle(PICKLE_MARKET_PATH)
     df["Date"] = pandas.to_datetime(df["Date"]).dt.strftime("%d/%m/%Y")
     return df
 
@@ -74,19 +74,19 @@ def raw_market_df():
 @pytest.fixture(scope="module")
 def raw_fundamental_df():
     """Load the fundamental data pickle as-is (ISO 8601 dates)."""
-    return pandas.read_pickle(PICKLE_FUNDAMENTAL_PATH)  # noqa: S301
+    return pandas.read_pickle(PICKLE_FUNDAMENTAL_PATH)
 
 
 @pytest.fixture(scope="module")
 def raw_split_df():
     """Load the split data pickle as-is (ISO 8601 dates)."""
-    return pandas.read_pickle(PICKLE_SPLIT_PATH)  # noqa: S301
+    return pandas.read_pickle(PICKLE_SPLIT_PATH)
 
 
 @pytest.fixture(scope="module")
 def raw_dividend_df():
     """Load the dividend data pickle as-is (ISO 8601 dates)."""
-    return pandas.read_pickle(PICKLE_DIVIDEND_PATH)  # noqa: S301
+    return pandas.read_pickle(PICKLE_DIVIDEND_PATH)
 
 
 @pytest.fixture(scope="module")

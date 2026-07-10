@@ -254,6 +254,7 @@ ignore = [
     "INP001"    # File part of an implicit namespace package
 ]
 "tests/**" = [
+    "A002",     # Don't care if test shadow builtins
     "ANN",      # Tests don't need to be annotated
     "DTZ001",   # Don't care about test datetime specifics
     "FBT003",   # Multiple external libraries require boolean positional arguments

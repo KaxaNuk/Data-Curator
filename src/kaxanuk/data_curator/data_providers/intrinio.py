@@ -1,7 +1,10 @@
+import collections
+import dataclasses
 import datetime
 import enum
 import http
 import logging
+import re
 import types
 import typing
 
@@ -28,18 +31,12 @@ from kaxanuk.data_curator.entities import (
     MarketInstrumentIdentifier,
     SplitData,
     SplitDataRow,
-    MainIdentifier,
 )
 from kaxanuk.data_curator.exceptions import (
     ApiEndpointError,
     DataProviderMissingKeyError,
-    DataProviderMultiEndpointCommonDataOrderError,
-    DataProviderMultiEndpointCommonDataDiscrepancyError,
-    DataProviderMultiEndpointDuplicateKeysError,
-    DataProviderMultiEndpointNullColumnsError,
     DataProviderPaymentError,
     DataProviderToolkitNoDataError,
-    DataProviderToolkitRuntimeError,
     IdentifierNotFoundError,
 )
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
@@ -52,9 +49,40 @@ from kaxanuk.data_curator.services.data_provider_toolkit import (
 )
 
 
+# pattern matching a data tag unit that denotes a reporting currency
+_CURRENCY_UNIT_PATTERN = re.compile(r"^[a-z]{3}$")
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _IntrinioStatementFinancials:
+    accepted_date: datetime.datetime | None
+    filing_date: datetime.date | None
+    fiscal_period: str
+    fiscal_year: int | None
+    period_end_date: datetime.date
+    reported_currency: str | None
+    statement_code: str
+    values: dict[str, float]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _IntrinioPeriodRecord:
+    reported_currency: str | None
+    tag_values: dict[str, typing.Any]
+
+
 class Intrinio(
     DataProviderInterface,      # this is the interface all data providers have to implement
 ):
+    # fiscal period Intrinio reports as calculated statements instead of reported ones
+    FOURTH_QUARTER_FISCAL_PERIOD: typing.Final = 'Q4'
+    # max number of records requested per fundamentals endpoint page
+    FUNDAMENTALS_PAGE_SIZE: typing.Final = 10000
+    # fundamental types returned by the fundamentals endpoint
+    FUNDAMENTAL_TYPE_CALCULATED: typing.Final = 'calculated'
+    FUNDAMENTAL_TYPE_REPORTED: typing.Final = 'reported'
+    # statement code identifying income statements in the fundamentals endpoint
+    INCOME_STATEMENT_CODE: typing.Final = 'income_statement'
     # frequency requested from the stock prices endpoint
     STOCK_PRICE_FREQUENCY: typing.Final = 'daily'
     # max number of records requested per stock prices endpoint page
@@ -64,16 +92,123 @@ class Intrinio(
 
     class Endpoints(enum.StrEnum):
         ACCOUNT = 'AccountApi.get_account_current_usage'
-        COMPANY = 'CompanyApi.get_company_fundamentals'
-        FUNDAMENTALS = 'FundamentalsApi.get_fundamental_standardized_financials'
+        FINANCIALS = 'FundamentalsApi.get_fundamental_standardized_financials'
+        FUNDAMENTALS = 'CompanyApi.get_company_fundamentals'
         STOCK_DIVIDENDS = 'SecurityApi.get_security_stock_price_adjustments_dividends'
         STOCK_PRICES = 'SecurityApi.get_security_stock_prices'
         STOCK_SPLITS = 'SecurityApi.get_security_stock_price_adjustments_splits'
+
+    class FundamentalPeriods(enum.StrEnum):
+        ANNUAL = 'FY'
+        QUARTERLY = 'QTR'
 
     _dividend_data_endpoint_map: typing.Final[EndpointFieldMap] = {
         Endpoints.STOCK_DIVIDENDS: {
             DividendDataRow.ex_dividend_date: 'date',
             DividendDataRow.dividend: 'dividend',
+        },
+    }
+
+    _fundamental_data_endpoint_map : typing.Final[EndpointFieldMap] = {
+        Endpoints.FINANCIALS: {
+            FundamentalDataRow.accepted_date: 'earnings_disclosed_at',
+            FundamentalDataRow.filing_date: 'filing_date',
+            FundamentalDataRow.fiscal_period: 'fiscal_period',
+            FundamentalDataRow.fiscal_year: 'fiscal_year',
+            FundamentalDataRow.period_end_date: 'end_date',
+
+            FundamentalDataRowBalanceSheet.accumulated_other_comprehensive_income_after_tax: 'aoci',
+            FundamentalDataRowBalanceSheet.assets: 'totalassets',
+            FundamentalDataRowBalanceSheet.capital_lease_obligations: 'capitalleaseobligations',
+            FundamentalDataRowBalanceSheet.cash_and_cash_equivalents: 'cashandequivalents',
+            FundamentalDataRowBalanceSheet.common_stock_value: 'commonequity',
+            FundamentalDataRowBalanceSheet.current_accounts_payable: 'accountspayable',
+            FundamentalDataRowBalanceSheet.current_accounts_receivable_after_doubtful_accounts: 'accountsreceivable',
+            FundamentalDataRowBalanceSheet.current_accrued_expenses: 'accruedexpenses',
+            FundamentalDataRowBalanceSheet.current_assets: 'totalcurrentassets',
+            FundamentalDataRowBalanceSheet.current_liabilities: 'totalcurrentliabilities',
+            FundamentalDataRowBalanceSheet.goodwill: 'goodwill',
+            FundamentalDataRowBalanceSheet.liabilities: 'totalliabilities',
+            FundamentalDataRowBalanceSheet.longterm_debt: 'longtermdebt',
+            FundamentalDataRowBalanceSheet.longterm_investments: 'longterminvestments',
+            FundamentalDataRowBalanceSheet.net_intangible_assets_including_goodwill: 'intangibleassets',
+            FundamentalDataRowBalanceSheet.net_inventory: 'netinventory',
+            FundamentalDataRowBalanceSheet.net_property_plant_and_equipment: 'netppe',
+            FundamentalDataRowBalanceSheet.noncontrolling_interest: 'noncontrollinginterests',
+            FundamentalDataRowBalanceSheet.noncurrent_assets: 'totalnoncurrentassets',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_revenue: 'noncurrentdeferredrevenue',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_tax_assets: 'noncurrentdeferredtaxassets',
+            FundamentalDataRowBalanceSheet.noncurrent_deferred_tax_liabilities: 'noncurrentdeferredtaxliabilities',
+            FundamentalDataRowBalanceSheet.noncurrent_liabilities: 'totalnoncurrentliabilities',
+            FundamentalDataRowBalanceSheet.other_assets: 'otherassets',
+            FundamentalDataRowBalanceSheet.other_current_assets: 'othercurrentassets',
+            FundamentalDataRowBalanceSheet.other_current_liabilities: 'othercurrentliabilities',
+            FundamentalDataRowBalanceSheet.other_noncurrent_assets: 'othernoncurrentassets',
+            FundamentalDataRowBalanceSheet.other_noncurrent_liabilities: 'othernoncurrentliabilities',
+            FundamentalDataRowBalanceSheet.preferred_stock_value: 'totalpreferredequity',
+            FundamentalDataRowBalanceSheet.prepaid_expenses: 'prepaidexpenses',
+            FundamentalDataRowBalanceSheet.retained_earnings: 'retainedearnings',
+            FundamentalDataRowBalanceSheet.shortterm_debt: 'shorttermdebt',
+            FundamentalDataRowBalanceSheet.shortterm_investments: 'shortterminvestments',
+            FundamentalDataRowBalanceSheet.stockholder_equity: 'totalequity',
+            FundamentalDataRowBalanceSheet.total_equity_including_noncontrolling_interest:
+                'totalequityandnoncontrollinginterests',
+            FundamentalDataRowBalanceSheet.total_liabilities_and_equity: 'totalliabilitiesandequity',
+            FundamentalDataRowBalanceSheet.treasury_stock_value: 'treasurystock',
+
+            FundamentalDataRowCashFlow.cash_and_cash_equivalents_change: 'netchangeincash',
+            FundamentalDataRowCashFlow.cash_exchange_rate_effect: 'effectofexchangeratechanges',
+            FundamentalDataRowCashFlow.common_stock_issuance_proceeds: 'issuanceofcommonequity',
+            FundamentalDataRowCashFlow.common_stock_repurchase: 'repurchaseofcommonequity',
+            FundamentalDataRowCashFlow.dividend_payments: 'paymentofdividends',
+            FundamentalDataRowCashFlow.interest_payments: 'cashinterestpaid',
+            FundamentalDataRowCashFlow.investment_sales_maturities_and_collections_proceeds:
+                'saleofinvestments',
+            FundamentalDataRowCashFlow.investments_purchase: 'purchaseofinvestments',
+            FundamentalDataRowCashFlow.net_business_acquisition_payments: 'acquisitions',
+            FundamentalDataRowCashFlow.net_cash_from_operating_activities: 'netcashfromoperatingactivities',
+            FundamentalDataRowCashFlow.net_cash_from_investing_activities: 'netcashfrominvestingactivities',
+            FundamentalDataRowCashFlow.net_cash_from_financing_activities: 'netcashfromfinancingactivities',
+            FundamentalDataRowCashFlow.net_debt_issuance_proceeds: 'issuanceofdebt',
+            FundamentalDataRowCashFlow.net_income: 'netincome',
+            FundamentalDataRowCashFlow.net_income_tax_payments: 'cashincometaxespaid',
+            FundamentalDataRowCashFlow.other_financing_activities: 'otherfinancingactivitiesnet',
+            FundamentalDataRowCashFlow.other_investing_activities: 'otherinvestingactivitiesnet',
+            FundamentalDataRowCashFlow.preferred_stock_issuance_proceeds: 'issuanceofpreferredequity',
+            FundamentalDataRowCashFlow.property_plant_and_equipment_purchase: 'purchaseofplantpropertyandequipment',
+
+            FundamentalDataRowIncomeStatement.basic_earnings_per_share: 'basiceps',
+            FundamentalDataRowIncomeStatement.basic_net_income_available_to_common_stockholders: 'netincometocommon',
+            FundamentalDataRowIncomeStatement.continuing_operations_income_after_tax: 'netincomecontinuing',
+            FundamentalDataRowIncomeStatement.cost_of_revenue: 'totalcostofrevenue',
+            FundamentalDataRowIncomeStatement.diluted_earnings_per_share: 'dilutedeps',
+            FundamentalDataRowIncomeStatement.discontinued_operations_income_after_tax: 'netincomediscontinued',
+            FundamentalDataRowIncomeStatement.gross_profit: 'totalgrossprofit',
+            FundamentalDataRowIncomeStatement.income_before_tax: 'totalpretaxincome',
+            FundamentalDataRowIncomeStatement.income_tax_expense: 'incometaxexpense',
+            FundamentalDataRowIncomeStatement.interest_expense: 'totalinterestexpense',
+            FundamentalDataRowIncomeStatement.interest_income: 'totalinterestincome',
+            FundamentalDataRowIncomeStatement.net_income: 'netincome',
+            FundamentalDataRowIncomeStatement.net_interest_income: 'netinterestincome',
+            FundamentalDataRowIncomeStatement.net_total_other_income: 'totalotherincome',
+            FundamentalDataRowIncomeStatement.operating_expenses: 'totaloperatingexpenses',
+            FundamentalDataRowIncomeStatement.operating_income: 'totaloperatingincome',
+            FundamentalDataRowIncomeStatement.research_and_development_expense: 'rdexpense',
+            FundamentalDataRowIncomeStatement.revenues: 'totalrevenue',
+            FundamentalDataRowIncomeStatement.selling_general_and_administrative_expense: 'sgaexpense',
+            FundamentalDataRowIncomeStatement.weighted_average_basic_shares_outstanding: 'weightedavebasicsharesos',
+            FundamentalDataRowIncomeStatement.weighted_average_diluted_shares_outstanding: 'weightedavedilutedsharesos',
+
+            # The tags below are served only by Intrinio's `calculations` statement, not by the
+            # income/balance sheet/cash flow statements. That statement is a single latest snapshot per
+            # period (always is_latest, no filing_date, no reported/restated versions), so its values
+            # track the restated vintage. Mapping them would inject restated-era data into our
+            # as-originally-reported rows and break point-in-time integrity, so they are left unmapped:
+            # FundamentalDataRowBalanceSheet.net_debt: 'netdebt',
+            # FundamentalDataRowBalanceSheet.total_debt_including_capital_lease_obligations: 'debt',
+            # FundamentalDataRowIncomeStatement.depreciation_and_amortization: 'depreciationandamortization',
+            # FundamentalDataRowIncomeStatement.earnings_before_interest_and_tax: 'ebit',
+            # FundamentalDataRowIncomeStatement.earnings_before_interest_tax_depreciation_and_amortization: 'ebitda',
         },
     }
 
@@ -127,7 +262,7 @@ class Intrinio(
             raise DataProviderMissingKeyError
 
         self._intrinio_sdk.ApiClient().configuration.api_key['api_key'] = api_key
-        self._intrinio_sdk.ApiClient().allow_retries(True)
+        self._intrinio_sdk.ApiClient().allow_retries(setting=True)
 
     @classmethod
     def get_data_block_endpoint_tag_map(cls) -> DataBlockEndpointTagMap:
@@ -235,6 +370,135 @@ class Intrinio(
         -------
         The FundamentalData entity containing the data
         """
+        fundamental_period = self.FundamentalPeriods[period.upper()]
+        fundamental_summaries = self._request_fundamentals(
+            main_identifier=main_identifier,
+            fundamental_period=fundamental_period,
+        )
+        filtered_summaries = [
+            summary
+            for summary in fundamental_summaries
+            if (
+                summary.type == self.FUNDAMENTAL_TYPE_REPORTED
+                or (
+                    summary.fiscal_period == self.FOURTH_QUARTER_FISCAL_PERIOD
+                    and summary.type == self.FUNDAMENTAL_TYPE_CALCULATED
+                )
+            )
+        ]
+        empty_fundamental_data = FundamentalData(
+            main_identifier=MarketInstrumentIdentifier(main_identifier),
+            rows={},
+        )
+
+        if not filtered_summaries:
+            msg = f"{main_identifier} fundamentals endpoint returned no statements"
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_fundamental_data
+
+        statement_financials = [
+            self._build_statement_financials(
+                self._request_standardized_financials(
+                    fundamental_id=summary.id,
+                )
+            )
+            for summary in filtered_summaries
+        ]
+        period_statements = {}
+        for statement in statement_financials:
+            period_statements.setdefault(
+                statement.period_end_date,
+                [],
+            ).append(statement)
+
+        period_records = []
+        incomplete_statements = []
+        for statements in period_statements.values():
+            period_record = self._merge_period_statements(
+                period_statements=statements,
+            )
+            if period_record is None:
+                incomplete_statements.append(statements[0])
+
+                continue
+
+            period_records.append(period_record)
+
+        if incomplete_statements:
+            incomplete_descriptions = [
+                " ".join([
+                    f"{statement.fiscal_year} {statement.fiscal_period}",
+                    f"(period ending {statement.period_end_date})",
+                ])
+                for statement in incomplete_statements
+            ]
+            msg = "\n".join([
+                f"{main_identifier} fundamentals endpoint returned periods without an income statement,",
+                "omitting the following periods:",
+                *incomplete_descriptions,
+            ])
+            logging.getLogger(__name__).warning(msg)
+
+        if not period_records:
+            return empty_fundamental_data
+
+        sorted_period_records = sorted(
+            period_records,
+            key=lambda period_record: (
+                period_record.tag_values['filing_date'],
+                period_record.tag_values['end_date'],
+            ),
+        )
+        endpoint_tables = {
+            self.Endpoints.FINANCIALS: pyarrow.Table.from_pylist([
+                period_record.tag_values
+                for period_record in sorted_period_records
+            ]),
+        }
+
+        try:
+            processed_endpoint_tables = DataProviderToolkit.process_endpoint_tables(
+                data_block=FundamentalsDataBlock,
+                endpoint_field_map=self._fundamental_data_endpoint_map,
+                endpoint_tables=endpoint_tables,
+            )
+        except DataProviderToolkitNoDataError:
+            msg = f"{main_identifier} fundamental data endpoints returned no data"
+            logging.getLogger(__name__).warning(msg)
+
+            return empty_fundamental_data
+
+        consolidated_fundamental_table = DataProviderToolkit.consolidate_processed_endpoint_tables(
+            processed_endpoint_tables=processed_endpoint_tables,
+            table_merge_fields=[
+                FundamentalsDataBlock.clock_sync_field,
+                FundamentalDataRow.period_end_date,
+            ],
+        )
+        # reported_currency has no single provider tag (it lives in each line item's unit), so it can't
+        # go through the tag-based field map; append it as its own column aligned to the sorted records
+        reported_currency_column = pyarrow.array(
+            [
+                period_record.reported_currency
+                for period_record in sorted_period_records
+            ],
+            type=pyarrow.string(),
+        )
+        consolidated_fundamental_table_with_currency = consolidated_fundamental_table.append_column(
+            FundamentalsDataBlock.get_field_qualified_name(FundamentalDataRow.reported_currency),
+            reported_currency_column,
+        )
+        fundamental_data = FundamentalsDataBlock.assemble_entities_from_consolidated_table(
+            consolidated_table=consolidated_fundamental_table_with_currency,
+            common_field_data={
+                FundamentalData: {
+                    FundamentalData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                }
+            }
+        )
+
+        return fundamental_data  # noqa: RET504
 
     def get_market_data(
         self,
@@ -395,7 +659,6 @@ class Intrinio(
         -------
         None
         """
-        pass
 
     def validate_api_key(
         self,
@@ -412,10 +675,79 @@ class Intrinio(
             # @todo check that the response is valid
 
             return True
-        except intrinio_sdk.rest.ApiException as error:
+        except intrinio_sdk.rest.ApiException:
             # @todo log problem to logger
 
             return False
+
+    @staticmethod
+    def _build_statement_financials(
+        standardized_response: (
+            intrinio_sdk.models.api_response_standardized_financials.ApiResponseStandardizedFinancials
+        ),
+    ) -> _IntrinioStatementFinancials:
+        """
+        Flatten a single financials response into a statement-level record.
+
+        Pulls the period metadata from the response's `fundamental` object and
+        the line-item tag values from its `standardized_financials`, and infers
+        the statement's reporting currency from the most common line-item unit
+        that looks like a three-letter currency code.
+
+        Parameters
+        ----------
+        standardized_response
+            The response returned by the financials endpoint for one fundamental
+
+        Returns
+        -------
+        The flattened statement record
+        """
+        fundamental = standardized_response.fundamental
+        standardized_financials = standardized_response.standardized_financials
+
+        raw_filing_date = fundamental.filing_date
+        filing_date = (
+            raw_filing_date.date() if isinstance(raw_filing_date, datetime.datetime)
+            else raw_filing_date
+        )
+        raw_fiscal_year = fundamental.fiscal_year
+        fiscal_year = (
+            int(raw_fiscal_year) if raw_fiscal_year is not None
+            else None
+        )
+        statement_values = {
+            standardized_financial.data_tag.tag: standardized_financial.value
+            for standardized_financial in standardized_financials
+            if (
+                standardized_financial.data_tag is not None
+                and standardized_financial.data_tag.tag is not None
+            )
+        }
+        currency_units = [
+            standardized_financial.data_tag.unit.upper()
+            for standardized_financial in standardized_financials
+            if (
+                standardized_financial.data_tag is not None
+                and standardized_financial.data_tag.unit is not None
+                and _CURRENCY_UNIT_PATTERN.fullmatch(standardized_financial.data_tag.unit)
+            )
+        ]
+        reported_currency = (
+            collections.Counter(currency_units).most_common(1)[0][0] if currency_units
+            else None
+        )
+
+        return _IntrinioStatementFinancials(
+            accepted_date=fundamental.earnings_disclosed_at,
+            filing_date=filing_date,
+            fiscal_period=fundamental.fiscal_period,
+            fiscal_year=fiscal_year,
+            period_end_date=fundamental.end_date,
+            reported_currency=reported_currency,
+            statement_code=fundamental.statement_code,
+            values=statement_values,
+        )
 
     @staticmethod
     def _create_endpoint_table_from_records(
@@ -464,6 +796,73 @@ class Intrinio(
         ]
 
         return pyarrow.Table.from_pylist(row_mappings)
+
+    @classmethod
+    def _merge_period_statements(
+        cls,
+        *,
+        period_statements: list[_IntrinioStatementFinancials],
+    ) -> _IntrinioPeriodRecord | None:
+        """
+        Merge every statement sharing a period end date into one period record.
+
+        Intrinio splits each period across separate income, balance sheet and
+        cash flow fundamentals that share a `period_end_date` but not always a
+        `filing_date` (the year-end balance sheet carries the filing date that
+        the calculated fourth-quarter flow statements lack). The period's
+        metadata and reporting currency are therefore taken from its income
+        statement, while the filing date is coalesced across all its statements.
+        Periods without an income statement or without any filing date can't
+        form a valid row and are dropped.
+
+        Parameters
+        ----------
+        period_statements
+            All statement records sharing the same period end date
+
+        Returns
+        -------
+        The merged period record, or None when the period is incomplete
+        """
+        income_statements = [
+            statement
+            for statement in period_statements
+            if statement.statement_code == cls.INCOME_STATEMENT_CODE
+        ]
+
+        if not income_statements:
+            return None
+
+        income_statement = income_statements[0]
+        available_filing_dates = [
+            statement.filing_date
+            for statement in period_statements
+            if statement.filing_date is not None
+        ]
+
+        if not available_filing_dates:
+            return None
+
+        tag_values = {
+            'end_date': income_statement.period_end_date,
+            'filing_date': max(available_filing_dates),
+            'fiscal_period': income_statement.fiscal_period,
+            'fiscal_year': income_statement.fiscal_year,
+        }
+        if income_statement.accepted_date is not None:
+            tag_values['earnings_disclosed_at'] = income_statement.accepted_date
+
+        tag_values.update({
+            tag: value
+            for statement in period_statements
+            for (tag, value) in statement.values.items()
+            if value is not None
+        })
+
+        return _IntrinioPeriodRecord(
+            reported_currency=income_statement.reported_currency,
+            tag_values=tag_values,
+        )
 
     def _request_dividends(
         self,
@@ -544,6 +943,82 @@ class Intrinio(
 
         return dividend_records
 
+    def _request_fundamentals(
+        self,
+        *,
+        main_identifier: str,
+        fundamental_period: "Intrinio.FundamentalPeriods",
+    ) -> list[
+        intrinio_sdk.models.fundamental_summary.FundamentalSummary
+    ]:
+        """
+        Download every fundamentals page for `main_identifier` and period type.
+
+        Follows the endpoint's `next_page` cursor until it is exhausted,
+        accumulating the fundamental summaries from all pages. The endpoint is
+        not filtered by date; every fundamental of the requested fiscal period
+        type is returned for later filtering.
+
+        Parameters
+        ----------
+        main_identifier
+            The security's main identifier (ticker, etc.) used by the data provider
+        fundamental_period
+            The fiscal period type (quarterly or annual) whose fundamentals we're requesting
+
+        Returns
+        -------
+        The accumulated fundamental summary records across all pages
+
+        Raises
+        ------
+        IdentifierNotFoundError
+            When the endpoint reports the identifier does not exist
+        DataProviderPaymentError
+            When the endpoint requires a paid plan for the request
+        ApiEndpointError
+            When the endpoint returns any other API error
+        """
+        company_api = self._intrinio_sdk.CompanyApi()
+        fundamental_records = []
+        next_page = ''
+
+        while True:
+            try:
+                response = company_api.get_company_fundamentals(
+                    main_identifier,
+                    type=fundamental_period,
+                    latest_only=False,
+                    page_size=self.FUNDAMENTALS_PAGE_SIZE,
+                    next_page=next_page,
+                )
+            except intrinio_sdk.rest.ApiException as error:
+                if error.status == http.HTTPStatus.NOT_FOUND.value:
+                    msg = f"Intrinio fundamentals endpoint could not find identifier {main_identifier}"
+
+                    raise IdentifierNotFoundError(msg) from error
+
+                if error.status == http.HTTPStatus.PAYMENT_REQUIRED.value:
+                    msg = f"Intrinio fundamentals endpoint requires a paid plan for identifier {main_identifier}"
+
+                    raise DataProviderPaymentError(msg) from error
+
+                msg = " ".join([
+                    f"Intrinio fundamentals endpoint returned HTTP status {error.status}",
+                    f"for identifier {main_identifier}: {error.reason}",
+                ])
+
+                raise ApiEndpointError(msg) from error
+
+            fundamental_records.extend(response.fundamentals)
+
+            if not response.next_page:
+                break
+
+            next_page = response.next_page
+
+        return fundamental_records
+
     def _request_splits(
         self,
         *,
@@ -622,6 +1097,60 @@ class Intrinio(
             next_page = response.next_page
 
         return split_records
+
+    def _request_standardized_financials(
+        self,
+        *,
+        fundamental_id: str,
+    ) -> intrinio_sdk.models.api_response_standardized_financials.ApiResponseStandardizedFinancials:
+        """
+        Download the standardized financials for a single fundamental.
+
+        The endpoint returns every standardized line item for the fundamental in
+        a single response, so no pagination is required. The identifier is passed
+        positionally because the SDK names it `id`.
+
+        Parameters
+        ----------
+        fundamental_id
+            The Intrinio identifier of the fundamental whose financials we're requesting
+
+        Returns
+        -------
+        The standardized financials response for the fundamental
+
+        Raises
+        ------
+        IdentifierNotFoundError
+            When the endpoint reports the fundamental does not exist
+        DataProviderPaymentError
+            When the endpoint requires a paid plan for the request
+        ApiEndpointError
+            When the endpoint returns any other API error
+        """
+        fundamentals_api = self._intrinio_sdk.FundamentalsApi()
+
+        try:
+            response = fundamentals_api.get_fundamental_standardized_financials(fundamental_id)
+        except intrinio_sdk.rest.ApiException as error:
+            if error.status == http.HTTPStatus.NOT_FOUND.value:
+                msg = f"Intrinio financials endpoint could not find fundamental {fundamental_id}"
+
+                raise IdentifierNotFoundError(msg) from error
+
+            if error.status == http.HTTPStatus.PAYMENT_REQUIRED.value:
+                msg = f"Intrinio financials endpoint requires a paid plan for fundamental {fundamental_id}"
+
+                raise DataProviderPaymentError(msg) from error
+
+            msg = " ".join([
+                f"Intrinio financials endpoint returned HTTP status {error.status}",
+                f"for fundamental {fundamental_id}: {error.reason}",
+            ])
+
+            raise ApiEndpointError(msg) from error
+
+        return response
 
     def _request_stock_prices(
         self,
