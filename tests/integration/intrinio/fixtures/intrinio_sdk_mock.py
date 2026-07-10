@@ -83,24 +83,21 @@ class CompanyApi:
         identifier,
         **kwargs
     ) -> intrinio_sdk.models.api_response_company_fundamentals.ApiResponseCompanyFundamentals:
-        fundamentals_type = kwargs.get('type')
-        if fundamentals_type not in _COMPANY_FUNDAMENTALS_RECORDS:
-            msg = "".join(
-                (
-                    "Mock only supports the 'FY' and 'QTR' fundamental types, got: ",
-                    repr(fundamentals_type),
-                )
-            )
+        # The provider issues a single untyped request, so serve every fundamental across the
+        # annual and quarterly fixtures, de-duplicated by id in case a statement appears in both.
+        fundamentals_by_id = {}
+        company_data = None
+        for record in _COMPANY_FUNDAMENTALS_RECORDS.values():
+            company_data = record['company']
+            for fundamental in record['fundamentals']:
+                fundamentals_by_id.setdefault(fundamental['id'], fundamental)
 
-            raise ValueError(msg)
-
-        record = _COMPANY_FUNDAMENTALS_RECORDS[fundamentals_type]
         fundamentals = [
             intrinio_sdk.models.fundamental_summary.FundamentalSummary(**fundamental)
-            for fundamental in record['fundamentals']
+            for fundamental in fundamentals_by_id.values()
         ]
         company = intrinio_sdk.models.company_summary.CompanySummary(
-            **record['company']
+            **company_data
         )
 
         return intrinio_sdk.models.api_response_company_fundamentals.ApiResponseCompanyFundamentals(

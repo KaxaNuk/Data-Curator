@@ -74,7 +74,11 @@ class _IntrinioPeriodRecord:
 class Intrinio(
     DataProviderInterface,      # this is the interface all data providers have to implement
 ):
-    # fiscal period Intrinio reports as calculated statements instead of reported ones
+    # fiscal period whose balance sheet doubles as the fourth-quarter (year-end) balance sheet
+    ANNUAL_FISCAL_PERIOD: typing.Final = 'FY'
+    # statement code identifying balance sheets in the fundamentals endpoint
+    BALANCE_SHEET_STATEMENT_CODE: typing.Final = 'balance_sheet_statement'
+    # fiscal period Intrinio only reports as calculated statements, never as originally reported ones
     FOURTH_QUARTER_FISCAL_PERIOD: typing.Final = 'Q4'
     # max number of records requested per fundamentals endpoint page
     FUNDAMENTALS_PAGE_SIZE: typing.Final = 10000
@@ -83,6 +87,12 @@ class Intrinio(
     FUNDAMENTAL_TYPE_REPORTED: typing.Final = 'reported'
     # statement code identifying income statements in the fundamentals endpoint
     INCOME_STATEMENT_CODE: typing.Final = 'income_statement'
+    # fiscal periods Intrinio reports as originally-filed quarterly statements
+    QUARTERLY_REPORTED_FISCAL_PERIODS: typing.Final = (
+        'Q1',
+        'Q2',
+        'Q3',
+    )
     # frequency requested from the stock prices endpoint
     STOCK_PRICE_FREQUENCY: typing.Final = 'daily'
     # max number of records requested per stock prices endpoint page
@@ -370,20 +380,16 @@ class Intrinio(
         -------
         The FundamentalData entity containing the data
         """
-        fundamental_period = self.FundamentalPeriods[period.upper()]
+        period_mode = self.FundamentalPeriods[period.upper()]
         fundamental_summaries = self._request_fundamentals(
             main_identifier=main_identifier,
-            fundamental_period=fundamental_period,
         )
         filtered_summaries = [
             summary
             for summary in fundamental_summaries
-            if (
-                summary.type == self.FUNDAMENTAL_TYPE_REPORTED
-                or (
-                    summary.fiscal_period == self.FOURTH_QUARTER_FISCAL_PERIOD
-                    and summary.type == self.FUNDAMENTAL_TYPE_CALCULATED
-                )
+            if self._should_keep_fundamental(
+                summary,
+                period_mode=period_mode,
             )
         ]
         empty_fundamental_data = FundamentalData(
@@ -397,13 +403,14 @@ class Intrinio(
 
             return empty_fundamental_data
 
+        original_summaries = self._select_original_fundamentals(filtered_summaries)
         statement_financials = [
             self._build_statement_financials(
                 self._request_standardized_financials(
                     fundamental_id=summary.id,
                 )
             )
-            for summary in filtered_summaries
+            for summary in original_summaries
         ]
         period_statements = {}
         for statement in statement_financials:
@@ -434,8 +441,10 @@ class Intrinio(
                 for statement in incomplete_statements
             ]
             msg = "\n".join([
-                f"{main_identifier} fundamentals endpoint returned periods without an income statement,",
-                "omitting the following periods:",
+                " ".join([
+                    f"{main_identifier} fundamentals endpoint returned incomplete periods",
+                    "(missing an income statement or a filing date), omitting the following periods:",
+                ]),
                 *incomplete_descriptions,
             ])
             logging.getLogger(__name__).warning(msg)
@@ -664,21 +673,32 @@ class Intrinio(
         self,
     ) -> bool | None:
         """
-        Validate that the API key used to init the class is valid.
+        Validate that the API key used to init the class is valid, by making a test request.
+
+        Requests the account's current usage, which requires a valid API key but no particular
+        subscription, and treats the account details it returns as proof the key was accepted.
 
         Returns
         -------
         Whether `api_key` is valid
         """
-        try:
-            response = self._intrinio_sdk.AccountApi().get_account_current_usage()
-            # @todo check that the response is valid
+        account_api = self._intrinio_sdk.AccountApi()
 
-            return True
-        except intrinio_sdk.rest.ApiException:
-            # @todo log problem to logger
+        try:
+            response = account_api.get_account_current_usage()
+        except intrinio_sdk.rest.ApiException as error:
+            msg = " ".join([
+                f"Intrinio account usage endpoint returned HTTP status {error.status}",
+                f"while validating the API key: {error.reason}",
+            ])
+            logging.getLogger(__name__).warning(msg)
 
             return False
+
+        return (
+            response is not None
+            and response.account is not None
+        )
 
     @staticmethod
     def _build_statement_financials(
@@ -947,24 +967,23 @@ class Intrinio(
         self,
         *,
         main_identifier: str,
-        fundamental_period: "Intrinio.FundamentalPeriods",
     ) -> list[
         intrinio_sdk.models.fundamental_summary.FundamentalSummary
     ]:
         """
-        Download every fundamentals page for `main_identifier` and period type.
+        Download every fundamentals page for `main_identifier`.
 
         Follows the endpoint's `next_page` cursor until it is exhausted,
-        accumulating the fundamental summaries from all pages. The endpoint is
-        not filtered by date; every fundamental of the requested fiscal period
-        type is returned for later filtering.
+        accumulating the fundamental summaries from all pages. No fiscal period
+        type is requested, so the endpoint returns every fundamental (annual and
+        quarterly, across all statement types) for later filtering; this is the
+        only way to obtain both the calculated fourth-quarter flow statements and
+        the year-end balance sheet that completes them.
 
         Parameters
         ----------
         main_identifier
             The security's main identifier (ticker, etc.) used by the data provider
-        fundamental_period
-            The fiscal period type (quarterly or annual) whose fundamentals we're requesting
 
         Returns
         -------
@@ -987,7 +1006,6 @@ class Intrinio(
             try:
                 response = company_api.get_company_fundamentals(
                     main_identifier,
-                    type=fundamental_period,
                     latest_only=False,
                     page_size=self.FUNDAMENTALS_PAGE_SIZE,
                     next_page=next_page,
@@ -1229,3 +1247,108 @@ class Intrinio(
             next_page = response.next_page
 
         return stock_price_records
+
+    @classmethod
+    def _select_original_fundamentals(
+        cls,
+        summaries: list[
+            intrinio_sdk.models.fundamental_summary.FundamentalSummary
+        ],
+    ) -> list[
+        intrinio_sdk.models.fundamental_summary.FundamentalSummary
+    ]:
+        """
+        Keep only the as-originally-reported statement for each period.
+
+        An untyped fundamentals request can return the same statement more than
+        once when a later filing re-presents a prior period (for example a 10-Q
+        that restates the previous fiscal year as a comparative, which Intrinio
+        still labels `reported`). Those re-presentations share the original
+        statement's period but carry a later filing date and recast values,
+        which would both duplicate the clock-sync filing date and mix vintages.
+        For each period the earliest-filed statement is kept, as it is the
+        original point-in-time report.
+
+        Parameters
+        ----------
+        summaries
+            The already-filtered fundamental summaries
+
+        Returns
+        -------
+        The earliest-filed summary for each distinct period
+        """
+        earliest_by_period = {}
+        for summary in summaries:
+            period_key = (
+                summary.statement_code,
+                summary.fiscal_year,
+                summary.fiscal_period,
+                summary.type,
+            )
+            current_summary = earliest_by_period.get(period_key)
+            if (
+                current_summary is None
+                or (
+                    summary.filing_date is not None
+                    and (
+                        current_summary.filing_date is None
+                        or summary.filing_date < current_summary.filing_date
+                    )
+                )
+            ):
+                earliest_by_period[period_key] = summary
+
+        return list(earliest_by_period.values())
+
+    @classmethod
+    def _should_keep_fundamental(
+        cls,
+        summary: intrinio_sdk.models.fundamental_summary.FundamentalSummary,
+        *,
+        period_mode: "Intrinio.FundamentalPeriods",
+    ) -> bool:
+        """
+        Decide whether a fundamental summary belongs in the requested period's dataset.
+
+        An untyped fundamentals request returns every fiscal period Intrinio
+        tracks, including the cumulative `YTD` and trailing `TTM` variants we
+        never want. For annual data we keep only the originally-reported annual
+        statements. For quarterly data we keep the originally-reported first
+        three quarters, the calculated fourth-quarter flow statements, and the
+        year-end (annual) balance sheet, which doubles as the fourth quarter's
+        balance sheet and carries the filing date its calculated flows lack.
+
+        Parameters
+        ----------
+        summary
+            The fundamental summary to evaluate
+        period_mode
+            Whether the caller requested annual or quarterly data
+
+        Returns
+        -------
+        Whether the summary should be kept
+        """
+        if period_mode is cls.FundamentalPeriods.ANNUAL:
+
+            return (
+                summary.type == cls.FUNDAMENTAL_TYPE_REPORTED
+                and summary.fiscal_period == cls.ANNUAL_FISCAL_PERIOD
+            )
+
+        return (
+            (
+                summary.type == cls.FUNDAMENTAL_TYPE_REPORTED
+                and summary.fiscal_period in cls.QUARTERLY_REPORTED_FISCAL_PERIODS
+            )
+            or (
+                summary.type == cls.FUNDAMENTAL_TYPE_CALCULATED
+                and summary.fiscal_period == cls.FOURTH_QUARTER_FISCAL_PERIOD
+            )
+            or (
+                summary.type == cls.FUNDAMENTAL_TYPE_REPORTED
+                and summary.fiscal_period == cls.ANNUAL_FISCAL_PERIOD
+                and summary.statement_code == cls.BALANCE_SHEET_STATEMENT_CODE
+            )
+        )
