@@ -78,6 +78,9 @@ class Intrinio(
     ANNUAL_FISCAL_PERIOD: typing.Final = 'FY'
     # statement code identifying balance sheets in the fundamentals endpoint
     BALANCE_SHEET_STATEMENT_CODE: typing.Final = 'balance_sheet_statement'
+    # statement code identifying the derived-metrics statement that carries the adjusted income tags;
+    # it is always the latest restated snapshot per period (is_latest, no filing_date, no type)
+    CALCULATIONS_STATEMENT_CODE: typing.Final = 'calculations'
     # fiscal period Intrinio only reports as calculated statements, never as originally reported ones
     FOURTH_QUARTER_FISCAL_PERIOD: typing.Final = 'Q4'
     # max number of records requested per fundamentals endpoint page
@@ -187,6 +190,15 @@ class Intrinio(
             FundamentalDataRowCashFlow.preferred_stock_issuance_proceeds: 'issuanceofpreferredequity',
             FundamentalDataRowCashFlow.property_plant_and_equipment_purchase: 'purchaseofplantpropertyandequipment',
 
+            FundamentalDataRowIncomeStatement.adjusted_basic_and_diluted_earnings_per_share: 'adjbasicdilutedeps',
+            FundamentalDataRowIncomeStatement.adjusted_basic_earnings_per_share: 'adjbasiceps',
+            FundamentalDataRowIncomeStatement.adjusted_diluted_earnings_per_share: 'adjdilutedeps',
+            FundamentalDataRowIncomeStatement.adjusted_weighted_average_basic_and_diluted_shares_outstanding:
+                'adjweightedavebasicdilutedsharesos',
+            FundamentalDataRowIncomeStatement.adjusted_weighted_average_basic_shares_outstanding:
+                'adjweightedavebasicsharesos',
+            FundamentalDataRowIncomeStatement.adjusted_weighted_average_diluted_shares_outstanding:
+                'adjweightedavedilutedsharesos',
             FundamentalDataRowIncomeStatement.basic_earnings_per_share: 'basiceps',
             FundamentalDataRowIncomeStatement.basic_net_income_available_to_common_stockholders: 'netincometocommon',
             FundamentalDataRowIncomeStatement.continuing_operations_income_after_tax: 'netincomecontinuing',
@@ -209,11 +221,16 @@ class Intrinio(
             FundamentalDataRowIncomeStatement.weighted_average_basic_shares_outstanding: 'weightedavebasicsharesos',
             FundamentalDataRowIncomeStatement.weighted_average_diluted_shares_outstanding: 'weightedavedilutedsharesos',
 
-            # The tags below are served only by Intrinio's `calculations` statement, not by the
-            # income/balance sheet/cash flow statements. That statement is a single latest snapshot per
-            # period (always is_latest, no filing_date, no reported/restated versions), so its values
-            # track the restated vintage. Mapping them would inject restated-era data into our
-            # as-originally-reported rows and break point-in-time integrity, so they are left unmapped:
+            # The adjusted income tags mapped above are served only by Intrinio's `calculations`
+            # statement, which the provider now fetches and merges per period. That statement is a
+            # single latest snapshot (always is_latest, no filing_date, no reported/restated versions),
+            # so its values track the restated vintage; this is acceptable for the adjusted figures,
+            # which are computed after the fact and can't be point-in-time regardless of vintage.
+            #
+            # The tags below are likewise served only by the `calculations` statement and are merged
+            # into each period record, but are deliberately left unmapped: they are restated versions
+            # of metrics that must stay point-in-time, so mapping them would inject restated-era data
+            # into our as-originally-reported rows and break point-in-time integrity:
             # FundamentalDataRowBalanceSheet.net_debt: 'netdebt',
             # FundamentalDataRowBalanceSheet.total_debt_including_capital_lease_obligations: 'debt',
             # FundamentalDataRowIncomeStatement.depreciation_and_amortization: 'depreciationandamortization',
@@ -459,11 +476,24 @@ class Intrinio(
                 period_record.tag_values['end_date'],
             ),
         )
+        # `pyarrow.Table.from_pylist` infers its columns from the first record alone, so any tag
+        # the earliest period omits (a line item it didn't report) would be dropped for every later
+        # period too. Normalize each record against the union of all tags, filling the gaps with
+        # None, so every reported tag survives as its own column.
+        all_tag_names = sorted({
+            tag_name
+            for period_record in sorted_period_records
+            for tag_name in period_record.tag_values
+        })
+        normalized_period_tag_values = [
+            {
+                tag_name: period_record.tag_values.get(tag_name)
+                for tag_name in all_tag_names
+            }
+            for period_record in sorted_period_records
+        ]
         endpoint_tables = {
-            self.Endpoints.FINANCIALS: pyarrow.Table.from_pylist([
-                period_record.tag_values
-                for period_record in sorted_period_records
-            ]),
+            self.Endpoints.FINANCIALS: pyarrow.Table.from_pylist(normalized_period_tag_values),
         }
 
         try:
@@ -831,9 +861,16 @@ class Intrinio(
         `filing_date` (the year-end balance sheet carries the filing date that
         the calculated fourth-quarter flow statements lack). The period's
         metadata and reporting currency are therefore taken from its income
-        statement, while the filing date is coalesced across all its statements.
-        Periods without an income statement or without any filing date can't
-        form a valid row and are dropped.
+        statement, while the filing date is coalesced across its point-in-time
+        statements. Periods without an income statement or without any filing
+        date can't form a valid row and are dropped.
+
+        The derived-metrics `calculations` statement, when present, is merged in
+        at a lower priority than the point-in-time statements: its values fill
+        only the tags the point-in-time statements don't already provide, so a
+        restated calculations value can never overwrite an as-reported one. It
+        also carries no filing date, so it never contributes to the coalesced
+        filing date above.
 
         Parameters
         ----------
@@ -844,9 +881,19 @@ class Intrinio(
         -------
         The merged period record, or None when the period is incomplete
         """
-        income_statements = [
+        calculation_statements = [
             statement
             for statement in period_statements
+            if statement.statement_code == cls.CALCULATIONS_STATEMENT_CODE
+        ]
+        point_in_time_statements = [
+            statement
+            for statement in period_statements
+            if statement.statement_code != cls.CALCULATIONS_STATEMENT_CODE
+        ]
+        income_statements = [
+            statement
+            for statement in point_in_time_statements
             if statement.statement_code == cls.INCOME_STATEMENT_CODE
         ]
 
@@ -856,7 +903,7 @@ class Intrinio(
         income_statement = income_statements[0]
         available_filing_dates = [
             statement.filing_date
-            for statement in period_statements
+            for statement in point_in_time_statements
             if statement.filing_date is not None
         ]
 
@@ -872,9 +919,17 @@ class Intrinio(
         if income_statement.accepted_date is not None:
             tag_values['earnings_disclosed_at'] = income_statement.accepted_date
 
+        # Merge the calculations statement first, then let the point-in-time statements
+        # overwrite any tag they share, so restated values never displace as-reported ones.
         tag_values.update({
             tag: value
-            for statement in period_statements
+            for statement in calculation_statements
+            for (tag, value) in statement.values.items()
+            if value is not None
+        })
+        tag_values.update({
+            tag: value
+            for statement in point_in_time_statements
             for (tag, value) in statement.values.items()
             if value is not None
         })
@@ -1249,6 +1304,35 @@ class Intrinio(
         return stock_price_records
 
     @classmethod
+    def _resolve_selection_date(
+        cls,
+        summary: intrinio_sdk.models.fundamental_summary.FundamentalSummary,
+    ) -> "datetime.date | datetime.datetime | None":
+        """
+        Resolve the date used to order a summary's vintage during original selection.
+
+        Point-in-time statements are ranked by their filing date, but the
+        `calculations` statement has no filing date, so its latest-restated
+        snapshot is ranked by `updated_date` instead. Both are only ever
+        compared against summaries of the same statement code, so the differing
+        date granularities never mix.
+
+        Parameters
+        ----------
+        summary
+            The fundamental summary whose selection date we're resolving
+
+        Returns
+        -------
+        The summary's filing date, or its update date for calculations statements
+        """
+        if summary.statement_code == cls.CALCULATIONS_STATEMENT_CODE:
+
+            return summary.updated_date
+
+        return summary.filing_date
+
+    @classmethod
     def _select_original_fundamentals(
         cls,
         summaries: list[
@@ -1266,8 +1350,13 @@ class Intrinio(
         still labels `reported`). Those re-presentations share the original
         statement's period but carry a later filing date and recast values,
         which would both duplicate the clock-sync filing date and mix vintages.
-        For each period the earliest-filed statement is kept, as it is the
-        original point-in-time report.
+        For each period the earliest statement is kept, as it is the closest to
+        the original point-in-time report.
+
+        The point-in-time statements are ordered by filing date, but the
+        `calculations` statement has no filing date, so its vintage is instead
+        ordered by `updated_date`; each such selection date is resolved by
+        `_resolve_selection_date`.
 
         Parameters
         ----------
@@ -1276,7 +1365,7 @@ class Intrinio(
 
         Returns
         -------
-        The earliest-filed summary for each distinct period
+        The earliest summary for each distinct period
         """
         earliest_by_period = {}
         for summary in summaries:
@@ -1287,13 +1376,18 @@ class Intrinio(
                 summary.type,
             )
             current_summary = earliest_by_period.get(period_key)
+            summary_selection_date = cls._resolve_selection_date(summary)
+            current_selection_date = (
+                cls._resolve_selection_date(current_summary) if current_summary is not None
+                else None
+            )
             if (
                 current_summary is None
                 or (
-                    summary.filing_date is not None
+                    summary_selection_date is not None
                     and (
-                        current_summary.filing_date is None
-                        or summary.filing_date < current_summary.filing_date
+                        current_selection_date is None
+                        or summary_selection_date < current_selection_date
                     )
                 )
             ):
@@ -1319,6 +1413,13 @@ class Intrinio(
         year-end (annual) balance sheet, which doubles as the fourth quarter's
         balance sheet and carries the filing date its calculated flows lack.
 
+        Alongside those, and for whichever fiscal periods the requested mode
+        covers, we keep the derived-metrics `calculations` statement. It is the
+        only statement that carries the adjusted income tags, and unlike the
+        others it has no `type` and no `filing_date`; it is always the latest
+        restated snapshot, which is acceptable for adjusted figures since those
+        are computed after the fact regardless of vintage.
+
         Parameters
         ----------
         summary
@@ -1333,8 +1434,14 @@ class Intrinio(
         if period_mode is cls.FundamentalPeriods.ANNUAL:
 
             return (
-                summary.type == cls.FUNDAMENTAL_TYPE_REPORTED
-                and summary.fiscal_period == cls.ANNUAL_FISCAL_PERIOD
+                (
+                    summary.type == cls.FUNDAMENTAL_TYPE_REPORTED
+                    and summary.fiscal_period == cls.ANNUAL_FISCAL_PERIOD
+                )
+                or (
+                    summary.statement_code == cls.CALCULATIONS_STATEMENT_CODE
+                    and summary.fiscal_period == cls.ANNUAL_FISCAL_PERIOD
+                )
             )
 
         return (
@@ -1350,5 +1457,12 @@ class Intrinio(
                 summary.type == cls.FUNDAMENTAL_TYPE_REPORTED
                 and summary.fiscal_period == cls.ANNUAL_FISCAL_PERIOD
                 and summary.statement_code == cls.BALANCE_SHEET_STATEMENT_CODE
+            )
+            or (
+                summary.statement_code == cls.CALCULATIONS_STATEMENT_CODE
+                and (
+                    summary.fiscal_period in cls.QUARTERLY_REPORTED_FISCAL_PERIODS
+                    or summary.fiscal_period == cls.FOURTH_QUARTER_FISCAL_PERIOD
+                )
             )
         )

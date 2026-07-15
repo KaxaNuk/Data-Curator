@@ -155,6 +155,12 @@ def example_entity_rows_fundamental_data():
             working_capital_change=decimal.Decimal('7860'),
         ),
         income_statement=FundamentalDataRowIncomeStatement(
+            adjusted_basic_and_diluted_earnings_per_share=9.0,
+            adjusted_basic_earnings_per_share=9.5,
+            adjusted_diluted_earnings_per_share=9.5,
+            adjusted_weighted_average_basic_and_diluted_shares_outstanding=280,
+            adjusted_weighted_average_basic_shares_outstanding=240,
+            adjusted_weighted_average_diluted_shares_outstanding=55,
             basic_earnings_per_share=10.0,
             basic_net_income_available_to_common_stockholders=decimal.Decimal('30000'),
             continuing_operations_income_after_tax=decimal.Decimal('29500'),

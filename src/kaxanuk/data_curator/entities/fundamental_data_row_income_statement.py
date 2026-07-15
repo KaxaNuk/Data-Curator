@@ -11,6 +11,12 @@ from kaxanuk.data_curator.services import entity_helper
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class FundamentalDataRowIncomeStatement(BaseDataEntity):
+    adjusted_basic_and_diluted_earnings_per_share: float | None
+    adjusted_basic_earnings_per_share: float | None
+    adjusted_diluted_earnings_per_share: float | None
+    adjusted_weighted_average_basic_and_diluted_shares_outstanding: int | None
+    adjusted_weighted_average_basic_shares_outstanding: int | None
+    adjusted_weighted_average_diluted_shares_outstanding: int | None
     basic_earnings_per_share: float | None
     basic_net_income_available_to_common_stockholders: decimal.Decimal | None
     continuing_operations_income_after_tax: decimal.Decimal | None
