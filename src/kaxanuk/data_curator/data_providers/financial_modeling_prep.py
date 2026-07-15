@@ -446,6 +446,52 @@ class FinancialModelingPrep(
 
         consolidated_dividend_table = consolidated_dividend_table_descending[::-1]
 
+        ex_dividend_date_column_name = DividendsDataBlock.get_field_qualified_name(
+            DividendsDataBlock.clock_sync_field
+        )
+        duplicate_ex_dividend_date_rows_mask = DataProviderToolkit.find_duplicate_column_value_rows_mask(
+            consolidated_dividend_table,
+            ex_dividend_date_column_name,
+        )
+        if duplicate_ex_dividend_date_rows_mask is not None:
+            duplicate_dividend_columns_map = {
+                DividendsDataBlock.get_field_qualified_name(
+                    DividendDataRow.ex_dividend_date
+                ): 'ex_dividend_date',
+                DividendsDataBlock.get_field_qualified_name(
+                    DividendDataRow.declaration_date
+                ): 'declaration_date',
+                DividendsDataBlock.get_field_qualified_name(
+                    DividendDataRow.record_date
+                ): 'record_date',
+                DividendsDataBlock.get_field_qualified_name(
+                    DividendDataRow.payment_date
+                ): 'payment_date',
+                DividendsDataBlock.get_field_qualified_name(
+                    DividendDataRow.dividend
+                ): 'dividend',
+                DividendsDataBlock.get_field_qualified_name(
+                    DividendDataRow.dividend_split_adjusted
+                ): 'dividend_split_adjusted',
+            }
+            duplicate_dividend_rows_table = (
+                consolidated_dividend_table
+                .select(duplicate_dividend_columns_map.keys())
+                .filter(duplicate_ex_dividend_date_rows_mask)
+            )
+            duplicate_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=duplicate_dividend_rows_table,
+                output_column_renames=duplicate_dividend_columns_map,
+            )
+            msg = "\n".join([
+                f"{main_identifier} dividend data endpoint returned duplicate ex-dividend dates,",
+                "omitting its dividend data. Duplicated dividends:",
+                duplicate_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            return empty_dividend_data
+
         dividend_data = DividendsDataBlock.assemble_entities_from_consolidated_table(
             consolidated_table=consolidated_dividend_table,
             common_field_data={

@@ -757,6 +757,60 @@ class DataProviderToolkit:
         else:
             return None
 
+    @staticmethod
+    def find_duplicate_column_value_rows_mask(
+        table: pyarrow.Table,
+        column_name: str,
+    ) -> "pyarrow.BooleanArray | None":
+        """
+        Identify every row whose value in a column is duplicated across the table.
+
+        Groups the table by the given column and flags all rows sharing a value
+        that appears more than once, so the full set of conflicting rows (not
+        only the later repeats) can be surfaced to the user.
+
+        Parameters
+        ----------
+        table
+            Table to inspect for duplicate column values.
+        column_name
+            Name of the column whose duplicated values should be found.
+
+        Returns
+        -------
+        pyarrow.BooleanArray or None
+            Boolean mask where True marks rows sharing a duplicated value, or
+            None if the table is empty or has no duplicates.
+        """
+        if table.num_rows == 0:
+            return None
+
+        value_counts_table = (
+            table
+            .select([column_name])
+            .group_by([column_name])
+            .aggregate([
+                ([], "count_all"),
+            ])
+        )
+        duplicate_values_table = value_counts_table.filter(
+            pyarrow.compute.greater(
+                value_counts_table["count_all"],
+                1
+            )
+        )
+
+        if duplicate_values_table.num_rows == 0:
+            return None
+
+        duplicate_values = duplicate_values_table[column_name].combine_chunks()
+        duplicate_rows_mask = pyarrow.compute.is_in(
+            table[column_name],
+            value_set=duplicate_values
+        )
+
+        return duplicate_rows_mask.combine_chunks()
+
     @classmethod
     def format_consolidated_discrepancy_table_for_output(
         cls,
