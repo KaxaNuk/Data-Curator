@@ -8,7 +8,7 @@ import networkx
 import pyarrow
 import pyarrow.types
 
-from kaxanuk.data_curator.entities import BaseDataEntity
+from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     DataBlockError,
     DataBlockEntityPackingError,
@@ -47,8 +47,20 @@ type OrderedEntityRelationMap = dict[
 
 
 class BaseDataBlock:
+    """
+    Base class for all data blocks, each of which packages the entities and column logic of a data type.
+
+    Within a data block's own package, modules may import each other with single-dot relative imports; all
+    references to the framework outside the block (entities, exceptions, services, this base class) use
+    absolute imports, so the block stays self-contained and relocatable.
+    """
+
     # entity field that will be synced to the master clock:
     clock_sync_field: EntityField
+    # entity date and value fields whose combinations each produce one dated-factor column;
+    # empty means this block uses plain clock-synced column extraction instead:
+    dated_factor_date_fields: tuple[EntityField, ...] = ()
+    dated_factor_value_fields: tuple[EntityField, ...] = ()
     # identifier based block entities will be grouped by this field's type:
     # (the system only supports one single identifier type for grouping across all used data blocks)
     # (None means no grouping, so this data block's columns will be accessible for all identifiers)

@@ -43,6 +43,10 @@ class ColumnBuilderUnavailableEntityFieldError(DataCuratorError):
     pass
 
 
+class ColumnBuilderUninitializedError(DataCuratorUnhandledError):
+    pass
+
+
 class ConfigurationError(DataCuratorError):
     pass
 

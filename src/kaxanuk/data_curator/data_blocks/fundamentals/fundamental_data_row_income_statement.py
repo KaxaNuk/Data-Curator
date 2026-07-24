@@ -1,7 +1,7 @@
 import dataclasses
 import decimal
 
-from kaxanuk.data_curator.entities import BaseDataEntity
+from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
     EntityValueError

@@ -128,6 +128,11 @@ def main(
 
     # @todo: make async using asyncio
     try:
+        ColumnBuilder.initialize_data_blocks(
+            calculation_modules=calculation_modules,
+            configuration=configuration,
+        )
+
         market_data_provider.initialize(configuration=configuration)
 
         if fundamental_data_provider is not None:
@@ -213,12 +218,12 @@ def main(
                 continue
 
             column_builder = ColumnBuilder(
-                calculation_modules=calculation_modules,
-                configuration=configuration,
-                dividend_data=full_dividend_data,
-                fundamental_data=full_fundamental_data,
-                market_data=full_market_data,
-                split_data=full_split_data,
+                data_entities=[
+                    full_market_data,
+                    full_fundamental_data,
+                    full_dividend_data,
+                    full_split_data,
+                ],
             )
             output_columns = column_builder.process_columns(configuration.columns)
 

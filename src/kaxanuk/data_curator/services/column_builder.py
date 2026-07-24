@@ -2,34 +2,34 @@
 Handles the logic of building the columnar output of the system.
 """
 
+import dataclasses
+import importlib
 import inspect
+import pkgutil
 import types
 import typing
 
+import networkx
 import pyarrow
 
+import kaxanuk.data_curator.data_blocks
+from kaxanuk.data_curator.data_blocks.base_data_block import (
+    BaseDataBlock,
+    EntityField,
+)
+from kaxanuk.data_curator.data_blocks.market_daily import (
+    MarketDailyDataBlock,
+)
 from kaxanuk.data_curator.entities import (
+    BaseDataEntity,
     Configuration,
-    DividendData,
-    FundamentalData,
-    FundamentalDataRow,
-    MarketData,
-    MarketDataDailyRow,
-    SplitData,
-)
-from kaxanuk.data_curator.entities.dividend_data_row import (
-    DIVIDEND_DATE_FIELDS,
-    DIVIDEND_FACTOR_FIELDS,
-)
-from kaxanuk.data_curator.entities.split_data_row import (
-    SPLIT_DATE_FIELDS,
-    SPLIT_FACTOR_FIELDS,
 )
 from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCircularDependenciesError,
     ColumnBuilderCustomFunctionNotFoundError,
     ColumnBuilderNoDatesToInfillError,
     ColumnBuilderUnavailableEntityFieldError,
+    ColumnBuilderUninitializedError,
     InjectedDependencyError,
 )
 # can't import directly from kaxanuk.data_curator.DataColumn because of circular import error:
@@ -43,12 +43,40 @@ type CalculationModules = list[types.ModuleType]
 type ColumnIdentifier = str
 # Type for the container of the columns that have been completely calculated
 type CompletedColumns = dict[ColumnIdentifier, DataColumn | Configuration]
+# Type for the built rows of each data block, keyed by each of the block's prefixes
+type DataBlockRowsByPrefix = dict[str, DataRows | ExpandedDatedFactors]
 # Type for the indexed data rows we'll use to build some columns
 type DataRows = dict[str, DataclassProtocol | None]
 # Type for factors expanded by date (example: dividends, splits)
 type ExpandedDatedFactors = dict[str, dict[str, typing.Any] | None]
-# Type for the container of the columns with unresolved dependencies
-type PostponedColumns = dict[ColumnIdentifier, list[ColumnIdentifier]]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class CalculatedColumn:
+    """
+    Precomputed calculation function and parameter names of a calculated column.
+    """
+    # the calculation function that produces the column:
+    function: typing.Callable
+    # the names of the columns the function takes as parameters, in order:
+    parameter_names: tuple[ColumnIdentifier, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ColumnExtractor:
+    """
+    Precomputed instructions for extracting a data block's columns under a single prefix.
+    """
+    # the field of the block's main row entity that holds the subentity, or None for direct/dated-factor columns:
+    subentity_field_name: str | None
+    # the column names available under this prefix, used to validate requested columns:
+    valid_column_names: frozenset[str]
+
+
+# Type for the calculated columns, keyed by column identifier
+type CalculatedColumnsByName = dict[ColumnIdentifier, CalculatedColumn]
+# Type for the column extractors of every data block prefix, keyed by prefix
+type ColumnExtractorsByPrefix = dict[str, ColumnExtractor]
 
 
 class ColumnBuilder:
@@ -58,67 +86,154 @@ class ColumnBuilder:
     Initiate it with the data entities, and then run process_columns().
     """
 
-    # the names of fields generated from combining columns, like in dividends and splits, will go here:
-    _COMBINED_COLUMN_FIELD_NAMES : typing.ClassVar = {}
+    # the prefix identifying calculated columns, whose values come from calculation functions:
+    CALCULATED_COLUMN_PREFIX: typing.ClassVar[str] = 'c'
+    # the names of the columns that are provided directly, without a prefix or dependencies:
+    FIXED_COLUMN_NAMES: typing.ClassVar[tuple[ColumnIdentifier, ...]] = ('configuration',)
+    # @todo replace once entities expose their rows through a uniform accessor:
+    # candidate attribute names holding a data entity's row dict, tried in order
+    ROW_FIELD_NAMES: typing.ClassVar[tuple[str, ...]] = (
+        'daily_rows',
+        'rows',
+    )
+
+    # the data block whose clock sync field acts as the master clock for all the other data blocks;
+    # power users may override it before calling set_data_blocks to use a custom clock column:
+    master_clock_data_block: typing.ClassVar[type[BaseDataBlock]] = MarketDailyDataBlock
+
+    _calculated_columns: typing.ClassVar[CalculatedColumnsByName] = {}
+    _calculation_modules: typing.ClassVar[CalculationModules] = []
+    _column_extractors_by_prefix: typing.ClassVar[ColumnExtractorsByPrefix] = {}
+    _configuration: typing.ClassVar[Configuration | None] = None
+    _data_blocks: typing.ClassVar[list[type[BaseDataBlock]]] = []
+    _sorted_required_columns: typing.ClassVar[list[ColumnIdentifier]] = []
 
     def __init__(
         self,
         *,
+        data_entities: list[BaseDataEntity],
+    ):
+        if not self._data_blocks:
+            msg = "ColumnBuilder used before its data blocks were initialized"
+
+            raise ColumnBuilderUninitializedError(msg)
+
+        # Resolve each entity to its data block and rows, and locate the master clock rows that all the
+        # other blocks' rows will be synced against.
+        entity_rows_by_block = {}
+        master_clock_rows = None
+        for entity in data_entities:
+            data_block = self._get_data_block_for_entity(entity, self._data_blocks)
+            entity_rows = self._get_entity_rows(entity, self.ROW_FIELD_NAMES)
+            entity_rows_by_block[data_block] = entity_rows
+            if data_block is self.master_clock_data_block:
+                master_clock_rows = entity_rows
+
+        if master_clock_rows is None:
+            msg = "No master clock data entity passed to ColumnBuilder"
+
+            raise InjectedDependencyError(msg)
+
+        # Build each block's rows according to its column strategy, keyed by every one of the block's prefixes.
+        self._rows_by_prefix: DataBlockRowsByPrefix = {}
+        for (data_block, entity_rows) in entity_rows_by_block.items():
+            if data_block is self.master_clock_data_block:
+                built_rows = entity_rows
+            elif len(data_block.dated_factor_date_fields) > 0:
+                built_rows = self._expand_dated_factors(
+                    iter(master_clock_rows.keys()),
+                    tuple(
+                        field.__name__
+                        for field in data_block.dated_factor_date_fields
+                    ),
+                    tuple(
+                        field.__name__
+                        for field in data_block.dated_factor_value_fields
+                    ),
+                    entity_rows,
+                )
+            else:
+                built_rows = self._infill_data(
+                    iter(master_clock_rows.keys()),
+                    entity_rows,
+                )
+
+            for prefix in data_block.prefix_entity_map:
+                self._rows_by_prefix[prefix] = built_rows
+
+    @classmethod
+    def get_sorted_required_columns(cls) -> list[ColumnIdentifier]:
+        """
+        Return the required columns in topologically sorted dependency order.
+
+        Returns
+        -------
+        The required columns sorted so that each column comes after the columns it depends on
+
+        Raises
+        ------
+        ColumnBuilderUninitializedError
+        """
+        if not cls._data_blocks:
+            msg = "ColumnBuilder requires data blocks to be initialized before calculating the required columns"
+
+            raise ColumnBuilderUninitializedError(msg)
+
+        return cls._sorted_required_columns
+
+    @classmethod
+    def initialize_data_blocks(
+        cls,
+        *,
         calculation_modules: CalculationModules,
         configuration: Configuration,
-        dividend_data: DividendData,
-        fundamental_data: FundamentalData,
-        market_data: MarketData,
-        split_data: SplitData,
-    ):
-        self.calculation_modules = calculation_modules
+    ) -> None:
+        """
+        Initialize the data blocks and calculate the topologically sorted required columns.
 
+        If no data blocks have been set yet, the built-in ones are discovered and set through set_data_blocks.
+        The columns requested in the configuration are then resolved, together with all their dependencies,
+        into a dependency-ordered list saved for later retrieval through get_sorted_required_columns.
+
+        Parameters
+        ----------
+        calculation_modules
+            The modules containing the calculated column functions
+        configuration
+            The configuration containing the requested output columns
+
+        Raises
+        ------
+        ColumnBuilderCircularDependenciesError
+        ColumnBuilderUnavailableEntityFieldError
+        InjectedDependencyError
+        """
         if not isinstance(configuration, Configuration):
             msg = "Incorrect configuration passed to ColumnBuilder"
 
             raise InjectedDependencyError(msg)
 
-        self.configuration = configuration
+        cls._calculation_modules = calculation_modules
+        cls._configuration = configuration
 
-        if not isinstance(market_data, MarketData):
-            msg = "Incorrect market_data passed to ColumnBuilder"
+        if not cls._data_blocks:
+            cls.set_data_blocks(
+                cls._get_built_in_data_blocks()
+            )
 
-            raise InjectedDependencyError(msg)
-
-        self.market_data = market_data
-
-        if not isinstance(fundamental_data, FundamentalData):
-            msg = "Incorrect fundamental_data passed to ColumnBuilder"
-
-            raise InjectedDependencyError(msg)
-
-        self.infilled_fundamental_data_rows = self._infill_data(
-            iter(market_data.daily_rows.keys()),
-            fundamental_data.rows
+        cls._column_extractors_by_prefix = cls._calculate_column_extractors(cls._data_blocks)
+        base_column_prefixes = frozenset(cls._column_extractors_by_prefix.keys())
+        master_clock_column = cls._get_master_clock_column(cls.master_clock_data_block)
+        cls._sorted_required_columns = cls._calculate_sorted_required_columns(
+            set(configuration.columns),
+            base_column_prefixes=base_column_prefixes,
+            calculation_modules=calculation_modules,
+            fixed_column_names=cls.FIXED_COLUMN_NAMES,
+            master_clock_column=master_clock_column,
         )
-
-        if not isinstance(dividend_data, DividendData):
-            msg = "Incorrect dividend_data passed to ColumnBuilder"
-
-            raise InjectedDependencyError(msg)
-
-        self.expanded_dividend_data_rows = self._expand_dated_factors(
-            iter(market_data.daily_rows.keys()),
-            DIVIDEND_DATE_FIELDS,
-            DIVIDEND_FACTOR_FIELDS,
-            dividend_data.rows
-        )
-
-        if not isinstance(split_data, SplitData):
-            msg = "Incorrect split_data passed to ColumnBuilder"
-
-            raise InjectedDependencyError(msg)
-
-        self.expanded_split_data_rows = self._expand_dated_factors(
-            iter(market_data.daily_rows.keys()),
-            SPLIT_DATE_FIELDS,
-            SPLIT_FACTOR_FIELDS,
-            split_data.rows
+        cls._calculated_columns = cls._calculate_calculated_columns(
+            cls._sorted_required_columns,
+            calculation_modules,
         )
 
     def process_columns(
@@ -127,6 +242,9 @@ class ColumnBuilder:
     ) -> pyarrow.Table:
         """
         Create the required columns by using the data entities and running the calculation functions.
+
+        The columns are processed in the topologically sorted dependency order calculated during data block
+        initialization, so each column can be built in a single pass with all its dependencies already resolved.
 
         Parameters
         ----------
@@ -139,58 +257,24 @@ class ColumnBuilder:
 
         Raises
         ------
-        ColumnBuilderCircularDependenciesError
+        ColumnBuilderCustomFunctionNotFoundError
+        ColumnBuilderUnavailableEntityFieldError
         """
         # here we will save the columns that we've finished obtaining:
         completed_columns: CompletedColumns = {}
-        # here we will save the column names of the calculated columns that we can't yet calculate, as the
-        # columns they require as parameters haven't been calculated yet. Each key is a column name, and
-        # its value is a list containing the names of its parameters that haven't been yet calculated.
-        postponed_columns: PostponedColumns = {}
+        completed_columns['configuration'] = self._configuration
 
-        completed_columns['configuration'] = self.configuration
-        self._process_columns_with_available_dependencies(
-            set(columns),
-            completed_columns,
-            postponed_columns,
-            calculation_modules=self.calculation_modules,
-            expanded_dividend_data_rows=self.expanded_dividend_data_rows,
-            expanded_split_data_rows=self.expanded_split_data_rows,
-            infilled_fundamental_data_rows=self.infilled_fundamental_data_rows,
-            market_data_rows=self.market_data.daily_rows,
-        )
-        while len(postponed_columns) > 0:
-            initial_completed_count = len(completed_columns)
-            initial_postponed_count = len(postponed_columns)
-            extended_columns = set(columns)
-            for column in postponed_columns:
-                extended_columns |= set(postponed_columns[column])
+        for column in self._sorted_required_columns:
+            if column in completed_columns:
+                continue
 
-            self._process_columns_with_available_dependencies(
-                extended_columns,
+            completed_columns[column] = self._process_column(
+                column,
                 completed_columns,
-                postponed_columns,
-                calculation_modules=self.calculation_modules,
-                expanded_dividend_data_rows=self.expanded_dividend_data_rows,
-                expanded_split_data_rows=self.expanded_split_data_rows,
-                infilled_fundamental_data_rows=self.infilled_fundamental_data_rows,
-                market_data_rows=self.market_data.daily_rows,
+                calculated_columns=self._calculated_columns,
+                column_extractors=self._column_extractors_by_prefix,
+                data_block_rows_by_prefix=self._rows_by_prefix,
             )
-
-            if (
-                len(postponed_columns) > 0
-                and len(postponed_columns) == initial_postponed_count
-                and len(completed_columns) == initial_completed_count
-            ):
-                # we've run into a fixed point, which means 2 or more calculation functions are calling each other
-                msg = " ".join([
-                    "Circular dependency detected, the following column calculation functions seem to be calling",
-                    "each other in a loop:",
-                    ", ".join([
-                        *postponed_columns.keys()
-                    ])
-                ])
-                raise ColumnBuilderCircularDependenciesError(msg)
 
         return pyarrow.Table.from_pydict(
             {
@@ -199,31 +283,339 @@ class ColumnBuilder:
             }
         )
 
-    @staticmethod
-    def _add_column_dependency(
-        postponed_columns: PostponedColumns,
-        column: ColumnIdentifier,
-        dependency: ColumnIdentifier
+    @classmethod
+    def set_data_blocks(
+        cls,
+        data_blocks: list[type[BaseDataBlock]],
     ) -> None:
         """
-        Register that `column` depends on `dependency` by adding it to `postponed_columns`.
+        Replace the ColumnBuilder's data blocks with the provided ones.
 
-        This allows us to keep track which dependencies need to be resolved before we can calculate the values
-        of `column`
+        Allows injecting a specific set of data blocks, for example in tests or to override the built-in
+        discovery, before initialize_data_blocks builds the column topological sort.
 
         Parameters
         ----------
-        postponed_columns
-            The PostponedColumns containing the dependencies. Passed and mutated by reference
-        column
-            The column whose dependency will be added
-        dependency
-            The dependency of `column` that will be registered
+        data_blocks
+            The data block classes that will replace the currently set ones
+
+        Raises
+        ------
+        InjectedDependencyError
         """
-        if column not in postponed_columns:
-            postponed_columns[column] = [dependency]
-        elif dependency not in postponed_columns[column]:
-            postponed_columns[column].append(dependency)
+        if (
+            len(data_blocks) < 1
+            or not all(
+                inspect.isclass(data_block)
+                and issubclass(data_block, BaseDataBlock)
+                for data_block in data_blocks
+            )
+        ):
+            msg = "set_data_blocks requires a non-empty list of BaseDataBlock subclasses"
+
+            raise InjectedDependencyError(msg)
+
+        seen_prefixes = set()
+        colliding_prefixes = set()
+        for data_block in data_blocks:
+            for prefix in data_block.prefix_entity_map:
+                if prefix in seen_prefixes:
+                    colliding_prefixes.add(prefix)
+                else:
+                    seen_prefixes.add(prefix)
+
+        if len(colliding_prefixes) > 0:
+            msg = " ".join([
+                "set_data_blocks received data blocks with colliding prefixes:",
+                ", ".join(
+                    sorted(colliding_prefixes)
+                )
+            ])
+
+            raise InjectedDependencyError(msg)
+
+        if cls.master_clock_data_block not in data_blocks:
+            msg = "set_data_blocks requires the master clock data block to be among the provided data blocks"
+
+            raise InjectedDependencyError(msg)
+
+        cls._data_blocks = data_blocks
+
+    @classmethod
+    def _build_column_subgraph(
+        cls,
+        column: ColumnIdentifier,
+        *,
+        base_column_prefixes: frozenset[str],
+        calculation_modules: CalculationModules,
+        fixed_column_names: tuple[ColumnIdentifier, ...],
+        resolution_path: tuple[ColumnIdentifier, ...] = (),
+    ) -> networkx.DiGraph:
+        """
+        Build the dependency subgraph for a column, recursively including all the columns it depends on.
+
+        Fixed and base columns are leaf nodes, while calculated columns (prefix 'c') recurse into the columns
+        required as parameters by their calculation function. The chain of calculated columns currently being
+        resolved is tracked in `resolution_path` so that a circular dependency is detected the moment a column
+        reappears on it, before the recursion can overflow the stack.
+
+        Parameters
+        ----------
+        column
+            The column to build the dependency subgraph for
+        base_column_prefixes
+            The prefixes of the base columns provided by the data blocks
+        calculation_modules
+            The modules containing the calculated column functions
+        fixed_column_names
+            The names of the columns that are provided directly, without a prefix or dependencies
+        resolution_path
+            The calculated columns currently being resolved above this one, in dependency order
+
+        Returns
+        -------
+        The column's dependency subgraph, with directed edges pointing from each dependency to its dependent column
+
+        Raises
+        ------
+        ColumnBuilderCircularDependenciesError
+        ColumnBuilderUnavailableEntityFieldError
+        """
+        if column in resolution_path:
+            cycle_start = resolution_path.index(column)
+            cycle_columns = [
+                *resolution_path[cycle_start:],
+                column,
+            ]
+            msg = " ".join([
+                "Circular dependency detected between the following column calculation functions:",
+                " -> ".join(cycle_columns),
+            ])
+
+            raise ColumnBuilderCircularDependenciesError(msg)
+
+        subgraph = networkx.DiGraph()
+        subgraph.add_node(column)
+        column_prefix = column.split('_', 1)[0]
+
+        if (
+            column in fixed_column_names
+            or column_prefix in base_column_prefixes
+        ):
+            # Fixed and base columns are leaf nodes with no dependencies.
+
+            return subgraph
+
+        if column_prefix != cls.CALCULATED_COLUMN_PREFIX:
+            msg = f"Column {column} with unknown prefix: {column_prefix}"
+
+            raise ColumnBuilderUnavailableEntityFieldError(msg)
+
+        calculation_function = cls._get_calculation_function(
+            column,
+            calculation_modules
+        )
+        calculation_function_params = cls._get_function_params(calculation_function)
+        for parameter in calculation_function_params:
+            parameter_subgraph = cls._build_column_subgraph(
+                parameter,
+                base_column_prefixes=base_column_prefixes,
+                calculation_modules=calculation_modules,
+                fixed_column_names=fixed_column_names,
+                resolution_path=(*resolution_path, column),
+            )
+            subgraph.update(parameter_subgraph)
+            subgraph.add_edge(parameter, column)
+
+        return subgraph
+
+    @classmethod
+    def _build_dependency_graph(
+        cls,
+        required_columns: set[ColumnIdentifier],
+        *,
+        base_column_prefixes: frozenset[str],
+        calculation_modules: CalculationModules,
+        fixed_column_names: tuple[ColumnIdentifier, ...],
+    ) -> networkx.DiGraph:
+        """
+        Build the full column dependency graph with `required_columns` as roots.
+
+        Parameters
+        ----------
+        required_columns
+            The columns the system must output, used as the roots of the dependency graph
+        base_column_prefixes
+            The prefixes of the base columns provided by the data blocks
+        calculation_modules
+            The modules containing the calculated column functions
+        fixed_column_names
+            The names of the columns that are provided directly, without a prefix or dependencies
+
+        Returns
+        -------
+        The full column dependency graph, with directed edges pointing from each dependency to its dependent column
+        """
+        dependency_graph = networkx.DiGraph()
+        for column in required_columns:
+            column_subgraph = cls._build_column_subgraph(
+                column,
+                base_column_prefixes=base_column_prefixes,
+                calculation_modules=calculation_modules,
+                fixed_column_names=fixed_column_names,
+            )
+            dependency_graph.update(column_subgraph)
+
+        return dependency_graph
+
+    @classmethod
+    def _calculate_calculated_columns(
+        cls,
+        sorted_columns: list[ColumnIdentifier],
+        calculation_modules: CalculationModules,
+    ) -> CalculatedColumnsByName:
+        """
+        Precompute the calculation function and parameter names of every calculated column.
+
+        Resolving each calculated column's function and parameters once here keeps the per-column processing
+        free of the repeated function lookup and signature inspection.
+
+        Parameters
+        ----------
+        sorted_columns
+            The required columns, among which the calculated ones will be resolved
+        calculation_modules
+            The modules containing the calculated column functions
+
+        Returns
+        -------
+        A calculated column for each calculated column in `sorted_columns`
+        """
+        calculated_columns = {}
+        for column in sorted_columns:
+            if column.split('_', 1)[0] != cls.CALCULATED_COLUMN_PREFIX:
+                continue
+
+            calculation_function = cls._get_calculation_function(
+                column,
+                calculation_modules
+            )
+            calculated_columns[column] = CalculatedColumn(
+                function=calculation_function,
+                parameter_names=tuple(
+                    cls._get_function_params(calculation_function)
+                ),
+            )
+
+        return calculated_columns
+
+    @classmethod
+    def _calculate_column_extractors(
+        cls,
+        data_blocks: list[type[BaseDataBlock]],
+    ) -> ColumnExtractorsByPrefix:
+        """
+        Precompute, for every data block prefix, how to extract and validate its columns.
+
+        Resolving each prefix's extraction strategy once here keeps the per-column processing free of any data
+        block traversal or entity introspection.
+
+        Parameters
+        ----------
+        data_blocks
+            The data blocks whose prefixes will be mapped to their column extractors
+
+        Returns
+        -------
+        A column extractor for each prefix declared across the data blocks
+        """
+        column_extractors = {}
+        for data_block in data_blocks:
+            dated_factor_entity = (
+                data_block.dated_factor_date_fields[0].__objclass__
+                if len(data_block.dated_factor_date_fields) > 0
+                else None
+            )
+            main_row_entity = data_block.clock_sync_field.__objclass__
+            for (prefix, entity) in data_block.prefix_entity_map.items():
+                if entity is dated_factor_entity:
+                    column_extractors[prefix] = ColumnExtractor(
+                        subentity_field_name=None,
+                        valid_column_names=cls._get_combined_column_names(
+                            data_block.dated_factor_date_fields,
+                            data_block.dated_factor_value_fields,
+                        ),
+                    )
+                elif entity is main_row_entity:
+                    column_extractors[prefix] = ColumnExtractor(
+                        subentity_field_name=None,
+                        valid_column_names=cls._get_entity_property_names(entity),
+                    )
+                else:
+                    column_extractors[prefix] = ColumnExtractor(
+                        subentity_field_name=cls._get_subentity_field_name(main_row_entity, entity),
+                        valid_column_names=cls._get_entity_property_names(entity),
+                    )
+
+        return column_extractors
+
+    @classmethod
+    def _calculate_sorted_required_columns(
+        cls,
+        required_columns: set[ColumnIdentifier],
+        *,
+        base_column_prefixes: frozenset[str],
+        calculation_modules: CalculationModules,
+        fixed_column_names: tuple[ColumnIdentifier, ...],
+        master_clock_column: ColumnIdentifier,
+    ) -> list[ColumnIdentifier]:
+        """
+        Return all the required columns and their dependencies, topologically sorted in dependency order.
+
+        The master clock column is always included and placed at the start of the list, so it's available as the
+        clock sync base for all the other columns.
+
+        Parameters
+        ----------
+        required_columns
+            The columns the system must output
+        base_column_prefixes
+            The prefixes of the base columns provided by the data blocks
+        calculation_modules
+            The modules containing the calculated column functions
+        fixed_column_names
+            The names of the columns that are provided directly, without a prefix or dependencies
+        master_clock_column
+            The column that serves as the clock sync base, always placed at the start of the result
+
+        Returns
+        -------
+        All the required columns and their dependencies, sorted so that each column comes after the columns it
+        depends on, with the master clock column at the start
+
+        Raises
+        ------
+        ColumnBuilderCircularDependenciesError
+        ColumnBuilderUnavailableEntityFieldError
+        """
+        rooted_columns = required_columns | {master_clock_column}
+        dependency_graph = cls._build_dependency_graph(
+            rooted_columns,
+            base_column_prefixes=base_column_prefixes,
+            calculation_modules=calculation_modules,
+            fixed_column_names=fixed_column_names,
+        )
+        sorted_columns = cls._topological_sort(dependency_graph)
+        columns_after_master_clock = [
+            column
+            for column in sorted_columns
+            if column != master_clock_column
+        ]
+
+        return [
+            master_clock_column,
+            *columns_after_master_clock,
+        ]
 
     @staticmethod
     def _expand_dated_factors(
@@ -315,6 +707,35 @@ class ColumnBuilder:
         )
 
     @staticmethod
+    def _get_built_in_data_blocks() -> list[type[BaseDataBlock]]:
+        """
+        Discover and return all the built-in data block classes.
+
+        Walks the built-in data_blocks package, imports each of its submodules, and collects every
+        BaseDataBlock subclass defined within them.
+
+        Returns
+        -------
+        The list of all the built-in data block classes
+        """
+        built_in_data_blocks = []
+        for module_info in pkgutil.iter_modules(
+            kaxanuk.data_curator.data_blocks.__path__
+        ):
+            submodule = importlib.import_module(
+                f'{kaxanuk.data_curator.data_blocks.__name__}.{module_info.name}'
+            )
+            for (_, member) in inspect.getmembers(submodule, inspect.isclass):
+                if (
+                    issubclass(member, BaseDataBlock)
+                    and member is not BaseDataBlock
+                    and member.__module__ == submodule.__name__
+                ):
+                    built_in_data_blocks.append(member)
+
+        return built_in_data_blocks
+
+    @staticmethod
     def _get_calculation_function(
         function_name: str,
         calculation_modules: CalculationModules
@@ -345,89 +766,112 @@ class ColumnBuilder:
             raise ColumnBuilderCustomFunctionNotFoundError(msg)
 
     @staticmethod
-    def _get_class_of_first_non_empty_row(
-        data_rows: dict[str, object],
-        subentity_name: str | None = None
-    ) -> type | None:
+    def _get_combined_column_names(
+        date_fields: tuple[EntityField, ...],
+        value_fields: tuple[EntityField, ...],
+    ) -> frozenset[str]:
         """
-        Determine the class type of the first row value entity in data_rows.
+        Return the combined column names produced by all the date and value field combinations.
 
         Parameters
         ----------
-        data_rows
-            Data rows where the keys are strings and the values are entity objects.
-        subentity_name
-            The name of the field of the subentity inside the entuty whose class we want to determine, if any
+        date_fields
+            The entity date fields denoting the dates of the events
+        value_fields
+            The entity value fields denoting the values ascribed to each date
 
         Returns
         -------
-        The class type of the first row value entity, or None if empty.
+        The names of the columns generated from all the date/value field combinations
+        """
+        return frozenset(
+            f'{date_field.__name__}_{value_field.__name__}'
+            for date_field in date_fields
+            for value_field in value_fields
+        )
+
+    @staticmethod
+    def _get_data_block_for_entity(
+        entity: BaseDataEntity,
+        data_blocks: list[type[BaseDataBlock]],
+    ) -> type[BaseDataBlock]:
+        """
+        Return the data block whose main entity matches the given entity instance.
+
+        Parameters
+        ----------
+        entity
+            The data entity instance whose owning data block we want to find
+        data_blocks
+            The data blocks to search, each identified by its main entity
+
+        Returns
+        -------
+        The data block whose main_entity matches the type of `entity`
 
         Raises
         ------
-        AttributeError if the subentity_name is not found in the entity
+        InjectedDependencyError
         """
-        if len(data_rows) < 1:
-            return None
+        for data_block in data_blocks:
+            if isinstance(entity, data_block.main_entity):
+                return data_block
 
-        for row in data_rows.values():
-            if (
-                row is not None
-                and subentity_name is None
-            ):
-                return type(
-                    row
-                )
+        msg = f"No data block found for entity of type {type(entity).__name__}"
 
-            if (
-                row is not None
-                and subentity_name is not None
-                and getattr(row, subentity_name, None) is not None
-            ):
-                return type(
-                    getattr(row, subentity_name)
-                )
+        raise InjectedDependencyError(msg)
 
-        return None
-
-    @classmethod
-    def _get_combined_field_column_names(
-        cls,
-        field_source: str,
-        date_fields: tuple[str, ...],
-        factor_fields: tuple[str, ...],
-    ) -> list[str, ...]:
+    @staticmethod
+    def _get_entity_property_names(entity_class: type) -> frozenset[str]:
         """
-        For columns generated from date/factor field combinations, return the combined column names for field_source.
+        Return the names of all the properties of an entity class.
 
-        Specific field sources like dividends and splits output single events for each date and factor combination,
-        for example dividend.ex_dividend_date and dividend.dividend combine to output the value of dividend.dividend
-        for the dividend.ex_dividend_date, with the output column named ex_dividend_date_dividend.
-
-        Multiple dates and multiple factors create one column per each possible date/factor combination.
+        Useful for validating whether a column name corresponds to an entity property.
 
         Parameters
         ----------
-        field_source
-            The source data of the fields we're combining, e.g. 'dividend', 'split', etc.
-        date_fields
-            The entity date fields denoting the dates of the events
-        factor_fields
-            The entity factor fields denoting the values that will be ascribed to each date
+        entity_class
+            The class whose property names we want to collect
 
         Returns
         -------
-        The names of the columns generated from all date/factor field combinations
+        The names of all the properties of the class
         """
-        # memoize the shit out of this
-        if field_source not in cls._COMBINED_COLUMN_FIELD_NAMES:
-            cls._COMBINED_COLUMN_FIELD_NAMES[field_source] = [
-                f'{date}_{factor}'
-                for date in date_fields
-                for factor in factor_fields
-            ]
+        return frozenset(
+            member[0]
+            for member in inspect.getmembers(entity_class)
+        )
 
-        return cls._COMBINED_COLUMN_FIELD_NAMES[field_source]
+    @staticmethod
+    def _get_entity_rows(
+        entity: BaseDataEntity,
+        row_field_names: tuple[str, ...],
+    ) -> DataRows:
+        """
+        Return the row dict of a data entity, looked up through the candidate row field names.
+
+        Parameters
+        ----------
+        entity
+            The data entity whose rows we want to extract
+        row_field_names
+            The candidate attribute names holding the entity's row dict, tried in order
+
+        Returns
+        -------
+        The entity's row dict
+
+        Raises
+        ------
+        InjectedDependencyError
+        """
+        for row_field_name in row_field_names:
+            if hasattr(entity, row_field_name):
+                return getattr(entity, row_field_name)
+
+        msg = f"No known row field found on entity of type {type(entity).__name__}"
+
+        raise InjectedDependencyError(msg)
 
     @staticmethod
     def _get_field_from_row(
@@ -453,30 +897,21 @@ class ColumnBuilder:
         """
         if isinstance(row, dict):
             field_value = row.get(field, None)
-            if subfield is not None:
-                if isinstance(field_value, dict):
-                    return field_value.get(subfield, None)
-                else:
-                    return None
-            else:
+            if subfield is None:
                 return field_value
 
-        if (
-            row is None
-            or not hasattr(row, field)
-        ):
+            if isinstance(field_value, dict):
+                return field_value.get(subfield, None)
+
             return None
-        elif subfield is None:
-            return getattr(row, field)
-        else:
-            parent_field = getattr(row, field)
-            if not hasattr(parent_field, subfield):
-                return None
-            else:
-                return getattr(
-                    parent_field,
-                    subfield
-                )
+
+        # A single getattr with a default avoids the extra hasattr lookup on this per-cell hot path;
+        # a missing attribute and an attribute that is None both resolve to None, as before.
+        field_value = getattr(row, field, None)
+        if subfield is None:
+            return field_value
+
+        return getattr(field_value, subfield, None)
 
     @staticmethod
     def _get_function_params(callable_function: typing.Callable) -> list[str]:
@@ -503,6 +938,80 @@ class ColumnBuilder:
         return list(
             inspect.signature(callable_function).parameters.keys()
         )
+
+    @staticmethod
+    def _get_master_clock_column(
+        master_clock_data_block: type[BaseDataBlock]
+    ) -> ColumnIdentifier:
+        """
+        Reconstruct the master clock column identifier from the master clock data block.
+
+        The identifier is built from the prefix mapped to the data block's clock sync field entity and the name
+        of that field, matching the base column identifier format.
+
+        Parameters
+        ----------
+        master_clock_data_block
+            The data block whose clock sync field acts as the master clock
+
+        Returns
+        -------
+        The master clock column identifier
+
+        Raises
+        ------
+        InjectedDependencyError
+        """
+        clock_sync_field = master_clock_data_block.clock_sync_field
+        clock_sync_entity = clock_sync_field.__objclass__
+        for (prefix, entity) in master_clock_data_block.prefix_entity_map.items():
+            if issubclass(entity, clock_sync_entity):
+                return f'{prefix}_{clock_sync_field.__name__}'
+
+        msg = " ".join([
+            "Master clock data block has no prefix mapped to its clock sync field entity:",
+            clock_sync_entity.__name__,
+        ])
+
+        raise InjectedDependencyError(msg)
+
+    @staticmethod
+    def _get_subentity_field_name(
+        parent_entity: type[BaseDataEntity],
+        subentity: type[BaseDataEntity],
+    ) -> str:
+        """
+        Return the name of the field on `parent_entity` that holds the `subentity`.
+
+        Parameters
+        ----------
+        parent_entity
+            The entity class whose fields will be searched
+        subentity
+            The subentity class we're looking for among the parent entity's fields
+
+        Returns
+        -------
+        The name of the parent entity field holding the subentity
+
+        Raises
+        ------
+        ColumnBuilderUnavailableEntityFieldError
+        """
+        for (field_name, field_type) in typing.get_type_hints(parent_entity).items():
+            field_types = (
+                typing.get_args(field_type)
+                or (field_type,)
+            )
+            if subentity in field_types:
+                return field_name
+
+        msg = " ".join([
+            f"Entity {parent_entity.__name__} has no field holding subentity:",
+            subentity.__name__,
+        ])
+
+        raise ColumnBuilderUnavailableEntityFieldError(msg)
 
     @staticmethod
     def _infill_data(
@@ -569,225 +1078,99 @@ class ColumnBuilder:
         return infilled_data
 
     @classmethod
-    def _process_columns_with_available_dependencies(
+    def _process_column(
         cls,
-        columns: set[ColumnIdentifier],
+        column: ColumnIdentifier,
         completed_columns: CompletedColumns,
-        postponed_columns: PostponedColumns,
         *,
-        calculation_modules: CalculationModules,
-        expanded_dividend_data_rows: ExpandedDatedFactors,
-        expanded_split_data_rows: ExpandedDatedFactors,
-        infilled_fundamental_data_rows: DataRows,
-        market_data_rows: dict[str, MarketDataDailyRow],
-    ) -> None:
+        calculated_columns: CalculatedColumnsByName,
+        column_extractors: ColumnExtractorsByPrefix,
+        data_block_rows_by_prefix: DataBlockRowsByPrefix,
+    ) -> DataColumn:
         """
-        Calculate the columns that have all their dependencies already resolved.
+        Calculate a single column, assuming all the columns it depends on are already in completed_columns.
+
+        Calculated columns run their precomputed calculation function. Every other column is built from its
+        prefix's precomputed column extractor: the requested column is validated against the extractor's valid
+        column names, then generated directly or through the extractor's subentity field.
 
         Parameters
         ----------
-        columns
-            The set of all columns the system must output
+        column
+            The column to calculate
         completed_columns
-            The CompletedColumns containing the completely calculated columns. Passed and mutated by reference
-        postponed_columns
-            The PostponedColumns containing the columns with unresolved dependencies. Passed and mutated by reference
+            The CompletedColumns containing the already calculated columns, including this column's dependencies
+        calculated_columns
+            The precomputed calculation functions and parameter names, keyed by calculated column identifier
+        column_extractors
+            The precomputed column extractors, keyed by each data block prefix
+        data_block_rows_by_prefix
+            The built data block rows, keyed by each of the blocks' prefixes
+
+        Returns
+        -------
+        The calculated column
 
         Raises
         ------
         ColumnBuilderUnavailableEntityFieldError
         """
-        for column in columns:
-            if column in completed_columns:
-                continue
+        [column_type, column_name] = column.split('_', 1)
 
-            [column_type, column_name] = column.split('_', 1)
-            match column_type:
-                case 'c':       # computed functions
-                    calculation_function = cls._get_calculation_function(
-                        column,
-                        calculation_modules
-                    )
-                    params = cls._get_function_params(calculation_function)
-                    for param in params:
-                        if param in completed_columns:
-                            continue
+        if column_type == cls.CALCULATED_COLUMN_PREFIX:
+            calculated_column = calculated_columns[column]
+            param_columns = (
+                completed_columns[parameter_name]
+                for parameter_name in calculated_column.parameter_names
+            )
 
-                        [param_type, _] = param.split('_', 1)
-                        if param_type == 'c':
-                            cls._add_column_dependency(
-                                postponed_columns,
-                                column,
-                                param
-                            )
-                        else:
-                            cls._process_columns_with_available_dependencies(
-                                {param},
-                                completed_columns,
-                                {},
-                                calculation_modules=calculation_modules,
-                                expanded_dividend_data_rows=expanded_dividend_data_rows,
-                                expanded_split_data_rows=expanded_split_data_rows,
-                                infilled_fundamental_data_rows=infilled_fundamental_data_rows,
-                                market_data_rows=market_data_rows,
-                            )
-                    if (
-                        column not in postponed_columns
-                        or len(postponed_columns[column]) < 1
-                    ):
-                        param_columns = (completed_columns.get(p) for p in params)
-                        # Execute the calculation function and wrap it in DataColumn (in case of Pandas.Series, etc.)
-                        completed_columns[column] = DataColumn.load(
-                            calculation_function(*param_columns)
-                        )
-                        if column in postponed_columns:
-                            postponed_columns.pop(column)
-                        cls._remove_column_dependency(postponed_columns, column)
-                case 'd':       # dividends
-                    if column_name not in cls._get_combined_field_column_names(
-                        'dividend',
-                        DIVIDEND_DATE_FIELDS,
-                        DIVIDEND_FACTOR_FIELDS
-                    ):
-                        msg = f"Column not available in dividend data: {column}"
-                        raise ColumnBuilderUnavailableEntityFieldError(msg)
-                    else:
-                        completed_columns[column] = cls._generate_column(
-                            expanded_dividend_data_rows,
-                            column_name
-                        )
-                case 'f':       # fundamental data
-                    if not cls._property_exists_in_class(FundamentalDataRow, column_name):
-                        msg = f"Column not available in fundamental data: {column}"
-                        raise ColumnBuilderUnavailableEntityFieldError(msg)
-                    else:
-                        completed_columns[column] = cls._generate_column(
-                            infilled_fundamental_data_rows,
-                            column_name
-                        )
-                case 'fbs':     # fundamental data balance sheet
-                    row_entity_class = cls._get_class_of_first_non_empty_row(
-                        infilled_fundamental_data_rows,
-                        'balance_sheet'
-                    )
-                    if (
-                        row_entity_class is not None
-                        and not cls._property_exists_in_class(row_entity_class, column_name)
-                    ):
-                        msg = f"Column not available in fundamental data balance_sheet: {column}"
-                        raise ColumnBuilderUnavailableEntityFieldError(msg)
-                    else:
-                        completed_columns[column] = cls._generate_column(
-                            infilled_fundamental_data_rows,
-                            'balance_sheet',
-                            column_name
-                        )
-                case 'fcf':     # fundamental data cash flow
-                    row_entity_class = cls._get_class_of_first_non_empty_row(
-                        infilled_fundamental_data_rows,
-                        'cash_flow'
-                    )
-                    if (
-                        row_entity_class is not None
-                        and not cls._property_exists_in_class(row_entity_class, column_name)
-                    ):
-                        msg = f"Column not available in fundamental data cash_flow: {column}"
-                        raise ColumnBuilderUnavailableEntityFieldError(msg)
-                    else:
-                        completed_columns[column] = cls._generate_column(
-                            infilled_fundamental_data_rows,
-                            'cash_flow',
-                            column_name
-                        )
-                case 'fis':      # fundamental data income
-                    row_entity_class = cls._get_class_of_first_non_empty_row(
-                        infilled_fundamental_data_rows,
-                        'income_statement'
-                    )
-                    if (
-                        row_entity_class is not None
-                        and not cls._property_exists_in_class(row_entity_class, column_name)
-                    ):
-                        msg = f"Column not available in fundamental data income_statement: {column}"
-                        raise ColumnBuilderUnavailableEntityFieldError(msg)
-                    else:
-                        completed_columns[column] = cls._generate_column(
-                            infilled_fundamental_data_rows,
-                            'income_statement',
-                            column_name
-                        )
-                case 'm':       # market data
-                    row_entity_class = cls._get_class_of_first_non_empty_row(market_data_rows)
-                    if not cls._property_exists_in_class(row_entity_class, column_name):
-                        msg = f"Column not available in market data: {column}"
-                        raise ColumnBuilderUnavailableEntityFieldError(msg)
-                    else:
-                        completed_columns[column] = cls._generate_column(
-                            market_data_rows,
-                            column_name
-                        )
-                case 's':       # splits
-                    if column_name not in cls._get_combined_field_column_names(
-                        'split',
-                        SPLIT_DATE_FIELDS,
-                        SPLIT_FACTOR_FIELDS
-                    ):
-                        msg = f"Column not available in split data: {column}"
-                        raise ColumnBuilderUnavailableEntityFieldError(msg)
-                    else:
-                        completed_columns[column] = cls._generate_column(
-                            expanded_split_data_rows,
-                            column_name
-                        )
-                case _:
-                    msg = f"Column {column_name} with unknown prefix: {column_type}"
-                    raise ColumnBuilderUnavailableEntityFieldError(msg)
+            # Execute the calculation function and wrap it in DataColumn (in case of Pandas.Series, etc.)
+            return DataColumn.load(
+                calculated_column.function(*param_columns)
+            )
+
+        if column_type not in column_extractors:
+            msg = f"Column {column_name} with unknown prefix: {column_type}"
+
+            raise ColumnBuilderUnavailableEntityFieldError(msg)
+
+        column_extractor = column_extractors[column_type]
+
+        if column_name not in column_extractor.valid_column_names:
+            msg = f"Column not available under prefix '{column_type}': {column}"
+
+            raise ColumnBuilderUnavailableEntityFieldError(msg)
+
+        data_block_rows = data_block_rows_by_prefix[column_type]
+
+        if column_extractor.subentity_field_name is not None:
+            return cls._generate_column(
+                data_block_rows,
+                column_extractor.subentity_field_name,
+                column_name
+            )
+
+        return cls._generate_column(
+            data_block_rows,
+            column_name
+        )
 
     @staticmethod
-    def _property_exists_in_class(
-        uninstantiated_class: type,
-        property_name: str
-    ) -> bool:
+    def _topological_sort(dependency_graph: networkx.DiGraph) -> list[ColumnIdentifier]:
         """
-        Check if a property with a given name exists in an uninstantiated class.
+        Return the columns in the dependency graph in topologically sorted order.
 
-        Useful for checking if a column name corresponds to an entity property
+        This ensures the columns are processed in the correct order, with all their dependencies calculated first.
 
         Parameters
         ----------
-        uninstantiated_class
-            The class whose properties we'll check
-        property_name
-            The name of the property we're looking for
+        dependency_graph
+            The column dependency graph to sort
 
         Returns
         -------
-        Whether the property name exists in the uninstantiated class
+        The column identifiers in topological order
         """
-        properties = [
-            item[0]
-            for item in inspect.getmembers(uninstantiated_class)
-        ]
-        return property_name in properties
-
-    @staticmethod
-    def _remove_column_dependency(
-        postponed_columns: PostponedColumns,
-        dependency: ColumnIdentifier
-    ) -> None:
-        """
-        Remove the dependency from its respective columns in postponed_columns.
-
-        This allows us to keep track of just the unresolved dependencies, and calculate all columns which have had
-        all its dependencies resolved
-
-        Parameters
-        ----------
-        postponed_columns
-            The PostponedColumns containing the dependencies. Passed and mutated by reference
-        dependency
-            The dependency that will be removed from all columns that registered it
-        """
-        for column in postponed_columns:
-            if dependency in postponed_columns[column]:
-                postponed_columns[column].remove(dependency)
+        return list(
+            networkx.topological_sort(dependency_graph)
+        )

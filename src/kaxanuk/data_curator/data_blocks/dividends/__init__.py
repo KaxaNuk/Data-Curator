@@ -10,11 +10,8 @@ from kaxanuk.data_curator.data_blocks.base_data_block import (
     ConsolidatedFieldsTable,
     FieldValueToEntityMap,
 )
-from kaxanuk.data_curator.entities import (
-    DividendData,
-    DividendDataRow,
-    # MarketInstrumentIdentifier,
-)
+from .dividend_data import DividendData
+from .dividend_data_row import DividendDataRow
 from kaxanuk.data_curator.exceptions import (
     DataBlockEmptyError,
     DataBlockEntityPackingError,
@@ -25,6 +22,16 @@ from kaxanuk.data_curator.exceptions import (
 
 class DividendsDataBlock(BaseDataBlock):
     clock_sync_field = DividendDataRow.ex_dividend_date
+    dated_factor_date_fields = (
+        DividendDataRow.declaration_date,
+        DividendDataRow.ex_dividend_date,
+        DividendDataRow.record_date,
+        DividendDataRow.payment_date,
+    )
+    dated_factor_value_fields = (
+        DividendDataRow.dividend,
+        DividendDataRow.dividend_split_adjusted,
+    )
     # groups by identifier type; only one identifier type per configuration is supported:
     grouping_identifier_field = DividendData.main_identifier
     main_entity = DividendData

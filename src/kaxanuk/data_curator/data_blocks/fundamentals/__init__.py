@@ -13,14 +13,11 @@ from kaxanuk.data_curator.data_blocks.base_data_block import (
     ConsolidatedFieldsTable,
     FieldValueToEntityMap,
 )
-from kaxanuk.data_curator.entities import (
-    FundamentalData,
-    FundamentalDataRow,
-    FundamentalDataRowBalanceSheet,
-    FundamentalDataRowCashFlow,
-    FundamentalDataRowIncomeStatement,
-    # MarketInstrumentIdentifier,
-)
+from .fundamental_data import FundamentalData
+from .fundamental_data_row import FundamentalDataRow
+from .fundamental_data_row_balance_sheet import FundamentalDataRowBalanceSheet
+from .fundamental_data_row_cash_flow import FundamentalDataRowCashFlow
+from .fundamental_data_row_income_statement import FundamentalDataRowIncomeStatement
 from kaxanuk.data_curator.exceptions import (
     DataBlockEmptyError,
     DataBlockEntityPackingError,

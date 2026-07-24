@@ -10,11 +10,8 @@ from kaxanuk.data_curator.data_blocks.base_data_block import (
     ConsolidatedFieldsTable,
     FieldValueToEntityMap,
 )
-from kaxanuk.data_curator.entities import (
-    SplitData,
-    SplitDataRow,
-    # MarketInstrumentIdentifier,
-)
+from .split_data import SplitData
+from .split_data_row import SplitDataRow
 from kaxanuk.data_curator.exceptions import (
     DataBlockEmptyError,
     DataBlockEntityPackingError,
@@ -25,6 +22,13 @@ from kaxanuk.data_curator.exceptions import (
 
 class SplitsDataBlock(BaseDataBlock):
     clock_sync_field = SplitDataRow.split_date
+    dated_factor_date_fields = (
+        SplitDataRow.split_date,
+    )
+    dated_factor_value_fields = (
+        SplitDataRow.numerator,
+        SplitDataRow.denominator,
+    )
     # groups by identifier type; only one identifier type per configuration is supported:
     grouping_identifier_field = SplitData.main_identifier
     main_entity = SplitData

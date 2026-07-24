@@ -10,11 +10,8 @@ from kaxanuk.data_curator.data_blocks.base_data_block import (
     ConsolidatedFieldsTable,
     FieldValueToEntityMap,
 )
-from kaxanuk.data_curator.entities import (
-    MarketData,
-    MarketDataDailyRow,
-    # MarketInstrumentIdentifier,
-)
+from .market_data import MarketData
+from .market_data_daily_row import MarketDataDailyRow
 from kaxanuk.data_curator.exceptions import (
     DataBlockEmptyError,
     DataBlockEntityPackingError,

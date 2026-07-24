@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+## Added
+- `ColumnBuilder.get_sorted_required_columns` method for returning the required columns topologically sorted by dependency order
+- `ColumnBuilder.initialize_data_blocks` new classmethod to precompute required data structures
+- `ColumnBuilder.set_data_blocks` new class method to allow the user to replace the data blocks with their own from their entry script
+- `ColumnBuilder.master_clock_data_block` new class var that encodes the master clock data block; allows the user to replace MarketData as the master clock sync data block
+
+## Changed
+- Moved entities into their respective data blocks
+- Generalilzed `ColumnBuilder` to work with arbitrary data blocks
+
 ### Fixed
 - Catch FMP erroneous dividend data with duplicate ex-dividend dates
 
