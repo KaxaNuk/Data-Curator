@@ -62,7 +62,6 @@ FUNDAMENTAL_TAGS_ABSENT_FROM_FIXTURES = frozenset({
     'FundamentalDataRowBalanceSheet.treasury_stock_value',
     'FundamentalDataRowCashFlow.cash_exchange_rate_effect',
     'FundamentalDataRowCashFlow.interest_payments',
-    'FundamentalDataRowCashFlow.net_debt_issuance_proceeds',
     'FundamentalDataRowCashFlow.preferred_stock_issuance_proceeds',
     'FundamentalDataRowIncomeStatement.discontinued_operations_income_after_tax',
     'FundamentalDataRowIncomeStatement.net_interest_income',
@@ -264,6 +263,31 @@ class TestGetFundamentalData:
         } - FUNDAMENTAL_TAGS_ABSENT_FROM_FIXTURES
 
         assert populated_tags == expected_populated_tags
+
+
+    def test_interim_quarter_rows_carry_cash_flow(
+        self,
+        initialized_provider: Intrinio,
+    ) -> None:
+        # Intrinio serves the discrete second- and third-quarter cash flows only as calculated
+        # statements; the provider must keep them so those quarters aren't left without cash flow.
+        result = initialized_provider.get_fundamental_data(
+            main_identifier=MAIN_IDENTIFIER,
+            period=PERIOD,
+            start_date=START_DATE,
+            end_date=END_DATE,
+        )
+        interim_rows = [
+            row
+            for row in result.rows.values()
+            if (
+                row is not None
+                and row.fiscal_period in ('Q2', 'Q3')
+            )
+        ]
+
+        assert len(interim_rows) > 0
+        assert all(row.cash_flow is not None for row in interim_rows)
 
 
 class TestGetDividendData:

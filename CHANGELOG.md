@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Intrinio data provider
+- Intrinio fundamentals bulk-download fast path: for larger universes `initialize()` downloads the whole-market fundamentals bulk once and caches it at class level, transparently replacing the per-ticker two-step API with the same output; smaller universes, a missing bulk entitlement, or any download failure fall back to the per-ticker API
 
 
 ## [0.49.1] - 2026-06-25
