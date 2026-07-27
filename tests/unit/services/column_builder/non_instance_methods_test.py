@@ -225,6 +225,7 @@ def example_entity_rows_market_data():
             close_dividend_and_split_adjusted=decimal.Decimal('16.08'),
             volume_dividend_and_split_adjusted=23654789,
             vwap_dividend_and_split_adjusted=decimal.Decimal('15.045'),
+            shares_outstanding=decimal.Decimal('1000000'),
         ),
         '2020-01-03': MarketDataDailyRow(
             date=datetime.date(2020, 1, 3),
@@ -246,6 +247,7 @@ def example_entity_rows_market_data():
             close_dividend_and_split_adjusted=decimal.Decimal('18.01'),
             volume_dividend_and_split_adjusted=1500,
             vwap_dividend_and_split_adjusted=decimal.Decimal('20.64'),
+            shares_outstanding=decimal.Decimal('1000500'),
         ),
         '2020-01-04': MarketDataDailyRow(
             date=datetime.date(2020, 1, 4),
@@ -267,6 +269,7 @@ def example_entity_rows_market_data():
             close_dividend_and_split_adjusted=decimal.Decimal('23.55'),
             volume_dividend_and_split_adjusted=1600,
             vwap_dividend_and_split_adjusted=decimal.Decimal('26.54'),
+            shares_outstanding=decimal.Decimal('1001000'),
         ),
     }
 

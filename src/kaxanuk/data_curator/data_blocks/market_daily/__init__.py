@@ -3,6 +3,7 @@ __all__ = [
 ]
 
 
+import logging
 import typing
 
 from kaxanuk.data_curator.data_blocks.base_data_block import (
@@ -59,6 +60,29 @@ class MarketDailyDataBlock(BaseDataBlock):
             msg = "Market data processing error"
 
             raise EntityProcessingError(msg) from error
+
+        # A date whose every mapped field is null packs as None, which providers do serve:
+        # Intrinio returns empty rows for dates before a security started trading, for one.
+        # MarketData admits no empty daily row, and those dates carry nothing to output anyway,
+        # so drop them rather than fail the whole security over them.
+        empty_dates = [
+            date
+            for (date, row) in daily_rows.items()
+            if row is None
+        ]
+        if empty_dates:
+            daily_rows = {
+                date: row
+                for (date, row) in daily_rows.items()
+                if row is not None
+            }
+            logging.getLogger(__name__).warning(
+                "%s market data endpoints returned %d empty dates, dropping them: %s to %s",
+                identifier.identifier,
+                len(empty_dates),
+                empty_dates[0],
+                empty_dates[-1],
+            )
 
         try:
             if not daily_rows:

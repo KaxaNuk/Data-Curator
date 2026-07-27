@@ -1812,19 +1812,19 @@ def c_macd_signal_9d_split_adjusted(
 # noinspection PyShadowingNames
 def c_market_cap(
     m_close_split_adjusted,
-    fis_weighted_average_diluted_shares_outstanding
+    m_shares_outstanding
 ):
     r"""
-    Calculate the market capitalization using unadjusted close prices and weighted average diluted shares outstanding.
+    Calculate the market capitalization from split-adjusted close prices and shares outstanding.
 
     .. category:: Market and Fundamental
 
     Parameters
     ----------
     m_close_split_adjusted : DataColumn
-        The adjusted closing prices.
-    fis_weighted_average_diluted_shares_outstanding : DataColumn
-        The weighted average of the diluted shares outstanding.
+        The split-adjusted closing prices.
+    m_shares_outstanding : DataColumn
+        The point-in-time shares outstanding, on the same split basis as the prices.
 
     Returns
     -------
@@ -1837,7 +1837,20 @@ def c_market_cap(
 
     .. math::
 
-        \mathrm{Market\ Cap} = \mathrm{Close} \times \mathrm{Weighted\ Average\ Diluted\ Shares\ Outstanding}
+        \mathrm{Market\ Cap} = \mathrm{Close} \times \mathrm{Shares\ Outstanding}
+
+    Both inputs are on the same split basis, so the product is invariant to
+    splits: the share count does not move on a split date, and the price is
+    already restated, leaving the market capitalization continuous across it.
+
+    This deliberately does not use the reported weighted average share counts
+    (``fis_weighted_average_*``). Those are averages over a fiscal period rather
+    than the count outstanding on a date, and providers restate them for later
+    splits inconsistently across annual and quarterly periods, which shows up as
+    step changes of whole split factors in the resulting market capitalization.
+
+    The market capitalization is null wherever the shares outstanding is, which
+    for Intrinio means dates before its market capitalization coverage begins.
 
     In Excel, assuming close in column A and shares in column B:
 
@@ -1847,7 +1860,7 @@ def c_market_cap(
 
     2. Drag the formula down to apply to subsequent rows.
     """
-    output = m_close_split_adjusted * fis_weighted_average_diluted_shares_outstanding
+    output = m_close_split_adjusted * m_shares_outstanding
     return output
 
 

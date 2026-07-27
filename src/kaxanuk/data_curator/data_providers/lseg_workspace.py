@@ -274,6 +274,8 @@ class LsegWorkspace(DataProviderInterface):
             MarketDataDailyRow.close: ColumnNames.CLOSE_PRICE,
             MarketDataDailyRow.volume: ColumnNames.VOLUME,
             MarketDataDailyRow.vwap: ColumnNames.VWAP,
+            # shares_outstanding is intentionally left unmapped: the daily pricing fields serve no
+            # share count, so it stays None
         },
         Endpoints.MARKET_DATA_DAILY_SPLIT_ADJUSTED: {
             MarketDataDailyRow.date: ColumnNames.DATE,

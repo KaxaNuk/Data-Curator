@@ -31,6 +31,9 @@ class MarketDataDailyRow(BaseDataEntity):
     close_dividend_and_split_adjusted: decimal.Decimal | None
     volume_dividend_and_split_adjusted: int | None
     vwap_dividend_and_split_adjusted: decimal.Decimal | None
+    # the company's point-in-time common shares outstanding, restated onto the same split basis as
+    # the `*_split_adjusted` prices, so that price * shares is the market capitalization on that date
+    shares_outstanding: decimal.Decimal | None
 
     def __post_init__(self):
         field_type_errors = entity_helper.detect_field_type_errors(self)

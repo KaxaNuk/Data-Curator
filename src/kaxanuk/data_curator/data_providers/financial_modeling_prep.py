@@ -297,6 +297,8 @@ class FinancialModelingPrep(
             MarketDataDailyRow.low: 'adjLow',
             MarketDataDailyRow.close: 'adjClose',
             MarketDataDailyRow.volume: 'volume',
+            # shares_outstanding is intentionally left unmapped: FMP's price endpoints serve no
+            # daily share count, so it stays None
         },
     }
 

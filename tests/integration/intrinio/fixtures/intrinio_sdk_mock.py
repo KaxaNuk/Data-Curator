@@ -12,6 +12,11 @@ with _STOCK_PRICES_FIXTURE_PATH.open('rb') as _stock_prices_fixture_file:
     _STOCK_PRICE_ROWS = pickle.load(_stock_prices_fixture_file)
 
 
+_MARKET_CAPS_FIXTURE_PATH = pathlib.Path(__file__).parent / 'market_caps.pkl'
+with _MARKET_CAPS_FIXTURE_PATH.open('rb') as _market_caps_fixture_file:
+    _MARKET_CAP_ROWS = pickle.load(_market_caps_fixture_file)
+
+
 _STANDARDIZED_FINANCIALS_FIXTURE_PATHS = (
     pathlib.Path(__file__).parent / 'standardized_FY.pkl',
     pathlib.Path(__file__).parent / 'standardized_QTR.pkl',
@@ -78,6 +83,34 @@ class ApiClient:
 
 
 class CompanyApi:
+    def get_company_historical_data(
+        self,
+        identifier,
+        tag,
+        **kwargs
+    ) -> intrinio_sdk.models.api_response_company_historical_data.ApiResponseCompanyHistoricalData:
+        if tag != 'marketcap':
+
+            raise intrinio_sdk.rest.ApiException(
+                status=404,
+                reason='Not Found',
+            )
+
+        # the date kwargs are ignored, mirroring get_security_stock_prices, so that this fixture
+        # stays aligned with the price fixture it was generated from
+        historical_data = [
+            intrinio_sdk.models.historical_data.HistoricalData(
+                date=row['date'],
+                value=row['value'],
+            )
+            for row in _MARKET_CAP_ROWS
+        ]
+
+        return intrinio_sdk.models.api_response_company_historical_data.ApiResponseCompanyHistoricalData(
+            historical_data=historical_data,
+            next_page=None,
+        )
+
     def get_company_fundamentals(
         self,
         identifier,

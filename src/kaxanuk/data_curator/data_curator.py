@@ -27,6 +27,7 @@ from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCustomFunctionNotFoundError,
     ColumnBuilderUnavailableEntityFieldError,
     DataBlockRowEntityErrorGroup,
+    DataProviderAuthorizationError,
     DataProviderPaymentError,
     EntityProcessingError,
     InjectedDependencyError,
@@ -194,7 +195,7 @@ def main(
                 logging.getLogger(__name__).error(msg)
 
                 continue
-            except DataProviderPaymentError as error:
+            except (DataProviderAuthorizationError, DataProviderPaymentError) as error:
                 msg = "\n  ".join([
                     f"{main_identifier} skipping output as it presented the following data provider error:",
                     str(error)

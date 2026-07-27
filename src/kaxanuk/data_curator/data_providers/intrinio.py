@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import re
+import statistics
 import types
 import typing
 import urllib.request
@@ -41,6 +42,7 @@ from kaxanuk.data_curator.entities import (
 )
 from kaxanuk.data_curator.exceptions import (
     ApiEndpointError,
+    DataProviderAuthorizationError,
     DataProviderMissingKeyError,
     DataProviderPaymentError,
     DataProviderToolkitNoDataError,
@@ -77,6 +79,29 @@ _SPLIT_ADJUSTED_LOW_TAG = 'split_adjusted_low'
 _SPLIT_ADJUSTED_CLOSE_TAG = 'split_adjusted_close'
 # decimal places kept when rounding away floating-point noise from split-adjusted values
 _SPLIT_ADJUSTED_PRICE_DECIMAL_PLACES = 10
+
+# synthetic tag for the point-in-time shares outstanding the provider derives (see
+# Intrinio._build_stock_price_endpoint_table); Intrinio serves no daily share count, but its daily
+# `marketcap` historical series is built on the dividend-and-split-adjusted close, so dividing the
+# two recovers the share count on the same split basis as the split-adjusted prices
+_DERIVED_SHARES_OUTSTANDING_TAG = 'derived_shares_outstanding'
+# the Intrinio historical-data tag serving the daily market capitalization
+_MARKET_CAP_TAG = 'marketcap'
+# how far a derived share count may sit from its series median before it is treated as the
+# vendor's scale breaking rather than the company's issuance (see
+# Intrinio._reject_shares_outstanding_scale_breaks); the breaks seen are factors of about a
+# million, while a real share count moves by well under a hundredfold across a full history
+_SHARES_OUTSTANDING_SCALE_TOLERANCE = 100
+# below this many derived counts there is no reliable median to judge a scale break against
+_SHARES_OUTSTANDING_MIN_SCALE_SAMPLE = 20
+# how many neighbouring counts on each side an isolated spike is judged against (see
+# Intrinio._reject_shares_outstanding_spikes)
+_SHARES_OUTSTANDING_SPIKE_WINDOW = 5
+# how far the counts on either side of a date may differ before they are taken to straddle a real
+# step in the share count rather than to agree with each other
+_SHARES_OUTSTANDING_STEP_TOLERANCE = 0.25
+# how far a count may sit from its agreeing neighbours before it is treated as a vendor glitch
+_SHARES_OUTSTANDING_SPIKE_TOLERANCE = 0.25
 
 # synthetic tag for the split-adjusted dividend the provider derives (see
 # Intrinio._build_dividend_endpoint_table); Intrinio serves the raw dividend only
@@ -266,6 +291,7 @@ class Intrinio(
         ACCOUNT = 'AccountApi.get_account_current_usage'
         FINANCIALS = 'FundamentalsApi.get_fundamental_standardized_financials'
         FUNDAMENTALS = 'CompanyApi.get_company_fundamentals'
+        MARKET_CAP = 'CompanyApi.get_company_historical_data'
         STOCK_DIVIDENDS = 'SecurityApi.get_security_stock_price_adjustments_dividends'
         STOCK_PRICES = 'SecurityApi.get_security_stock_prices'
         STOCK_SPLITS = 'SecurityApi.get_security_stock_price_adjustments_splits'
@@ -437,6 +463,7 @@ class Intrinio(
             MarketDataDailyRow.low: 'low',
             MarketDataDailyRow.close: 'close',
             MarketDataDailyRow.volume: 'volume',
+            MarketDataDailyRow.shares_outstanding: _DERIVED_SHARES_OUTSTANDING_TAG,
             # vwap, vwap_split_adjusted and vwap_dividend_and_split_adjusted are intentionally left
             # unmapped: Intrinio's stock price endpoint does not expose VWAP, so they stay None
         },
@@ -493,6 +520,10 @@ class Intrinio(
         self._split_records_cache: dict[
             tuple[str, datetime.date, datetime.date],
             list[intrinio_sdk.models.stock_price_adjustment.StockPriceAdjustment],
+        ] = {}
+        self._market_cap_cache: dict[
+            tuple[str, datetime.date, datetime.date],
+            dict[datetime.date, float],
         ] = {}
         # the configured universe in curator order, recorded by `initialize`; empty until then, in
         # which case each ticker is resolved on its own with no read-ahead
@@ -936,6 +967,10 @@ class Intrinio(
         if not period_records:
             return empty_fundamental_data
 
+        period_records = self._resolve_filing_date_collisions(
+            main_identifier=main_identifier,
+            period_records=period_records,
+        )
         sorted_period_records = sorted(
             period_records,
             key=lambda period_record: (
@@ -1039,9 +1074,15 @@ class Intrinio(
             start_date=start_date,
             end_date=end_date,
         )
+        market_caps = self._resolve_market_caps(
+            main_identifier=main_identifier,
+            start_date=start_date,
+            end_date=end_date,
+        )
         endpoint_tables = {
             self.Endpoints.STOCK_PRICES: self._build_stock_price_endpoint_table(
                 records=stock_price_records,
+                market_caps=market_caps,
             ),
         }
 
@@ -1928,9 +1969,10 @@ class Intrinio(
         cls,
         *,
         records: list[typing.Any],
+        market_caps: dict[datetime.date, float] | None = None,
     ) -> pyarrow.Table:
         """
-        Build the stock prices endpoint table, adding the split-only adjusted price columns.
+        Build the stock prices endpoint table, adding the split-only adjusted and shares columns.
 
         Intrinio's stock price endpoint serves raw prices and fully
         (split-and-dividend) adjusted prices, but not the split-only adjusted
@@ -1941,14 +1983,26 @@ class Intrinio(
         `adj_volume` is already split-only. The synthetic columns are mapped to
         their entity fields by `_market_data_endpoint_map` like any other tag.
 
+        The point-in-time shares outstanding is derived the same way, from
+        `market_caps` (see `_derive_shares_outstanding`), and is null on every
+        date Intrinio's market capitalization series does not cover.
+
+        Every numeric column is typed explicitly, so a series Intrinio serves
+        empty for the whole security (its volume for non-exchange-traded funds,
+        its market capitalization for others) stays a typed empty column instead
+        of the null-typed one PyArrow would infer, which the toolkit rejects.
+
         Parameters
         ----------
         records
             The stock price records returned by the endpoint
+        market_caps
+            The daily market capitalization by date, used to derive the shares
+            outstanding; every row's shares stay null when omitted or empty
 
         Returns
         -------
-        The endpoint table with raw, fully-adjusted and split-adjusted columns
+        The endpoint table with raw, fully-adjusted, split-adjusted and shares columns
         """
         ascending_records = sorted(
             records,
@@ -1972,14 +2026,49 @@ class Intrinio(
                 _SPLIT_ADJUSTED_HIGH_TAG: cls._scale_by_split_factor(record.high, split_factor),
                 _SPLIT_ADJUSTED_LOW_TAG: cls._scale_by_split_factor(record.low, split_factor),
                 _SPLIT_ADJUSTED_CLOSE_TAG: cls._scale_by_split_factor(record.close, split_factor),
+                _DERIVED_SHARES_OUTSTANDING_TAG: shares_outstanding,
             }
-            for (record, split_factor) in zip(ascending_records, split_factors, strict=True)
+            for (record, split_factor, shares_outstanding) in zip(
+                ascending_records,
+                split_factors,
+                cls._reject_shares_outstanding_spikes(
+                    cls._reject_shares_outstanding_scale_breaks([
+                        cls._derive_shares_outstanding(
+                            market_cap=(market_caps or {}).get(record.date),
+                            close_dividend_and_split_adjusted=record.adj_close,
+                        )
+                        for record in ascending_records
+                    ])
+                ),
+                strict=True,
+            )
         ]
         # Intrinio serves prices newest-first and the downstream consolidation expects that
         # predominant descending order, so emit the rows most-recent-first.
         rows.reverse()
+        table = pyarrow.Table.from_pylist(rows)
 
-        return pyarrow.Table.from_pylist(rows)
+        # Any of these numeric series can be empty for a whole security: Intrinio serves no market
+        # capitalization for some (deriving no share count), and no traded volume for others, non-
+        # exchange-traded funds among them. PyArrow would infer those as null-typed columns, which
+        # the toolkit rejects as all-null endpoint columns, costing the security its prices too.
+        # Give each its real type so an empty column stays a legitimately empty one.
+        # A security with no price records at all has no columns to type, and is left to the
+        # caller to reject for having no data.
+        for (column_index, field) in enumerate(list(table.schema)):
+            if (
+                field.name == 'date'
+                or field.type != pyarrow.null()
+            ):
+                continue
+
+            table = table.set_column(
+                column_index,
+                field.name,
+                table.column(column_index).cast(pyarrow.float64()),
+            )
+
+        return table
 
     @staticmethod
     def _create_endpoint_table_from_records(
@@ -2382,6 +2471,14 @@ class Intrinio(
             statement
             for statement in point_in_time_statements
             if statement.statement_code == cls.INCOME_STATEMENT_CODE
+            # Intrinio serves some income statements as metadata only, with no line items at all.
+            # Such a period has nothing to report and no reporting currency either, since the
+            # currency is read off the line items' units, so it can't form a valid row.
+            and any(
+                value is not None
+                for value in statement.values.values()
+            )
+            and statement.reported_currency is not None
         ]
 
         if not income_statements:
@@ -2427,6 +2524,82 @@ class Intrinio(
             tag_values=tag_values,
         )
 
+    def _request_market_caps(
+        self,
+        *,
+        main_identifier: str,
+        start_date: datetime.date,
+        end_date: datetime.date,
+    ) -> dict[datetime.date, float]:
+        """
+        Download every daily market capitalization page for `main_identifier` in the date range.
+
+        Follows the endpoint's `next_page` cursor until it is exhausted,
+        accumulating the market capitalization of each date into a lookup keyed
+        by date.
+
+        Unlike the other endpoints, a failure here is never fatal: the market
+        capitalization only feeds the derived shares outstanding, which is a
+        nullable field, and Intrinio's coverage of this series is both shallower
+        than its price history and absent for some securities. Any API error
+        therefore yields an empty lookup, leaving the derived field null rather
+        than losing the identifier's prices.
+
+        Parameters
+        ----------
+        main_identifier
+            The security's main identifier (ticker, etc.) used by the data provider
+        start_date
+            The first date whose market capitalization we're requesting
+        end_date
+            The last date whose market capitalization we're requesting
+
+        Returns
+        -------
+        The market capitalization of each date the endpoint covered, empty when
+        the endpoint served none or errored
+        """
+        company_api = self._intrinio_sdk.CompanyApi()
+        market_caps = {}
+        next_page = ''
+
+        while True:
+            try:
+                response = company_api.get_company_historical_data(
+                    main_identifier,
+                    _MARKET_CAP_TAG,
+                    start_date=start_date,
+                    end_date=end_date,
+                    page_size=self.STOCK_PRICE_PAGE_SIZE,
+                    next_page=next_page,
+                )
+            except intrinio_sdk.rest.ApiException as error:
+                msg = " ".join([
+                    f"Intrinio market cap endpoint returned HTTP status {error.status}",
+                    f"for identifier {main_identifier}: {error.reason}.",
+                    "Leaving its shares outstanding empty",
+                ])
+                logging.getLogger(__name__).warning(msg)
+
+                return {}
+
+            for record in response.historical_data:
+                if (
+                    record.date is not None
+                    and record.value is not None
+                    # Intrinio serves a literal 0.0 for stretches of some securities' history
+                    # (GOOGL's 2007-2010, for one); that is missing data, not a valuation
+                    and record.value > 0
+                ):
+                    market_caps[record.date] = record.value
+
+            if not response.next_page:
+                break
+
+            next_page = response.next_page
+
+        return market_caps
+
     def _request_dividends(
         self,
         *,
@@ -2463,6 +2636,8 @@ class Intrinio(
             When the endpoint reports the identifier does not exist
         DataProviderPaymentError
             When the endpoint requires a paid plan for the request
+        DataProviderAuthorizationError
+            When the subscription doesn't cover the requested security
         ApiEndpointError
             When the endpoint returns any other API error
         """
@@ -2489,6 +2664,14 @@ class Intrinio(
                     msg = f"Intrinio dividends endpoint requires a paid plan for identifier {main_identifier}"
 
                     raise DataProviderPaymentError(msg) from error
+
+                if error.status == http.HTTPStatus.FORBIDDEN.value:
+                    msg = " ".join([
+                        f"Intrinio dividends endpoint denied access to identifier {main_identifier};",
+                        "the subscription does not cover this security",
+                    ])
+
+                    raise DataProviderAuthorizationError(error.status, msg) from error
 
                 msg = " ".join([
                     f"Intrinio dividends endpoint returned HTTP status {error.status}",
@@ -2538,6 +2721,8 @@ class Intrinio(
             When the endpoint reports the identifier does not exist
         DataProviderPaymentError
             When the endpoint requires a paid plan for the request
+        DataProviderAuthorizationError
+            When the subscription doesn't cover the requested security
         ApiEndpointError
             When the endpoint returns any other API error
         """
@@ -2563,6 +2748,14 @@ class Intrinio(
                     msg = f"Intrinio fundamentals endpoint requires a paid plan for identifier {main_identifier}"
 
                     raise DataProviderPaymentError(msg) from error
+
+                if error.status == http.HTTPStatus.FORBIDDEN.value:
+                    msg = " ".join([
+                        f"Intrinio fundamentals endpoint denied access to identifier {main_identifier};",
+                        "the subscription does not cover this security",
+                    ])
+
+                    raise DataProviderAuthorizationError(error.status, msg) from error
 
                 msg = " ".join([
                     f"Intrinio fundamentals endpoint returned HTTP status {error.status}",
@@ -2653,6 +2846,37 @@ class Intrinio(
             end_date=end_date,
         )
 
+    def _resolve_market_caps(
+        self,
+        *,
+        main_identifier: str,
+        start_date: datetime.date,
+        end_date: datetime.date,
+    ) -> dict[datetime.date, float]:
+        """
+        Return the security's daily market capitalizations, reading ahead over the upcoming tickers.
+
+        Parameters
+        ----------
+        main_identifier
+            The security's main identifier used by the data provider
+        start_date
+            The start date of the period whose market capitalizations we're returning
+        end_date
+            The end date of the period whose market capitalizations we're returning
+
+        Returns
+        -------
+        The security's market capitalization by date, empty where Intrinio has no coverage
+        """
+        return self._resolve_with_read_ahead(
+            cache=self._market_cap_cache,
+            request=self._request_market_caps,
+            main_identifier=main_identifier,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
     def _resolve_dividends(
         self,
         *,
@@ -2689,12 +2913,12 @@ class Intrinio(
     def _resolve_with_read_ahead(
         self,
         *,
-        cache: dict[tuple[str, datetime.date, datetime.date], list],
-        request: collections.abc.Callable[..., list],
+        cache: dict[tuple[str, datetime.date, datetime.date], list | dict],
+        request: collections.abc.Callable[..., list | dict],
         main_identifier: str,
         start_date: datetime.date,
         end_date: datetime.date,
-    ) -> list:
+    ) -> list | dict:
         """
         Serve one ticker's records from `cache`, filling a whole read-ahead batch on a miss.
 
@@ -2868,6 +3092,8 @@ class Intrinio(
             When the endpoint reports the identifier does not exist
         DataProviderPaymentError
             When the endpoint requires a paid plan for the request
+        DataProviderAuthorizationError
+            When the subscription doesn't cover the requested security
         ApiEndpointError
             When the endpoint returns any other API error
         """
@@ -2894,6 +3120,14 @@ class Intrinio(
                     msg = f"Intrinio splits endpoint requires a paid plan for identifier {main_identifier}"
 
                     raise DataProviderPaymentError(msg) from error
+
+                if error.status == http.HTTPStatus.FORBIDDEN.value:
+                    msg = " ".join([
+                        f"Intrinio splits endpoint denied access to identifier {main_identifier};",
+                        "the subscription does not cover this security",
+                    ])
+
+                    raise DataProviderAuthorizationError(error.status, msg) from error
 
                 msg = " ".join([
                     f"Intrinio splits endpoint returned HTTP status {error.status}",
@@ -2938,6 +3172,8 @@ class Intrinio(
             When the endpoint reports the fundamental does not exist
         DataProviderPaymentError
             When the endpoint requires a paid plan for the request
+        DataProviderAuthorizationError
+            When the subscription doesn't cover the requested security
         ApiEndpointError
             When the endpoint returns any other API error
         """
@@ -2955,6 +3191,14 @@ class Intrinio(
                 msg = f"Intrinio financials endpoint requires a paid plan for fundamental {fundamental_id}"
 
                 raise DataProviderPaymentError(msg) from error
+
+            if error.status == http.HTTPStatus.FORBIDDEN.value:
+                msg = " ".join([
+                    f"Intrinio financials endpoint denied access to fundamental {fundamental_id};",
+                    "the subscription does not cover this security",
+                ])
+
+                raise DataProviderAuthorizationError(error.status, msg) from error
 
             msg = " ".join([
                 f"Intrinio financials endpoint returned HTTP status {error.status}",
@@ -2999,6 +3243,8 @@ class Intrinio(
             When the endpoint reports the identifier does not exist
         DataProviderPaymentError
             When the endpoint requires a paid plan for the request
+        DataProviderAuthorizationError
+            When the subscription doesn't cover the requested security
         ApiEndpointError
             When the endpoint returns any other API error
         """
@@ -3026,6 +3272,14 @@ class Intrinio(
                     msg = f"Intrinio stock prices endpoint requires a paid plan for identifier {main_identifier}"
 
                     raise DataProviderPaymentError(msg) from error
+
+                if error.status == http.HTTPStatus.FORBIDDEN.value:
+                    msg = " ".join([
+                        f"Intrinio stock prices endpoint denied access to identifier {main_identifier};",
+                        "the subscription does not cover this security",
+                    ])
+
+                    raise DataProviderAuthorizationError(error.status, msg) from error
 
                 msg = " ".join([
                     f"Intrinio stock prices endpoint returned HTTP status {error.status}",
@@ -3138,6 +3392,244 @@ class Intrinio(
         # Scaling by the split factor introduces floating-point noise (e.g. 100 * 0.1); round it
         # away at a precision far finer than any real value so the stored result stays clean.
         return round(value * split_factor, _SPLIT_ADJUSTED_PRICE_DECIMAL_PLACES)
+
+    @staticmethod
+    def _derive_shares_outstanding(
+        *,
+        market_cap: float | None,
+        close_dividend_and_split_adjusted: float | None,
+    ) -> float | None:
+        """
+        Recover the point-in-time shares outstanding from a date's market capitalization.
+
+        Intrinio serves no daily share count, and its reported share counts are
+        unusable for this: they are weighted averages over the fiscal period
+        rather than the count on a date, and Intrinio restates them for later
+        splits on annual periods while leaving quarterly ones as-reported, so
+        consecutive periods can differ by whole split factors.
+
+        Its daily `marketcap` series has neither problem, because it is built on
+        the dividend-and-split-adjusted close rather than the raw one. Dividing
+        the two therefore cancels the adjustment and leaves the share count on
+        the same split basis as the curator's `*_split_adjusted` prices, so that
+        multiplying it by the split-adjusted close gives a market capitalization
+        that passes through splits without a jump.
+
+        Parameters
+        ----------
+        market_cap
+            The date's market capitalization, or None where uncovered
+        close_dividend_and_split_adjusted
+            The date's fully adjusted close, the price the market cap is built on
+
+        Returns
+        -------
+        The shares outstanding, or None when either input is missing or the
+        adjusted close is zero
+        """
+        if (
+            market_cap is None
+            or not close_dividend_and_split_adjusted
+        ):
+            return None
+
+        return market_cap / close_dividend_and_split_adjusted
+
+    @staticmethod
+    def _resolve_filing_date_collisions(
+        *,
+        main_identifier: str,
+        period_records: list[_IntrinioPeriodRecord],
+    ) -> list[_IntrinioPeriodRecord]:
+        """
+        Keep one period per filing date, the latest that filing made known.
+
+        A filing presents its own period alongside earlier ones as comparatives, and Intrinio
+        dates each of those comparatives by the filing that carried them. A company that has only
+        ever filed once for a period therefore has no earlier, original statement for it, so the
+        comparative is all there is and several periods end up sharing one filing date. Alcoa's
+        2016 separation is the usual shape: its 2017-03-15 10-K carries fiscal 2014, 2015 and 2016
+        on that one date.
+
+        The fundamentals clock runs on the filing date, so those periods collide and the whole
+        security is otherwise rejected. Only the latest period of each filing is kept, since it is
+        what that filing actually made newly known; the comparatives restate periods that had
+        already passed and cannot be placed anywhere else on a point-in-time timeline without
+        claiming they were known before they were filed.
+
+        Parameters
+        ----------
+        main_identifier
+            The security's main identifier, for the log message
+        period_records
+            The merged period records, one per period
+
+        Returns
+        -------
+        The records that keep a distinct filing date each
+        """
+        latest_by_filing_date: dict[typing.Any, _IntrinioPeriodRecord] = {}
+        superseded = []
+        for period_record in period_records:
+            filing_date = period_record.tag_values['filing_date']
+            incumbent = latest_by_filing_date.get(filing_date)
+            if (
+                incumbent is None
+                or period_record.tag_values['end_date'] > incumbent.tag_values['end_date']
+            ):
+                if incumbent is not None:
+                    superseded.append(incumbent)
+                latest_by_filing_date[filing_date] = period_record
+            else:
+                superseded.append(period_record)
+
+        if superseded:
+            descriptions = [
+                " ".join([
+                    f"{period_record.tag_values.get('fiscal_year')}",
+                    f"{period_record.tag_values.get('fiscal_period')}",
+                    f"(period ending {period_record.tag_values['end_date']},",
+                    f"filed {period_record.tag_values['filing_date']})",
+                ])
+                for period_record in superseded
+            ]
+            msg = "\n".join([
+                " ".join([
+                    f"{main_identifier} fundamentals endpoint dated several periods to one filing,",
+                    "keeping only the latest period of each and omitting these comparatives:",
+                ]),
+                *descriptions,
+            ])
+            logging.getLogger(__name__).warning(msg)
+
+        return list(latest_by_filing_date.values())
+
+    @staticmethod
+    def _reject_shares_outstanding_scale_breaks(
+        shares_outstanding: list[float | None],
+    ) -> list[float | None]:
+        """
+        Null out derived share counts whose magnitude breaks with the rest of the series.
+
+        Intrinio expresses the market capitalization of some securities in millions for stretches
+        of their history (Agilent's early 2010, for one, where the series steps straight from
+        8,565,110,166 to 9,107 between consecutive trading days). The share count derived from
+        those dates is off by that same factor, which would otherwise reach the output as a
+        plausible-looking number.
+
+        The derived count sits on a fixed split basis, so splits do not move it and it drifts only
+        with issuance and buybacks, staying within the same order of magnitude across decades.
+        A value orders of magnitude away from the series median is therefore the vendor's scale
+        breaking rather than the company's. Those dates are dropped rather than rescaled: the
+        break is not always a clean power of ten, and a wrong rescale would be indistinguishable
+        from real data downstream.
+
+        Parameters
+        ----------
+        shares_outstanding
+            The derived share count of each date, in date order, None where underived
+
+        Returns
+        -------
+        The same counts with the scale breaks replaced by None
+        """
+        present = [
+            shares
+            for shares in shares_outstanding
+            if shares is not None
+        ]
+        if len(present) < _SHARES_OUTSTANDING_MIN_SCALE_SAMPLE:
+            return shares_outstanding
+
+        median = statistics.median(present)
+        if median <= 0:
+            return shares_outstanding
+
+        lower = median / _SHARES_OUTSTANDING_SCALE_TOLERANCE
+        upper = median * _SHARES_OUTSTANDING_SCALE_TOLERANCE
+
+        return [
+            shares
+            if (
+                shares is not None
+                and lower <= shares <= upper
+            )
+            else None
+            for shares in shares_outstanding
+        ]
+
+    @staticmethod
+    def _reject_shares_outstanding_spikes(
+        shares_outstanding: list[float | None],
+    ) -> list[float | None]:
+        """
+        Null out derived share counts that break with their neighbours and immediately revert.
+
+        Intrinio leaves the odd date on a stale split basis: Alphabet's 2022-07-26 sits at a
+        twentieth of the days around it, a week after its 20-for-1 split, with the series back to
+        normal the next day. That is too small a factor for
+        `_reject_shares_outstanding_scale_breaks` to tell from real issuance, but it is obvious
+        against the immediate neighbours.
+
+        A date is only dropped when the counts before and after it agree with each other, so that
+        a genuine step in the share count, where the two sides disagree by construction, is never
+        mistaken for a glitch no matter how large it is.
+
+        Parameters
+        ----------
+        shares_outstanding
+            The derived share count of each date, in date order, None where underived
+
+        Returns
+        -------
+        The same counts with the isolated spikes replaced by None
+        """
+        present_indexes = [
+            index
+            for (index, shares) in enumerate(shares_outstanding)
+            if shares is not None
+        ]
+        if len(present_indexes) < 2 * _SHARES_OUTSTANDING_SPIKE_WINDOW + 1:
+            return shares_outstanding
+
+        rejected = list(shares_outstanding)
+        for (position, index) in enumerate(present_indexes):
+            before = [
+                shares_outstanding[present_indexes[neighbour]]
+                for neighbour in range(
+                    max(0, position - _SHARES_OUTSTANDING_SPIKE_WINDOW),
+                    position,
+                )
+            ]
+            after = [
+                shares_outstanding[present_indexes[neighbour]]
+                for neighbour in range(
+                    position + 1,
+                    min(len(present_indexes), position + 1 + _SHARES_OUTSTANDING_SPIKE_WINDOW),
+                )
+            ]
+            if not before or not after:
+                continue
+
+            before_median = statistics.median(before)
+            after_median = statistics.median(after)
+            if (
+                before_median <= 0
+                or after_median <= 0
+                # the two sides must agree, or this date sits on a real step rather than a spike
+                or abs(before_median / after_median - 1) > _SHARES_OUTSTANDING_STEP_TOLERANCE
+            ):
+                continue
+
+            neighbours_median = statistics.median([*before, *after])
+            if (
+                neighbours_median > 0
+                and abs(shares_outstanding[index] / neighbours_median - 1)
+                > _SHARES_OUTSTANDING_SPIKE_TOLERANCE
+            ):
+                rejected[index] = None
+
+        return rejected
 
     @classmethod
     def _select_original_fundamentals(
