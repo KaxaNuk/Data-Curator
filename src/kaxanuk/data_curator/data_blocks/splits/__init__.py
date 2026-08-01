@@ -1,4 +1,6 @@
 __all__ = [
+    'SplitData',
+    'SplitDataRow',
     'SplitsDataBlock',
 ]
 

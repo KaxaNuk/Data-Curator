@@ -8,6 +8,7 @@ from kaxanuk.data_curator.entities import (
     MarketData,
     SplitData,
 )
+from kaxanuk.data_curator.services.data_provider_toolkit import DataBlockEndpointTagMap
 
 class NotFoundDataProvider(DataProviderInterface):
     """
@@ -15,6 +16,10 @@ class NotFoundDataProvider(DataProviderInterface):
 
     Used so Configruation handlers can display the correct error message when a data provider extension was not found.
     """
+
+    @classmethod
+    def get_data_block_endpoint_tag_map(cls) -> DataBlockEndpointTagMap:
+        raise NotImplementedError
 
     def get_dividend_data(
         self,

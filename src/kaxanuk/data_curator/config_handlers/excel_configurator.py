@@ -9,6 +9,7 @@ init:
 
 import logging
 import pathlib
+import re
 import sys
 import typing
 
@@ -19,12 +20,16 @@ import openpyxl.worksheet.cell_range
 import openpyxl.worksheet.worksheet
 import packaging.version
 
+from kaxanuk.data_curator.data_blocks.base_data_block import BaseDataBlock
 from kaxanuk.data_curator.entities import Configuration
 from kaxanuk.data_curator.exceptions import (
     ConfigurationError,
     ConfigurationHandlerError
 )
-from kaxanuk.data_curator.config_handlers.configurator_interface import ConfiguratorInterface
+from kaxanuk.data_curator.config_handlers.configurator_interface import (
+    ConfigurationLoggerLevel,
+    ConfiguratorInterface,
+)
 from kaxanuk.data_curator.output_handlers import OutputHandlerInterface
 from kaxanuk.data_curator.data_providers import (
     DataProviderInterface,
@@ -34,15 +39,21 @@ from kaxanuk.data_curator import __parameters_format_version__
 
 
 class ExcelConfigurator(ConfiguratorInterface):
-    EXPECTED_API_KEYS = (
-        'market',
-        'fundamental'
+    # the keys required in the parameters of each injected data provider:
+    DATA_PROVIDER_PARAMETER_KEYS : typing.Final = (
+        'class',
+        'api_key',
+    )
+    # the sheet mapping each data block to the data provider that will supply its data:
+    DATA_PROVIDERS_SHEET : typing.Final = 'Data_Providers'
+    # the headers of the data block and data provider columns of the data providers sheet:
+    DATA_PROVIDERS_SHEET_HEADERS : typing.Final = (
+        'data_block',
+        'data_provider',
     )
     NONE_DATA_PROVIDER = 'none'
     SHEET_KEY_VALUES : typing.Final = {
         'General': (
-            'market_data_provider',
-            'fundamental_data_provider',
             'start_date',
             'end_date',
             'period',
@@ -63,6 +74,7 @@ class ExcelConfigurator(ConfiguratorInterface):
     def __init__(
         self,
         file_path: str,
+        data_blocks: list[type[BaseDataBlock]],
         data_providers: dict[
             str,
             typing.TypedDict(
@@ -83,6 +95,9 @@ class ExcelConfigurator(ConfiguratorInterface):
         ----------
         file_path
             The path to the Excel configuration file
+        data_blocks
+            All the data block classes that the configuration file will choose from, each identified in the file
+            by its class name
         data_providers
             All the data provider options that the configuration file will choose from, along with their API keys if any
         output_handlers
@@ -101,6 +116,69 @@ class ExcelConfigurator(ConfiguratorInterface):
         logger.addHandler(handler)
 
         try:
+            invalid_data_block_descriptions = [
+                repr(data_block)
+                for data_block in data_blocks
+                if not isinstance(data_block, type)
+                or not issubclass(data_block, BaseDataBlock)
+            ]
+            if len(invalid_data_block_descriptions) > 0:
+                msg = " ".join([
+                    "The following data blocks injected into ExcelConfigurator aren't BaseDataBlock subclasses:",
+                    ", ".join(invalid_data_block_descriptions),
+                ])
+
+                raise ConfigurationHandlerError(msg)
+
+            invalid_provider_descriptions = []
+            for (provider_name, provider_parameters) in data_providers.items():
+                if not isinstance(provider_parameters, dict):
+                    invalid_provider_descriptions.append(
+                        f"{provider_name} parameters aren't a dict: {provider_parameters!r}"
+                    )
+
+                    continue
+
+                missing_parameter_keys = [
+                    parameter_key
+                    for parameter_key in self.DATA_PROVIDER_PARAMETER_KEYS
+                    if parameter_key not in provider_parameters
+                ]
+                if len(missing_parameter_keys) > 0:
+                    invalid_provider_descriptions.append(
+                        f"{provider_name} parameters are missing the keys: {', '.join(missing_parameter_keys)}"
+                    )
+
+                    continue
+
+                if not isinstance(provider_parameters['class'], type):
+                    invalid_provider_descriptions.append(
+                        f"{provider_name} class isn't a class: {provider_parameters['class']!r}"
+                    )
+                elif not issubclass(provider_parameters['class'], DataProviderInterface):
+                    invalid_provider_descriptions.append(
+                        " ".join([
+                            f"{provider_name} class {provider_parameters['class'].__name__}",
+                            "doesn't implement DataProviderInterface",
+                        ])
+                    )
+
+                if (
+                    provider_parameters['api_key'] is not None
+                    and not isinstance(provider_parameters['api_key'], str)
+                ):
+                    invalid_provider_descriptions.append(
+                        f"{provider_name} api_key is neither a string nor None"
+                    )
+
+            if len(invalid_provider_descriptions) > 0:
+                msg = " ".join([
+                    "The following data providers injected into ExcelConfigurator are incorrectly structured:",
+                    "; ".join(invalid_provider_descriptions),
+                ])
+
+                raise ConfigurationHandlerError(msg)
+
             workbook = self._load_file(file_path)
             sheet_key_values = self._extract_workbook_key_values_by_schema(
                 workbook,
@@ -132,92 +210,127 @@ class ExcelConfigurator(ConfiguratorInterface):
                 # @todo: put instructions to run update in the CLI
                 raise ConfigurationHandlerError(msg)
 
-            market_data_provider_name = sheet_key_values['General']['market_data_provider']
+            provider_names_by_data_block_name = self._extract_sheet_key_value_rows(
+                workbook,
+                self.DATA_PROVIDERS_SHEET,
+                self.DATA_PROVIDERS_SHEET_HEADERS,
+            )
+            data_blocks_by_name = {
+                data_block.__name__: data_block
+                for data_block in data_blocks
+            }
 
-            if (
-                len(market_data_provider_name) < 1
-                or market_data_provider_name not in data_providers
-            ):
-                msg = "Market data provider selected in configuration file not found"
-
-                raise ConfigurationError(msg)
-
-            if issubclass(
-                data_providers[market_data_provider_name]['class'],
-                NotFoundDataProvider
-            ):
+            unknown_data_block_names = [
+                data_block_name
+                for data_block_name in provider_names_by_data_block_name
+                if data_block_name not in data_blocks_by_name
+            ]
+            if len(unknown_data_block_names) > 0:
                 msg = " ".join([
-                    f"Market data provider {market_data_provider_name} was not found on your system.",
-                    "If it's one of our officially supported providers you should be able to install it by running:\n",
-                    f"pip install kaxanuk.data_provider_extensions.{market_data_provider_name}",
+                    f"The following data blocks selected in the {self.DATA_PROVIDERS_SHEET} sheet are unavailable:",
+                    ", ".join(unknown_data_block_names),
                 ])
 
                 raise ConfigurationError(msg)
 
-            if data_providers[market_data_provider_name]['class'] is None:
-                msg = f"Market data provider implementation missing for {market_data_provider_name}."
+            # the same data provider can supply several data blocks, but only gets instantiated once
+            selected_provider_names = []
+            for provider_name in provider_names_by_data_block_name.values():
+                if (
+                    provider_name.lower() == self.NONE_DATA_PROVIDER
+                    or provider_name in selected_provider_names
+                ):
+                    continue
 
-                raise ConfigurationError(msg)
+                selected_provider_names.append(provider_name)
 
-            # @ todo: validate data_providers dict structure
-
-            market_data_provider = data_providers[
-                market_data_provider_name
+            missing_provider_names = [
+                provider_name
+                for provider_name in selected_provider_names
+                if provider_name not in data_providers
             ]
-
-            fundamental_data_provider_name = sheet_key_values['General']['fundamental_data_provider']
-
-            if fundamental_data_provider_name == self.NONE_DATA_PROVIDER:
-                self._fundamental_data_provider = None
-            elif (
-                len(fundamental_data_provider_name) < 1
-                or fundamental_data_provider_name not in data_providers
-            ):
-                msg = "Fundamental data provider selected in configuration file not found"
+            if len(missing_provider_names) > 0:
+                msg = " ".join([
+                    f"The following data providers selected in the {self.DATA_PROVIDERS_SHEET} sheet are unavailable:",
+                    ", ".join(missing_provider_names),
+                ])
 
                 raise ConfigurationError(msg)
 
-            else:
-                fundamental_data_provider = data_providers[
-                    fundamental_data_provider_name
+            uninstalled_provider_names = [
+                provider_name
+                for provider_name in selected_provider_names
+                if issubclass(
+                    data_providers[provider_name]['class'],
+                    NotFoundDataProvider
+                )
+            ]
+            if len(uninstalled_provider_names) > 0:
+                extension_install_commands = [
+                    "".join([
+                        "pip install kaxanuk.data_provider_extensions.",
+                        self._convert_class_name_to_extension_name(provider_name),
+                    ])
+                    for provider_name in uninstalled_provider_names
                 ]
+                msg = " ".join([
+                    "The following data providers were not found on your system:",
+                    f"{', '.join(uninstalled_provider_names)}.",
+                    "If they're officially supported providers you should be able to install them by running:\n",
+                    "\n".join(extension_install_commands),
+                ])
 
-                if fundamental_data_provider['api_key'] is not None:
-                    fundamental_data_provider_params = {'api_key': fundamental_data_provider['api_key']}
-                else:
-                    fundamental_data_provider_params = {}
-                # noinspection PyArgumentList
-                self._fundamental_data_provider = fundamental_data_provider['class'](
-                    **fundamental_data_provider_params
+                raise ConfigurationError(msg)
+
+            unsupplied_data_block_descriptions = []
+            for (data_block_name, provider_name) in provider_names_by_data_block_name.items():
+                if provider_name.lower() == self.NONE_DATA_PROVIDER:
+                    continue
+
+                supplied_data_blocks = data_providers[provider_name]['class'].get_data_block_endpoint_tag_map()
+                if data_blocks_by_name[data_block_name] in supplied_data_blocks:
+                    continue
+
+                unsupplied_data_block_descriptions.append(
+                    f"{data_block_name}: {provider_name}"
                 )
 
-            if market_data_provider['api_key'] is not None:
-                market_data_provider_params = {'api_key': market_data_provider['api_key']}
-            else:
-                market_data_provider_params = {}
-            # noinspection PyArgumentList
-            self._market_data_provider = market_data_provider['class'](
-                **market_data_provider_params
-            )
+            if len(unsupplied_data_block_descriptions) > 0:
+                msg = " ".join([
+                    f"The following {self.DATA_PROVIDERS_SHEET} sheet data blocks can't be supplied by the data",
+                    "provider selected for them:",
+                    ", ".join(unsupplied_data_block_descriptions),
+                ])
 
-            selected_providers = {
-                provider.__class__.__name__: provider
-                for provider in [
-                    self._market_data_provider,
-                    self._fundamental_data_provider,
-                ]
-                if provider is not None
-            }
+                raise ConfigurationError(msg)
 
-            for provider in selected_providers.values():
-                is_api_key_valid = provider.validate_api_key()
+            data_provider_instances = {}
+            for provider_name in selected_provider_names:
+                if data_providers[provider_name]['api_key'] is not None:
+                    data_provider_params = {'api_key': data_providers[provider_name]['api_key']}
+                else:
+                    data_provider_params = {}
+
+                # noinspection PyArgumentList
+                data_provider_instances[provider_name] = data_providers[provider_name]['class'](
+                    **data_provider_params
+                )
+
+            for data_provider in data_provider_instances.values():
+                is_api_key_valid = data_provider.validate_api_key()
                 if is_api_key_valid:
-                    msg = f"API key validation succeeded for {provider.__class__.__name__}"
+                    msg = f"API key validation succeeded for {data_provider.__class__.__name__}"
                     logging.getLogger(__name__).info(msg)
                 elif is_api_key_valid is not None:
-                    msg = f"Invalid API key for {provider.__class__.__name__}"
+                    msg = f"Invalid API key for {data_provider.__class__.__name__}"
 
                     raise ConfigurationError(msg)
+
+            self._data_block_providers = {
+                data_blocks_by_name[data_block_name]: data_provider_instances[provider_name]
+                for (data_block_name, provider_name) in provider_names_by_data_block_name.items()
+                if provider_name.lower() != self.NONE_DATA_PROVIDER
+            }
 
             self._output_handler = output_handlers[
                 sheet_key_values['General']['output_format']
@@ -244,17 +357,37 @@ class ExcelConfigurator(ConfiguratorInterface):
     def get_configuration(self) -> Configuration:
         return self._configuration
 
-    def get_fundamental_data_provider(self) -> DataProviderInterface:
-        return self._fundamental_data_provider
+    def get_data_block_providers(self) -> dict[type[BaseDataBlock], DataProviderInterface]:
+        return self._data_block_providers
 
     def get_logger_level(self) -> int:
         return self._logger_level
 
-    def get_market_data_provider(self) -> DataProviderInterface:
-        return self._market_data_provider
-
     def get_output_handler(self) -> OutputHandlerInterface:
         return self._output_handler
+
+    @staticmethod
+    def _convert_class_name_to_extension_name(class_name: str) -> str:
+        """
+        Convert a data provider class name into the snake_case name of its extension module.
+
+        Follows the naming convention of our officially supported extensions, where the YahooFinance class
+        lives in the yahoo_finance extension module.
+
+        Parameters
+        ----------
+        class_name
+            The name of the data provider class
+
+        Returns
+        -------
+        The snake_case name of the extension module implementing the class
+        """
+        return re.sub(
+            r'(?<!^)(?=[A-Z])',
+            '_',
+            class_name
+        ).lower()
 
     @staticmethod
     def _extract_cell_value(cell: openpyxl.cell.cell.Cell) -> str | None:
@@ -308,6 +441,86 @@ class ExcelConfigurator(ConfiguratorInterface):
         )
 
         return list(values)
+
+    @classmethod
+    def _extract_sheet_key_value_rows(
+        cls,
+        workbook: openpyxl.workbook.workbook.Workbook,
+        sheet_name: str,
+        headers: tuple[str, str],
+        header_row: int = 1,
+        key_column: str = 'A',
+    ) -> dict[str, str]:
+        """
+        Extract all the key/value row pairs of a sheet, whose keys aren't known in advance.
+
+        Parameters
+        ----------
+        workbook
+            The workbook to search
+        sheet_name
+            The name of the sheet holding the key/value rows
+        headers
+            The expected headers of the key and value columns, used to validate the sheet's format
+        header_row
+            The number of the row holding the column headers, with the key/value rows starting right below it
+        key_column
+            The letter identifier of the column holding the keys
+
+        Returns
+        -------
+        Each key of the sheet mapped to its value
+
+        Raises
+        ------
+        ConfigurationHandlerError
+        """
+        if sheet_name not in workbook.sheetnames:
+            msg = f"The following sheet is missing from the Configuration file: {sheet_name}"
+
+            raise ConfigurationHandlerError(msg)
+
+        sheet = workbook[sheet_name]
+        value_column = cls._increment_column_identifier(key_column)
+        found_headers = (
+            cls._extract_cell_value(sheet[f'{key_column}{header_row}']),
+            cls._extract_cell_value(sheet[f'{value_column}{header_row}']),
+        )
+        if found_headers != headers:
+            msg = " ".join([
+                f"The {sheet_name} sheet of the Configuration file requires the headers",
+                f"{', '.join(headers)}, but instead has:",
+                ", ".join(
+                    str(found_header)
+                    for found_header in found_headers
+                ),
+            ])
+
+            raise ConfigurationHandlerError(msg)
+
+        key_values = {}
+        keys_without_value = []
+        for row in range(header_row + 1, sheet.max_row + 1):
+            key = cls._extract_cell_value(sheet[f'{key_column}{row}'])
+            if key is None:
+                continue
+
+            value = cls._extract_cell_value(sheet[f'{value_column}{row}'])
+            if value is None:
+                keys_without_value.append(key)
+            else:
+                key_values[key] = value
+
+        if len(keys_without_value) > 0:
+            msg = " ".join([
+                f"The following {sheet_name} sheet rows of the Configuration file have no",
+                f"{headers[1]} value:",
+                ", ".join(keys_without_value),
+            ])
+
+            raise ConfigurationHandlerError(msg)
+
+        return key_values
 
     @classmethod
     def _extract_workbook_columns_by_schema(
@@ -525,9 +738,8 @@ class ExcelConfigurator(ConfiguratorInterface):
 
         return found_row
 
-    @classmethod
+    @staticmethod
     def _get_logger_level_from_name(
-        cls,
         level_name: str
     ) -> int:
         """
@@ -546,12 +758,18 @@ class ExcelConfigurator(ConfiguratorInterface):
         ------
         ConfigurationHandlerError
         """
-        if level_name not in cls.CONFIGURATION_LOGGER_LEVELS:
-            msg = "Invalid logger level in parameters file"
+        try:
+            configuration_logger_level = ConfigurationLoggerLevel(level_name)
+        except ValueError as error:
+            msg = " ".join([
+                f"Invalid logger_level in the Configuration file: {level_name}.",
+                "The valid logger levels are:",
+                ", ".join(ConfigurationLoggerLevel),
+            ])
 
-            raise ConfigurationHandlerError(msg)
+            raise ConfigurationHandlerError(msg) from error
 
-        return cls.CONFIGURATION_LOGGER_LEVELS[level_name]
+        return configuration_logger_level.logger_level
 
     @classmethod
     def _increment_column_identifier(

@@ -1,5 +1,7 @@
 __all__ = [
     'MarketDailyDataBlock',
+    'MarketData',
+    'MarketDataDailyRow',
 ]
 
 
@@ -69,7 +71,7 @@ class MarketDailyDataBlock(BaseDataBlock):
                 start_date=daily_rows[first_date].date,
                 end_date=daily_rows[last_date].date,
                 main_identifier=common_market_fields[MarketData.main_identifier],
-                daily_rows=daily_rows,
+                rows=daily_rows,
             )
         except (
             DataBlockEmptyError,

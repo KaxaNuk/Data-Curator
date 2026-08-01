@@ -3,9 +3,8 @@ Handles the logic of building the columnar output of the system.
 """
 
 import dataclasses
-import importlib
 import inspect
-import pkgutil
+import logging
 import types
 import typing
 
@@ -73,6 +72,20 @@ class ColumnExtractor:
     valid_column_names: frozenset[str]
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ResolvedDataBlocks:
+    """
+    The data blocks resolved for a run, and the built-in blocks that the passed ones replaced.
+    """
+    # all the data blocks the run will use, the passed ones first, then the built-ins none of them shadowed:
+    data_blocks: list[type[BaseDataBlock]]
+    # the passed data blocks that claimed at least one prefix of each shadowed built-in data block:
+    shadowers_by_built_in_block: dict[
+        type[BaseDataBlock],
+        list[type[BaseDataBlock]]
+    ]
+
+
 # Type for the calculated columns, keyed by column identifier
 type CalculatedColumnsByName = dict[ColumnIdentifier, CalculatedColumn]
 # Type for the column extractors of every data block prefix, keyed by prefix
@@ -88,24 +101,24 @@ class ColumnBuilder:
 
     # the prefix identifying calculated columns, whose values come from calculation functions:
     CALCULATED_COLUMN_PREFIX: typing.ClassVar[str] = 'c'
+    # the data block whose clock sync field acts as the master clock when the user doesn't choose one;
+    # a passed data block that shadows it takes over the role, as it replaces it in the run:
+    DEFAULT_MASTER_CLOCK_DATA_BLOCK: typing.ClassVar[type[BaseDataBlock]] = MarketDailyDataBlock
     # the names of the columns that are provided directly, without a prefix or dependencies:
     FIXED_COLUMN_NAMES: typing.ClassVar[tuple[ColumnIdentifier, ...]] = ('configuration',)
     # @todo replace once entities expose their rows through a uniform accessor:
     # candidate attribute names holding a data entity's row dict, tried in order
     ROW_FIELD_NAMES: typing.ClassVar[tuple[str, ...]] = (
-        'daily_rows',
         'rows',
     )
-
-    # the data block whose clock sync field acts as the master clock for all the other data blocks;
-    # power users may override it before calling set_data_blocks to use a custom clock column:
-    master_clock_data_block: typing.ClassVar[type[BaseDataBlock]] = MarketDailyDataBlock
 
     _calculated_columns: typing.ClassVar[CalculatedColumnsByName] = {}
     _calculation_modules: typing.ClassVar[CalculationModules] = []
     _column_extractors_by_prefix: typing.ClassVar[ColumnExtractorsByPrefix] = {}
     _configuration: typing.ClassVar[Configuration | None] = None
     _data_blocks: typing.ClassVar[list[type[BaseDataBlock]]] = []
+    # the data block resolved as the master clock, which all the other data blocks' rows get synced against:
+    _master_clock_data_block: typing.ClassVar[type[BaseDataBlock] | None] = None
     _sorted_required_columns: typing.ClassVar[list[ColumnIdentifier]] = []
 
     def __init__(
@@ -126,7 +139,7 @@ class ColumnBuilder:
             data_block = self._get_data_block_for_entity(entity, self._data_blocks)
             entity_rows = self._get_entity_rows(entity, self.ROW_FIELD_NAMES)
             entity_rows_by_block[data_block] = entity_rows
-            if data_block is self.master_clock_data_block:
+            if data_block is self._master_clock_data_block:
                 master_clock_rows = entity_rows
 
         if master_clock_rows is None:
@@ -137,7 +150,7 @@ class ColumnBuilder:
         # Build each block's rows according to its column strategy, keyed by every one of the block's prefixes.
         self._rows_by_prefix: DataBlockRowsByPrefix = {}
         for (data_block, entity_rows) in entity_rows_by_block.items():
-            if data_block is self.master_clock_data_block:
+            if data_block is self._master_clock_data_block:
                 built_rows = entity_rows
             elif len(data_block.dated_factor_date_fields) > 0:
                 built_rows = self._expand_dated_factors(
@@ -160,6 +173,16 @@ class ColumnBuilder:
 
             for prefix in data_block.prefix_entity_map:
                 self._rows_by_prefix[prefix] = built_rows
+
+        # Data blocks with no passed entity have no data at all, so all their columns resolve to None, just like
+        # the columns of a block whose passed entity contains no rows.
+        empty_block_rows = dict.fromkeys(master_clock_rows.keys())
+        for data_block in self._data_blocks:
+            if data_block in entity_rows_by_block:
+                continue
+
+            for prefix in data_block.prefix_entity_map:
+                self._rows_by_prefix[prefix] = empty_block_rows
 
     @classmethod
     def get_sorted_required_columns(cls) -> list[ColumnIdentifier]:
@@ -187,13 +210,16 @@ class ColumnBuilder:
         *,
         calculation_modules: CalculationModules,
         configuration: Configuration,
+        data_blocks: list[type[BaseDataBlock]],
+        master_clock_data_block: type[BaseDataBlock] | None = None,
     ) -> None:
         """
         Initialize the data blocks and calculate the topologically sorted required columns.
 
-        If no data blocks have been set yet, the built-in ones are discovered and set through set_data_blocks.
-        The columns requested in the configuration are then resolved, together with all their dependencies,
-        into a dependency-ordered list saved for later retrieval through get_sorted_required_columns.
+        The passed data blocks are resolved against the built-in ones, which fill in every prefix the passed
+        blocks leave unclaimed. The columns requested in the configuration are then resolved, together with all
+        their dependencies, into a dependency-ordered list saved for later retrieval through
+        get_sorted_required_columns.
 
         Parameters
         ----------
@@ -201,6 +227,12 @@ class ColumnBuilder:
             The modules containing the calculated column functions
         configuration
             The configuration containing the requested output columns
+        data_blocks
+            The data block classes to use, which shadow any built-in block sharing their prefixes. Pass an empty
+            list to only use the built-in data blocks.
+        master_clock_data_block
+            The data block whose clock sync field will act as the master clock, or None to use the default one,
+            or whichever passed data block shadowed it
 
         Raises
         ------
@@ -216,14 +248,19 @@ class ColumnBuilder:
         cls._calculation_modules = calculation_modules
         cls._configuration = configuration
 
-        if not cls._data_blocks:
-            cls.set_data_blocks(
-                cls._get_built_in_data_blocks()
-            )
+        resolved_data_blocks = cls._resolve_data_blocks(
+            data_blocks,
+            cls._get_built_in_data_blocks(),
+        )
+        cls._data_blocks = resolved_data_blocks.data_blocks
+        cls._master_clock_data_block = cls._resolve_master_clock_data_block(
+            resolved_data_blocks,
+            master_clock_data_block,
+        )
 
         cls._column_extractors_by_prefix = cls._calculate_column_extractors(cls._data_blocks)
         base_column_prefixes = frozenset(cls._column_extractors_by_prefix.keys())
-        master_clock_column = cls._get_master_clock_column(cls.master_clock_data_block)
+        master_clock_column = cls._get_master_clock_column(cls._master_clock_data_block)
         cls._sorted_required_columns = cls._calculate_sorted_required_columns(
             set(configuration.columns),
             base_column_prefixes=base_column_prefixes,
@@ -282,64 +319,6 @@ class ColumnBuilder:
                 for column in columns
             }
         )
-
-    @classmethod
-    def set_data_blocks(
-        cls,
-        data_blocks: list[type[BaseDataBlock]],
-    ) -> None:
-        """
-        Replace the ColumnBuilder's data blocks with the provided ones.
-
-        Allows injecting a specific set of data blocks, for example in tests or to override the built-in
-        discovery, before initialize_data_blocks builds the column topological sort.
-
-        Parameters
-        ----------
-        data_blocks
-            The data block classes that will replace the currently set ones
-
-        Raises
-        ------
-        InjectedDependencyError
-        """
-        if (
-            len(data_blocks) < 1
-            or not all(
-                inspect.isclass(data_block)
-                and issubclass(data_block, BaseDataBlock)
-                for data_block in data_blocks
-            )
-        ):
-            msg = "set_data_blocks requires a non-empty list of BaseDataBlock subclasses"
-
-            raise InjectedDependencyError(msg)
-
-        seen_prefixes = set()
-        colliding_prefixes = set()
-        for data_block in data_blocks:
-            for prefix in data_block.prefix_entity_map:
-                if prefix in seen_prefixes:
-                    colliding_prefixes.add(prefix)
-                else:
-                    seen_prefixes.add(prefix)
-
-        if len(colliding_prefixes) > 0:
-            msg = " ".join([
-                "set_data_blocks received data blocks with colliding prefixes:",
-                ", ".join(
-                    sorted(colliding_prefixes)
-                )
-            ])
-
-            raise InjectedDependencyError(msg)
-
-        if cls.master_clock_data_block not in data_blocks:
-            msg = "set_data_blocks requires the master clock data block to be among the provided data blocks"
-
-            raise InjectedDependencyError(msg)
-
-        cls._data_blocks = data_blocks
 
     @classmethod
     def _build_column_subgraph(
@@ -709,27 +688,26 @@ class ColumnBuilder:
     @staticmethod
     def _get_built_in_data_blocks() -> list[type[BaseDataBlock]]:
         """
-        Discover and return all the built-in data block classes.
+        Return all the built-in data block classes.
 
-        Walks the built-in data_blocks package, imports each of its submodules, and collects every
-        BaseDataBlock subclass defined within them.
+        Each data block package published in the public API of the built-in data_blocks package holds one data
+        block class, so a new built-in data block only needs its package added to that __all__ to be picked here.
 
         Returns
         -------
         The list of all the built-in data block classes
         """
         built_in_data_blocks = []
-        for module_info in pkgutil.iter_modules(
-            kaxanuk.data_curator.data_blocks.__path__
-        ):
-            submodule = importlib.import_module(
-                f'{kaxanuk.data_curator.data_blocks.__name__}.{module_info.name}'
-            )
-            for (_, member) in inspect.getmembers(submodule, inspect.isclass):
+        for package_name in kaxanuk.data_curator.data_blocks.__all__:
+            data_block_package = getattr(kaxanuk.data_curator.data_blocks, package_name)
+            if not inspect.ismodule(data_block_package):
+                continue
+
+            for member_name in data_block_package.__all__:
+                member = getattr(data_block_package, member_name)
                 if (
-                    issubclass(member, BaseDataBlock)
-                    and member is not BaseDataBlock
-                    and member.__module__ == submodule.__name__
+                    inspect.isclass(member)
+                    and issubclass(member, BaseDataBlock)
                 ):
                     built_in_data_blocks.append(member)
 
@@ -1077,6 +1055,62 @@ class ColumnBuilder:
 
         return infilled_data
 
+    @staticmethod
+    def _map_prefixes_to_data_blocks(
+        data_blocks: list[type[BaseDataBlock]],
+    ) -> dict[str, type[BaseDataBlock]]:
+        """
+        Map every prefix declared by the data blocks to the data block declaring it.
+
+        Parameters
+        ----------
+        data_blocks
+            The data blocks whose declared prefixes will be mapped
+
+        Returns
+        -------
+        Each prefix declared across the data blocks, mapped to its declaring data block
+
+        Raises
+        ------
+        InjectedDependencyError
+        """
+        blocks_by_prefix = {}
+        colliding_blocks_by_prefix = {}
+        for data_block in data_blocks:
+            for prefix in data_block.prefix_entity_map:
+                if prefix not in blocks_by_prefix:
+                    blocks_by_prefix[prefix] = data_block
+
+                    continue
+
+                if prefix not in colliding_blocks_by_prefix:
+                    colliding_blocks_by_prefix[prefix] = [
+                        blocks_by_prefix[prefix],
+                    ]
+
+                colliding_blocks_by_prefix[prefix].append(data_block)
+
+        if len(colliding_blocks_by_prefix) > 0:
+            collision_descriptions = []
+            for prefix in sorted(colliding_blocks_by_prefix):
+                colliding_block_names = ", ".join(
+                    colliding_block.__name__
+                    for colliding_block in colliding_blocks_by_prefix[prefix]
+                )
+                collision_descriptions.append(
+                    f"prefix '{prefix}' declared by {colliding_block_names}"
+                )
+
+            msg = " ".join([
+                "The following data blocks declare colliding prefixes:",
+                "; ".join(collision_descriptions),
+            ])
+
+            raise InjectedDependencyError(msg)
+
+        return blocks_by_prefix
+
     @classmethod
     def _process_column(
         cls,
@@ -1154,6 +1188,133 @@ class ColumnBuilder:
             data_block_rows,
             column_name
         )
+
+    @classmethod
+    def _resolve_data_blocks(
+        cls,
+        passed_data_blocks: list[type[BaseDataBlock]],
+        built_in_data_blocks: list[type[BaseDataBlock]],
+    ) -> ResolvedDataBlocks:
+        """
+        Resolve the data blocks of a run, with the passed ones shadowing the built-in ones sharing their prefixes.
+
+        A passed data block shadows every built-in data block declaring at least one of the passed block's
+        prefixes, which lets a user replace a built-in block just by declaring its prefixes, without having to
+        pass the replaced block in. Only the built-in blocks whose prefixes are all left unclaimed are added.
+
+        Parameters
+        ----------
+        passed_data_blocks
+            The data blocks passed by the user, which take precedence over the built-in ones
+        built_in_data_blocks
+            The discovered built-in data blocks, which fill in the prefixes the passed blocks leave unclaimed
+
+        Returns
+        -------
+        The data blocks the run will use, together with the built-in blocks the passed ones shadowed
+
+        Raises
+        ------
+        InjectedDependencyError
+        """
+        blocks_by_passed_prefix = cls._map_prefixes_to_data_blocks(passed_data_blocks)
+        # the passed blocks go first, so they win the entity lookups against any built-in block they subclass:
+        resolved_data_blocks = list(passed_data_blocks)
+        shadowers_by_built_in_block = {}
+
+        for built_in_data_block in built_in_data_blocks:
+            if built_in_data_block in passed_data_blocks:
+                # the user passed this built-in data block in explicitly, so it isn't shadowed by anything
+
+                continue
+
+            shadowing_data_blocks = []
+            unclaimed_prefixes = []
+            for prefix in built_in_data_block.prefix_entity_map:
+                if prefix not in blocks_by_passed_prefix:
+                    unclaimed_prefixes.append(prefix)
+
+                    continue
+
+                shadowing_data_block = blocks_by_passed_prefix[prefix]
+                if shadowing_data_block not in shadowing_data_blocks:
+                    shadowing_data_blocks.append(shadowing_data_block)
+
+            if len(shadowing_data_blocks) < 1:
+                resolved_data_blocks.append(built_in_data_block)
+
+                continue
+
+            shadowers_by_built_in_block[built_in_data_block] = shadowing_data_blocks
+
+            if len(unclaimed_prefixes) > 0:
+                shadowing_data_block_names = ", ".join(
+                    shadowing_block.__name__
+                    for shadowing_block in shadowing_data_blocks
+                )
+                logging.getLogger(__name__).info(
+                    "Data block %s was replaced by %s, so its columns under these prefixes are unavailable: %s",
+                    built_in_data_block.__name__,
+                    shadowing_data_block_names,
+                    ", ".join(unclaimed_prefixes),
+                )
+
+        return ResolvedDataBlocks(
+            data_blocks=resolved_data_blocks,
+            shadowers_by_built_in_block=shadowers_by_built_in_block,
+        )
+
+    @classmethod
+    def _resolve_master_clock_data_block(
+        cls,
+        resolved_data_blocks: ResolvedDataBlocks,
+        master_clock_data_block: type[BaseDataBlock] | None,
+    ) -> type[BaseDataBlock]:
+        """
+        Resolve the data block whose clock sync field will act as the master clock.
+
+        An explicitly chosen data block is always used. Otherwise the default master clock data block is used, or
+        the single passed data block that shadowed it, as that block replaced it in the run.
+
+        Parameters
+        ----------
+        resolved_data_blocks
+            The run's resolved data blocks and the built-in blocks the passed ones shadowed
+        master_clock_data_block
+            The data block explicitly chosen as the master clock, or None to resolve the default one
+
+        Returns
+        -------
+        The data block whose clock sync field will act as the master clock
+
+        Raises
+        ------
+        InjectedDependencyError
+        """
+        if master_clock_data_block is not None:
+            return master_clock_data_block
+
+        if cls.DEFAULT_MASTER_CLOCK_DATA_BLOCK in resolved_data_blocks.data_blocks:
+            return cls.DEFAULT_MASTER_CLOCK_DATA_BLOCK
+
+        default_shadowing_blocks = resolved_data_blocks.shadowers_by_built_in_block.get(
+            cls.DEFAULT_MASTER_CLOCK_DATA_BLOCK,
+            [],
+        )
+        if len(default_shadowing_blocks) == 1:
+            return default_shadowing_blocks[0]
+
+        default_shadowing_block_names = ", ".join(
+            default_shadowing_block.__name__
+            for default_shadowing_block in default_shadowing_blocks
+        )
+        msg = " ".join([
+            f"The default master clock data block {cls.DEFAULT_MASTER_CLOCK_DATA_BLOCK.__name__}",
+            f"was replaced by these data blocks: {default_shadowing_block_names}.",
+            "Choose which data block will act as the master clock by passing it as master_clock_data_block.",
+        ])
+
+        raise InjectedDependencyError(msg)
 
     @staticmethod
     def _topological_sort(dependency_graph: networkx.DiGraph) -> list[ColumnIdentifier]:

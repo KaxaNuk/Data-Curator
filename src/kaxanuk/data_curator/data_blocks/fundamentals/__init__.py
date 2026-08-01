@@ -1,4 +1,9 @@
 __all__ = [
+    'FundamentalData',
+    'FundamentalDataRow',
+    'FundamentalDataRowBalanceSheet',
+    'FundamentalDataRowCashFlow',
+    'FundamentalDataRowIncomeStatement',
     'FundamentalsDataBlock',
 ]
 

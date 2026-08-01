@@ -19,7 +19,7 @@ class MarketData(BaseDataEntity):
     start_date: datetime.date
     end_date: datetime.date
     main_identifier: MainIdentifier
-    daily_rows: dict[str, MarketDataDailyRow]
+    rows: dict[str, MarketDataDailyRow]
 
     def __post_init__(self):
         field_type_errors = entity_helper.detect_field_type_errors(self)
@@ -33,7 +33,7 @@ class MarketData(BaseDataEntity):
 
         if not all(
             isinstance(row, MarketDataDailyRow)
-            for row in self.daily_rows.values()
+            for row in self.rows.values()
         ):
             msg = f"Incorrect data in {self.__class__.__name__}.daily_rows"
 
@@ -41,13 +41,13 @@ class MarketData(BaseDataEntity):
 
         if any(
             not validator.is_date_pattern(key)
-            for key in self.daily_rows
+            for key in self.rows
         ):
             msg = f"{self.__class__.__name__}.daily_rows keys need to be date strings in 'YYYY-MM-DD' format"
 
             raise EntityValueError(msg)
 
-        if list(self.daily_rows.keys()) != sorted(self.daily_rows.keys()):
+        if list(self.rows.keys()) != sorted(self.rows.keys()):
             msg = f"{self.__class__.__name__}.daily_rows are not correctly sorted by date"
 
             raise EntityValueError(msg)

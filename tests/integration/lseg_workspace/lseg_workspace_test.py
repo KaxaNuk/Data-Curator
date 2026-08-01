@@ -211,7 +211,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            assert len(result.daily_rows) > 0, f"No daily rows for {ric}"
+            assert len(result.rows) > 0, f"No daily rows for {ric}"
 
     def test_daily_rows_sorted_ascending(self, initialized_provider):
         """Verify daily rows dictionary keys are in ascending date order."""
@@ -221,7 +221,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            keys = list(result.daily_rows.keys())
+            keys = list(result.rows.keys())
             assert keys == sorted(keys), f"Rows not sorted for {ric}"
 
     def test_daily_rows_contain_market_data_daily_row(self, initialized_provider):
@@ -232,7 +232,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            for key, row in result.daily_rows.items():
+            for key, row in result.rows.items():
                 assert isinstance(row, MarketDataDailyRow), (
                     f"Expected MarketDataDailyRow for {ric} on {key}"
                 )
@@ -245,7 +245,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            for key, row in result.daily_rows.items():
+            for key, row in result.rows.items():
                 expected = datetime.datetime.strptime(key, "%Y-%m-%d").date()  # noqa: DTZ007
                 assert row.date == expected, (
                     f"Row date {row.date} != key {key} for {ric}"
@@ -260,8 +260,8 @@ class TestMarketDataIntegration:
                 end_date=END_DATE,
             )
             expected = _market_row_count_for_ric(raw_market_df, ric)
-            assert len(result.daily_rows) == expected, (
-                f"Expected {expected} rows for {ric}, got {len(result.daily_rows)}"
+            assert len(result.rows) == expected, (
+                f"Expected {expected} rows for {ric}, got {len(result.rows)}"
             )
 
     def test_unadjusted_ohlcv_populated(self, initialized_provider):
@@ -272,7 +272,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            sample = list(result.daily_rows.values())[:10]
+            sample = list(result.rows.values())[:10]
             for row in sample:
                 assert row.open is not None
                 assert row.high is not None
@@ -288,7 +288,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            sample = list(result.daily_rows.values())[:10]
+            sample = list(result.rows.values())[:10]
             for row in sample:
                 assert row.open_split_adjusted is not None
                 assert row.high_split_adjusted is not None
@@ -303,7 +303,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            sample = list(result.daily_rows.values())[:10]
+            sample = list(result.rows.values())[:10]
             for row in sample:
                 assert row.open_dividend_and_split_adjusted is not None
                 assert row.high_dividend_and_split_adjusted is not None
@@ -318,7 +318,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            sample = list(result.daily_rows.values())[:10]
+            sample = list(result.rows.values())[:10]
             for row in sample:
                 assert row.volume is not None, f"volume is None for {ric}"
                 assert row.vwap is not None, f"vwap is None for {ric}"
@@ -331,7 +331,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            for key, row in result.daily_rows.items():
+            for key, row in result.rows.items():
                 if row.open is not None:
                     assert row.open >= 0, f"Negative open for {ric} on {key}"
                 if row.high is not None:
@@ -351,7 +351,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            for key, row in result.daily_rows.items():
+            for key, row in result.rows.items():
                 if row.low is not None and row.high is not None:
                     assert row.low <= row.high, (
                         f"Low ({row.low}) > High ({row.high}) for {ric} on {key}"
@@ -368,8 +368,8 @@ class TestMarketDataIntegration:
             )
 
         ric_a, ric_b = FIXTURE_RICS
-        rows_a = list(results[ric_a].daily_rows.values())
-        rows_b = list(results[ric_b].daily_rows.values())
+        rows_a = list(results[ric_a].rows.values())
+        rows_b = list(results[ric_b].rows.values())
 
         some_differ = any(
             a.close != b.close
@@ -399,7 +399,7 @@ class TestMarketDataIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            for key in result.daily_rows:
+            for key in result.rows:
                 try:
                     datetime.datetime.strptime(key, "%Y-%m-%d")  # noqa: DTZ007
                 except ValueError:
@@ -936,7 +936,7 @@ class TestCrossDomainIntegration:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            assert len(market.daily_rows) > 0
+            assert len(market.rows) > 0
             assert len(fundamental.rows) > 0
             assert len(dividend.rows) > 0
             assert len(split.rows) > 0
@@ -972,7 +972,7 @@ class TestCrossDomainIntegration:
                 end_date=END_DATE,
             )
 
-            market_dates = sorted(market.daily_rows.keys())
+            market_dates = sorted(market.rows.keys())
             first_market = market_dates[0]
             last_market = market_dates[-1]
 
@@ -997,7 +997,7 @@ class TestCrossDomainIntegration:
         )
 
         some_differ = False
-        for row in result.daily_rows.values():
+        for row in result.rows.values():
             if (
                 row.close_split_adjusted is not None
                 and row.close_dividend_and_split_adjusted is not None
@@ -1027,7 +1027,7 @@ class TestCrossDomainIntegration:
         )
 
         tolerance = decimal.Decimal("0.000001")
-        for key, row in result.daily_rows.items():
+        for key, row in result.rows.items():
             split_close = row.close_split_adjusted
             div_split_close = row.close_dividend_and_split_adjusted
             if split_close is not None and div_split_close is not None:
@@ -1112,7 +1112,7 @@ class TestEdgeCases:
             end_date=END_DATE,
         )
         assert isinstance(market, MarketData)
-        assert len(market.daily_rows) > 0
+        assert len(market.rows) > 0
 
         fundamental = provider.get_fundamental_data(
             main_identifier="AAPL.OQ",
@@ -1151,7 +1151,7 @@ class TestEdgeCases:
                 start_date=START_DATE,
                 end_date=END_DATE,
             )
-            for key, row in result.daily_rows.items():
+            for key, row in result.rows.items():
                 if (
                     row.vwap_split_adjusted is not None
                     and row.low_split_adjusted is not None
