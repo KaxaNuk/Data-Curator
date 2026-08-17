@@ -7,6 +7,7 @@ __all__ = [
     'FinancialModelingPrep',
     'LsegWorkspace',
     'NotFoundDataProvider',
+    'Sharadar',
 ]
 
 
@@ -15,3 +16,4 @@ from kaxanuk.data_curator.data_providers.data_provider_interface import DataProv
 from kaxanuk.data_curator.data_providers.financial_modeling_prep import FinancialModelingPrep
 from kaxanuk.data_curator.data_providers.lseg_workspace import LsegWorkspace
 from kaxanuk.data_curator.data_providers.not_found import NotFoundDataProvider
+from kaxanuk.data_curator.data_providers.sharadar import Sharadar

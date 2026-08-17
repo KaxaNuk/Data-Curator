@@ -10,6 +10,8 @@ KNDC_API_KEY_FMP : str
     Api key for the Financial Modeling Prep data provider
 KNDC_API_KEY_LSEG : str
     Api key for the LSEG Workspace data provider
+KNDC_API_KEY_SHARADAR : str
+    Api key for the Sharadar data provider
 """
 
 import os
@@ -43,6 +45,10 @@ configurator = kaxanuk.data_curator.config_handlers.ExcelConfigurator(
         'lseg_workspace': {
             'class': kaxanuk.data_curator.data_providers.LsegWorkspace,
             'api_key': os.getenv('KNDC_API_KEY_LSEG'), # set this up in the Config/.env file
+        },
+        'sharadar': {
+            'class': kaxanuk.data_curator.data_providers.Sharadar,
+            'api_key': os.getenv('KNDC_API_KEY_SHARADAR'),  # set this up in the Config/.env file
         },
         'yahoo_finance': {
             'class': kaxanuk.data_curator.load_data_provider_extension(

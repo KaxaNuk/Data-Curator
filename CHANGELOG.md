@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- Sharadar data provider, covering market data for stocks and funds, fundamentals, dividends and splits.
+  Selectable as `sharadar` in the configuration file, with its API key in the `KNDC_API_KEY_SHARADAR`
+  environment variable.
+- The Sharadar provider acquires its data through the provider's whole-table bulk exports when a run covers
+  100 identifiers or more, and through its query API below that, since the API only accepts 30 tickers per
+  request. Bulk downloads are cached as Parquet in `Cache/sharadar`, overridable through the
+  `KNDC_SHARADAR_CACHE_DIR` environment variable.
+
 ### Fixed
 - Catch FMP erroneous dividend data with duplicate ex-dividend dates
 

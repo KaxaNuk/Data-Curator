@@ -178,3 +178,4 @@ __main__*.py
 !templates/**/.env
 Config/*
 Output/*
+Cache/*
