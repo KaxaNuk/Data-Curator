@@ -319,12 +319,28 @@ def indexed_rolling_window_operation(
             .rolling(window_length)
             .apply(operation_function, raw=True)
     )
-    result = key_column.to_pandas().map(
-        rolling_applied.drop(
-            ['', None, float('nan')],
-            errors='ignore'
+
+    run_indices = pyarrow.compute.subtract(
+        pyarrow.compute.cumulative_sum(
+            adjacent_unique_keys.cast(pyarrow.int64())
         ),
-        na_action='ignore'
+        1
+    )
+    # rows preceding the first run belong to no window, and are left without an index to take from
+    run_indices = pyarrow.compute.if_else(
+        pyarrow.compute.greater_equal(run_indices, 0),
+        run_indices,
+        pyarrow.scalar(None, type=pyarrow.int64())
+    )
+    broadcast = pyarrow.compute.take(
+        pyarrow.array(rolling_applied.to_numpy(), type=pyarrow.float64()),
+        run_indices
+    )
+    # rows carrying no key had nothing to be grouped by, so they get no result
+    result = pyarrow.compute.if_else(
+        pyarrow.compute.is_valid(key_column.to_pyarrow()),
+        broadcast,
+        pyarrow.scalar(None, type=pyarrow.float64())
     )
 
     return DataColumn.load(result)

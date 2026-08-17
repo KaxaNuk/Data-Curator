@@ -216,6 +216,36 @@ class TestIndexedRollingWindowOperation:
             equal_nulls=True
         )
 
+    def test_a_key_reappearing_after_others_is_windowed_by_position(self):
+        """
+        A key may legitimately show up again once other keys have intervened.
+
+        A data provider can label a transition period with the quarter it straddles, or restate a period in a
+        later filing, leaving two groups under one label. Broadcasting each window's result back by key would
+        be ambiguous there; it is the run a row belongs to that decides which window it takes.
+        """
+        key_column = DataColumn.load([
+            'Q4', 'Q4',
+            'Q1', 'Q1',
+            'Q2', 'Q2',
+            'Q3', 'Q3',
+            'Q4', 'Q4',     # the same label as the first group, with three groups in between
+        ])
+        value_column = DataColumn.load([100, 100, 200, 200, 300, 300, 400, 400, 500, 500])
+
+        result = helpers.indexed_rolling_window_operation(
+            key_column=key_column,
+            value_column=value_column,
+            operation_function=sum,
+            window_length=4
+        )
+
+        assert DataColumn.fully_equal(
+            result,
+            DataColumn.load([None, None, None, None, None, None, 1000, 1000, 1400, 1400]),
+            equal_nulls=True
+        )
+
     # noinspection PyTypeChecker
     def test_incorrect_param_key_column(self, example_rolling_window_operations):
         with pytest.raises(CalculationHelperError):
