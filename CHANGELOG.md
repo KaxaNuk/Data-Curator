@@ -19,16 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generalilzed `ColumnBuilder` to work with arbitrary data blocks
 - Breaking: `MarketData.daily_rows` is now `MarketData.rows`
 - `kaxanuk.data_curator.main` now accepts a `data_block_providers` mapping from data block name to provider instance, and a `master_clock_data_block` data block reference in case a custom data block should act as the master clock
-- Breaking: `ExcelConfigurator` signature changed, now requires a list of data blocks, and expects data provider class names instead of snake_case aliases
-- Breaking: Excel template now adds a new `Data_Providers` sheet for mappings from data blocks to data providers
+- `ExcelConfigurator.__init__` now takes a `data_blocks` list of the data blocks the parameters file can choose from, and expects data provider class names instead of snake_case aliases
+- Excel template now adds a new `Data_Providers` sheet for mappings from data blocks to data providers, replacing the `General` sheet `market_data_provider` and `fundamental_data_provider` keys
 - `DataProviderInterface.get_data_block_endpoint_tag_map` abstract class method
 
 ### Deprecated
 - `kaxanuk.data_curator.main` parameters `market_data_provider` and `fundamental_data_provider`
 - Data provider methods `get_dividend_data`, `get_fundamental_data`, `get_market_data`, and `get_split_data`
+- `ExcelConfigurator.__init__` calls without the `data_blocks` parameter, which default to all the built-in data blocks
+- `ExcelConfigurator` methods `get_market_data_provider` and `get_fundamental_data_provider`
+- Parameters files of the previous format, which select their data providers in the `General` sheet `market_data_provider` and `fundamental_data_provider` keys, and identify them by their snake_case aliases instead of their class names
 
 ### Fixed
 - Catch FMP erroneous dividend data with duplicate ex-dividend dates
+- Wrong package namespace in the `ExcelConfigurator` error message suggesting how to install missing data provider extensions
 
 
 ## [0.49.1] - 2026-06-25
