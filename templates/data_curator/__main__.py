@@ -35,16 +35,22 @@ output_base_dir = 'Output'
 parameters_excel_file = 'Config/data_curator_parameters.xlsx'
 configurator = kaxanuk.data_curator.config_handlers.ExcelConfigurator(
     file_path=parameters_excel_file,
+    data_blocks=[
+        kaxanuk.data_curator.data_blocks.dividends.DividendsDataBlock,
+        kaxanuk.data_curator.data_blocks.fundamentals.FundamentalsDataBlock,
+        kaxanuk.data_curator.data_blocks.market_daily.MarketDailyDataBlock,
+        kaxanuk.data_curator.data_blocks.splits.SplitsDataBlock,
+    ],
     data_providers={
-        'financial_modeling_prep': {
+        'FinancialModelingPrep': {
             'class': kaxanuk.data_curator.data_providers.FinancialModelingPrep,
             'api_key': os.getenv('KNDC_API_KEY_FMP'),   # set this up in the Config/.env file
         },
-        'lseg_workspace': {
+        'LsegWorkspace': {
             'class': kaxanuk.data_curator.data_providers.LsegWorkspace,
             'api_key': os.getenv('KNDC_API_KEY_LSEG'), # set this up in the Config/.env file
         },
-        'yahoo_finance': {
+        'YahooFinance': {
             'class': kaxanuk.data_curator.load_data_provider_extension(
                 extension_name='yahoo_finance',
                 extension_class_name='YahooFinance',
@@ -65,8 +71,7 @@ configurator = kaxanuk.data_curator.config_handlers.ExcelConfigurator(
 # Run this puppy!
 kaxanuk.data_curator.main(
     configuration=configurator.get_configuration(),
-    market_data_provider=configurator.get_market_data_provider(),
-    fundamental_data_provider=configurator.get_fundamental_data_provider(),
+    data_block_providers=configurator.get_data_block_providers(),
     output_handlers=[configurator.get_output_handler()],
     custom_calculation_modules=custom_calculation_modules,  # Optional
     logger_level=configurator.get_logger_level(),           # Optional

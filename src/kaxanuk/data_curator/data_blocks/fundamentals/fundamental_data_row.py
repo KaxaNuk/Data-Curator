@@ -2,10 +2,10 @@ import dataclasses
 import datetime
 import re
 
-from kaxanuk.data_curator.entities import BaseDataEntity
-from kaxanuk.data_curator.entities.fundamental_data_row_balance_sheet import FundamentalDataRowBalanceSheet
-from kaxanuk.data_curator.entities.fundamental_data_row_cash_flow import FundamentalDataRowCashFlow
-from kaxanuk.data_curator.entities.fundamental_data_row_income_statement import FundamentalDataRowIncomeStatement
+from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
+from .fundamental_data_row_balance_sheet import FundamentalDataRowBalanceSheet
+from .fundamental_data_row_cash_flow import FundamentalDataRowCashFlow
+from .fundamental_data_row_income_statement import FundamentalDataRowIncomeStatement
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
     EntityValueError,

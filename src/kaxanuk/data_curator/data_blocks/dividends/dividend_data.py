@@ -1,7 +1,7 @@
 import dataclasses
 
-from kaxanuk.data_curator.entities import BaseDataEntity
-from kaxanuk.data_curator.entities.dividend_data_row import DividendDataRow
+from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
+from .dividend_data_row import DividendDataRow
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,

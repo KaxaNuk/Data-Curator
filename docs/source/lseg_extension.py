@@ -455,7 +455,7 @@ def _build_column_tr_map(lseg_class: Any) -> dict[str, str | None]:
 def get_field_info(
     value_obj: Any,
     column_tr_map: dict[str, str | None],
-) -> tuple[str | None | tuple[str | None, ...], bool]:
+) -> tuple[str | tuple[str | None, ...] | None, bool]:
     """
     Return the simplified TR tag for an endpoint-map value using column_tr_map.
 
@@ -495,7 +495,7 @@ def _add_entry(
     sections_data: SectionsData,
     section: str,
     tag: str,
-    raw_content: str | None | tuple[str | None, ...],
+    raw_content: str | tuple[str | None, ...] | None,
     *,
     is_list: bool,
 ) -> None:
