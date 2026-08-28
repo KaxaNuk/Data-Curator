@@ -1,5 +1,5 @@
-__version__ = '0.49.1'
-__parameters_format_version__ = '0.47.0'
+__version__ = '0.50.0'
+__parameters_format_version__ = '0.50.0'
 
 __package_name__ = 'kaxanuk.data_curator'
 __package_title__ = 'KaxaNuk Data Curator'
@@ -13,6 +13,7 @@ __all__ = [
     '__version__',
     'cli',
     'config_handlers',
+    'data_blocks',
     'data_providers',
     'debugger',
     'entities',
@@ -37,6 +38,7 @@ from kaxanuk.data_curator.services.cli import cli
 
 # make these modules part of the public API of the base namespace
 from kaxanuk.data_curator import config_handlers
+from kaxanuk.data_curator import data_blocks
 from kaxanuk.data_curator import data_providers
 from kaxanuk.data_curator import entities
 from kaxanuk.data_curator import exceptions

@@ -1,4 +1,3 @@
-import copy
 import dataclasses
 import datetime
 import decimal
@@ -6,6 +5,18 @@ import decimal
 import pytest
 
 from kaxanuk.data_curator import DataColumn
+from kaxanuk.data_curator.data_blocks.dividends import (
+    DividendsDataBlock,
+)
+from kaxanuk.data_curator.data_blocks.fundamentals import (
+    FundamentalsDataBlock,
+)
+from kaxanuk.data_curator.data_blocks.market_daily import (
+    MarketDailyDataBlock,
+)
+from kaxanuk.data_curator.data_blocks.splits import (
+    SplitsDataBlock,
+)
 from kaxanuk.data_curator.entities import (
     DividendDataRow,
     FundamentalDataRow,
@@ -15,10 +26,6 @@ from kaxanuk.data_curator.entities import (
     MarketDataDailyRow,
     #SplitDataRow
 )
-from kaxanuk.data_curator.entities.dividend_data_row import (
-    DIVIDEND_DATE_FIELDS,
-    DIVIDEND_FACTOR_FIELDS,
-)
 from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCustomFunctionNotFoundError,
     ColumnBuilderNoDatesToInfillError,
@@ -26,14 +33,22 @@ from kaxanuk.data_curator.exceptions import (
 )
 from kaxanuk.data_curator.services.column_builder import (
     ColumnBuilder,
-    ColumnIdentifier,
     CompletedColumns,
     DataRows,
-    PostponedColumns
 )
 from . import fixture_entities      # @todo: do we really need them in a different file?
 from .fixtures import calculations
 # note: data_column_debugger is defined in tests/conftest.py
+
+
+DIVIDEND_DATE_FIELD_NAMES = tuple(
+    field.__name__
+    for field in DividendsDataBlock.dated_factor_date_fields
+)
+DIVIDEND_VALUE_FIELD_NAMES = tuple(
+    field.__name__
+    for field in DividendsDataBlock.dated_factor_value_fields
+)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -487,77 +502,12 @@ def example_expand_dated_factors_dividend_data():
     }
 
 
-class TestPrivateAddColumnDependency:
-    def test_add_column_to_empty_postponed_columns(self):
-        postponed:PostponedColumns = {}
-        column_name:ColumnIdentifier = 'column1'
-        dependency_name:ColumnIdentifier = 'subcolumn1'
-        ColumnBuilder._add_column_dependency(
-            postponed,
-            column_name,
-            dependency_name
-        )
-
-        assert column_name in postponed
-        assert dependency_name in postponed[column_name]
-
-    def test_add_column_not_in_postponed_columns(self):
-        existing_column_came:ColumnIdentifier = 'column2'
-        existing_dependency_name:ColumnIdentifier = 'subcolumn2'
-        postponed: PostponedColumns = {
-            existing_column_came: [existing_dependency_name]
-        }
-        column_name: ColumnIdentifier = 'column1'
-        dependency_name: ColumnIdentifier = 'subcolumn1'
-        ColumnBuilder._add_column_dependency(
-            postponed,
-            column_name,
-            dependency_name
-        )
-
-        assert column_name in postponed
-        assert dependency_name in postponed[column_name]
-        assert existing_column_came in postponed
-        assert existing_dependency_name in postponed[existing_column_came]
-
-    def test_add_dependency_not_in_postponed_columns(self):
-        existing_dependency_name:ColumnIdentifier = 'subcolumn2'
-        column_name: ColumnIdentifier = 'column1'
-        postponed: PostponedColumns = {
-            column_name: [existing_dependency_name]
-        }
-        dependency_name: ColumnIdentifier = 'subcolumn1'
-        ColumnBuilder._add_column_dependency(
-            postponed,
-            column_name,
-            dependency_name
-        )
-
-        assert dependency_name in postponed[column_name]
-        assert existing_dependency_name in postponed[column_name]
-
-    def test_add_existing_dependency_to_postponed_columns(self):
-        column_name: ColumnIdentifier = 'column1'
-        dependency_name: ColumnIdentifier = 'subcolumn1'
-        postponed: PostponedColumns = {
-            column_name: [dependency_name]
-        }
-        ColumnBuilder._add_column_dependency(
-            postponed,
-            column_name,
-            dependency_name
-        )
-
-        assert dependency_name in postponed[column_name]
-        assert len(postponed[column_name]) == 1
-
-
 class TestPrivateExpandDatedFactors:
     def test_expand_dated_factors_full(self, example_expand_dated_factors_dividend_data):
         result = ColumnBuilder._expand_dated_factors(
             iter(example_expand_dated_factors_dividend_data['expected_result_full'].keys()),
-            DIVIDEND_DATE_FIELDS,
-            DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELD_NAMES,
+            DIVIDEND_VALUE_FIELD_NAMES,
             example_expand_dated_factors_dividend_data['data_rows']
         )
 
@@ -572,8 +522,8 @@ class TestPrivateExpandDatedFactors:
         }
         result = ColumnBuilder._expand_dated_factors(
             iter(expected_result.keys()),
-            DIVIDEND_DATE_FIELDS,
-            DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELD_NAMES,
+            DIVIDEND_VALUE_FIELD_NAMES,
             data_rows
         )
 
@@ -595,8 +545,8 @@ class TestPrivateExpandDatedFactors:
 
         result = ColumnBuilder._expand_dated_factors(
             iter(expected_result.keys()),
-            DIVIDEND_DATE_FIELDS,
-            DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELD_NAMES,
+            DIVIDEND_VALUE_FIELD_NAMES,
             example_expand_dated_factors_dividend_data['data_rows']
         )
 
@@ -605,8 +555,8 @@ class TestPrivateExpandDatedFactors:
     def test_expand_dated_factors_with_none_date_fields(self, example_expand_dated_factors_dividend_data):
         result = ColumnBuilder._expand_dated_factors(
             iter(example_expand_dated_factors_dividend_data['expected_result_with_nones'].keys()),
-            DIVIDEND_DATE_FIELDS,
-            DIVIDEND_FACTOR_FIELDS,
+            DIVIDEND_DATE_FIELD_NAMES,
+            DIVIDEND_VALUE_FIELD_NAMES,
             example_expand_dated_factors_dividend_data['data_rows_with_nones']
         )
 
@@ -670,129 +620,6 @@ class TestPrivateGetCalculationFunction:
                 'example_nonexistent_function',
                 [fixture_entities]
             )
-
-
-class TestPrivateGetClassOfFirstNonEmptyRow:
-    def test_empty_data_rows(self):
-        data_rows = {}
-
-        assert ColumnBuilder._get_class_of_first_non_empty_row(data_rows) is None
-
-    def test_nested_data_rows_with_empty_first_row(self):
-        data_rows = {
-            '2021-01-01': None,
-            '2021-01-02': ExampleEntity1(
-                field1=10,
-                field2='hi',
-                subfield_field1=ExampleSubEntity1(
-                    subfield1=15,
-                    subfield2="hello",
-                )
-            ),
-            '2021-01-03': None,
-        }
-        expected = ExampleSubEntity1
-        result = ColumnBuilder._get_class_of_first_non_empty_row(
-            data_rows,
-            'subfield_field1'
-        )
-
-        assert result == expected
-
-    def test_nested_data_rows_with_non_empty_first_row(self):
-        data_rows = {
-            '2021-01-01': ExampleEntity1(
-                field1=10,
-                field2='hi',
-                subfield_field1=ExampleSubEntity1(
-                    subfield1=15,
-                    subfield2="hello",
-                )
-            ),
-            '2021-01-02': None,
-        }
-        expected = ExampleSubEntity1
-        result = ColumnBuilder._get_class_of_first_non_empty_row(
-            data_rows,
-            'subfield_field1'
-        )
-
-        assert result == expected
-
-    def test_non_empty_rows_with_empty_data(self):
-        data_rows = {
-            '2021-01-01': None,
-            '2021-01-02': None,
-            '2021-01-03': None,
-        }
-        result = ColumnBuilder._get_class_of_first_non_empty_row(
-            data_rows,
-        )
-
-        assert result is None
-
-    def test_simple_data_rows_with_empty_first_row(self):
-        data_rows = {
-            '2021-01-01': None,
-            '2021-01-02': ExampleSubEntity1(
-                subfield1=15,
-                subfield2="hello",
-            ),
-            '2021-01-03': None,
-        }
-        expected = ExampleSubEntity1
-        result = ColumnBuilder._get_class_of_first_non_empty_row(
-            data_rows,
-        )
-
-        assert result == expected
-
-    def test_simple_data_rows_with_non_empty_first_row(self):
-        data_rows = {
-            '2021-01-01': ExampleSubEntity1(
-                subfield1=15,
-                subfield2="hello",
-            ),
-            '2021-01-02': None,
-        }
-        expected = ExampleSubEntity1
-        result = ColumnBuilder._get_class_of_first_non_empty_row(
-            data_rows,
-        )
-
-        assert result == expected
-
-
-class TestPrivateGetCombinedFieldColumnNames:
-    def test_get_combined_field_column_names(self):
-        field_source = 'test'
-        date_fields = (
-            'date_type_1',
-            'date_type_2',
-        )
-        factor_fields = (
-            'factor_type_1',
-            'factor_type_2',
-        )
-        result = ColumnBuilder._get_combined_field_column_names(
-            field_source,
-            date_fields,
-            factor_fields
-        )
-        memoized_result = ColumnBuilder._get_combined_field_column_names(
-            field_source,
-            date_fields,
-            factor_fields
-        )
-        expected_result = [
-            'date_type_1_factor_type_1',
-            'date_type_1_factor_type_2',
-            'date_type_2_factor_type_1',
-            'date_type_2_factor_type_2',
-        ]
-
-        assert result == expected_result
-        assert memoized_result == expected_result
 
 
 class TestPrivateGetFieldFromRow:
@@ -1098,47 +925,55 @@ class TestPrivateInfillData:
         )
 
 
-class TestPrivateProcessColumnsWithAvailableDependencies:
-    def test_column_already_in_completed_columns(
+class TestPrivateProcessColumn:
+    def test_c_column_with_base_params(
         self,
-        example_entity_rows_market_data,
+        example_entity_rows_market_data
     ):
-        expected_completed_columns = {
-            'm_vwap': DataColumn.load([
-                decimal.Decimal('1.251'),
-                decimal.Decimal('1.252'),
-                None,
-                decimal.Decimal('1.264'),
-                None,
-                decimal.Decimal('1.247'),
-                decimal.Decimal('1.252'),
-            ])
+        completed_columns: CompletedColumns = {
+            'm_high': DataColumn.load([
+                example_entity_rows_market_data['2020-01-01'].high,
+                example_entity_rows_market_data['2020-01-03'].high,
+                example_entity_rows_market_data['2020-01-04'].high,
+            ]),
+            'm_low': DataColumn.load([
+                example_entity_rows_market_data['2020-01-01'].low,
+                example_entity_rows_market_data['2020-01-03'].low,
+                example_entity_rows_market_data['2020-01-04'].low,
+            ]),
         }
-        completed_columns = copy.deepcopy(expected_completed_columns)
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'m_vwap'},
+        result = ColumnBuilder._process_column(
+            'c_sum_mhigh_and_mlow',
             completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
+            calculated_columns=ColumnBuilder._calculate_calculated_columns(
+                ['c_sum_mhigh_and_mlow'],
+                [calculations],
+            ),
+            data_block_rows_by_prefix={},
+            column_extractors={},
         )
-
-        assert (
-            set(expected_completed_columns.keys())
-            == set(completed_columns.keys())
-        )
+        expected_column = DataColumn.load([
+            (
+                example_entity_rows_market_data['2020-01-01'].high
+                + example_entity_rows_market_data['2020-01-01'].low
+            ),
+            (
+                example_entity_rows_market_data['2020-01-03'].high
+                + example_entity_rows_market_data['2020-01-03'].low
+            ),
+            (
+                example_entity_rows_market_data['2020-01-04'].high
+                + example_entity_rows_market_data['2020-01-04'].low
+            ),
+        ])
 
         assert DataColumn.fully_equal(
-            expected_completed_columns['m_vwap'],
-            completed_columns['m_vwap'],
+            result,
+            expected_column,
             equal_nulls=True
         )
 
-    def test_c_column_with_c_params_all_available(
+    def test_c_column_with_calculated_param(
         self,
         example_entity_rows_market_data,
     ):
@@ -1163,16 +998,15 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
                 ),
             ]),
         }
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'c_multiply_sum_by_mclose'},
+        result = ColumnBuilder._process_column(
+            'c_multiply_sum_by_mclose',
             completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
+            calculated_columns=ColumnBuilder._calculate_calculated_columns(
+                ['c_multiply_sum_by_mclose'],
+                [calculations],
+            ),
+            data_block_rows_by_prefix={},
+            column_extractors={},
         )
         expected_column = DataColumn.load([
             (
@@ -1182,205 +1016,40 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
                 )
                 * example_entity_rows_market_data['2020-01-01'].close
             ),
-             (
-                 (
+            (
+                (
                     example_entity_rows_market_data['2020-01-03'].high
                     + example_entity_rows_market_data['2020-01-03'].low
-                 )
-                 * example_entity_rows_market_data['2020-01-03'].close
+                )
+                * example_entity_rows_market_data['2020-01-03'].close
             ),
-              (
-                  (
+            (
+                (
                     example_entity_rows_market_data['2020-01-04'].high
                     + example_entity_rows_market_data['2020-01-04'].low
-                  )
-                  * example_entity_rows_market_data['2020-01-04'].close
+                )
+                * example_entity_rows_market_data['2020-01-04'].close
             ),
         ])
 
         assert DataColumn.fully_equal(
-            completed_columns['c_multiply_sum_by_mclose'],
-            expected_column,
-            equal_nulls=True
-        )
-
-    def test_c_column_postponed_without_c_params_all_available(
-        self,
-        example_entity_rows_market_data,
-    ):
-        completed_columns: CompletedColumns = {
-            'm_high': DataColumn.load([
-                example_entity_rows_market_data['2020-01-01'].high,
-                example_entity_rows_market_data['2020-01-03'].high,
-                example_entity_rows_market_data['2020-01-04'].high,
-            ]),
-            'm_low': DataColumn.load([
-                example_entity_rows_market_data['2020-01-01'].low,
-                example_entity_rows_market_data['2020-01-03'].low,
-                example_entity_rows_market_data['2020-01-04'].low,
-            ]),
-        }
-        postponed_columns: PostponedColumns = {
-            'c_sum_mhigh_and_mlow': []
-        }
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'c_sum_mhigh_and_mlow'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
-        )
-        expected_postponed_columns = {}
-
-        assert postponed_columns == expected_postponed_columns
-
-    def test_c_column_with_c_params_unavailable_not_postponed(
-        self,
-        example_entity_rows_market_data,
-    ):
-        expected_completed_columns: CompletedColumns = {
-            'm_close': DataColumn.load([
-                example_entity_rows_market_data['2020-01-01'].close,
-                example_entity_rows_market_data['2020-01-03'].close,
-                example_entity_rows_market_data['2020-01-04'].close,
-            ]),
-        }
-        completed_columns = copy.deepcopy(expected_completed_columns)
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'c_multiply_sum_by_mclose'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
-        )
-        expected_postponed_columns = {
-            'c_multiply_sum_by_mclose': ['c_sum_mhigh_and_mlow']
-        }
-
-        assert (
-            set(expected_completed_columns.keys())
-            == set(completed_columns.keys())
-        )
-
-        assert (
-            expected_postponed_columns
-            == postponed_columns
-        )
-
-    def test_c_column_without_c_params_all_available(
-        self,
-        example_entity_rows_market_data
-    ):
-        completed_columns: CompletedColumns = {
-            'm_high': DataColumn.load([
-                example_entity_rows_market_data['2020-01-01'].high,
-                example_entity_rows_market_data['2020-01-03'].high,
-                example_entity_rows_market_data['2020-01-04'].high,
-            ]),
-            'm_low': DataColumn.load([
-                example_entity_rows_market_data['2020-01-01'].low,
-                example_entity_rows_market_data['2020-01-03'].low,
-                example_entity_rows_market_data['2020-01-04'].low,
-            ]),
-        }
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'c_sum_mhigh_and_mlow'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
-        )
-        expected_column = DataColumn.load([
-            (
-                example_entity_rows_market_data['2020-01-01'].high
-                + example_entity_rows_market_data['2020-01-01'].low
-            ),
-            (
-                example_entity_rows_market_data['2020-01-03'].high
-                + example_entity_rows_market_data['2020-01-03'].low
-            ),
-            (
-                example_entity_rows_market_data['2020-01-04'].high
-                + example_entity_rows_market_data['2020-01-04'].low
-            ),
-        ])
-
-        assert DataColumn.fully_equal(
-            completed_columns['c_sum_mhigh_and_mlow'],
-            expected_column,
-            equal_nulls=True
-        )
-
-    def test_c_column_without_c_params_with_param_not_yet_completed(
-        self,
-        example_entity_rows_market_data
-    ):
-        completed_columns: CompletedColumns = {
-            'm_high': DataColumn.load([
-                example_entity_rows_market_data['2020-01-01'].high,
-                example_entity_rows_market_data['2020-01-03'].high,
-                example_entity_rows_market_data['2020-01-04'].high,
-            ]),
-        }
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'c_sum_mhigh_and_mlow'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
-        )
-        expected_column = DataColumn.load([
-            (
-                example_entity_rows_market_data['2020-01-01'].high
-                + example_entity_rows_market_data['2020-01-01'].low
-            ),
-            (
-                example_entity_rows_market_data['2020-01-03'].high
-                + example_entity_rows_market_data['2020-01-03'].low
-            ),
-            (
-                example_entity_rows_market_data['2020-01-04'].high
-                + example_entity_rows_market_data['2020-01-04'].low
-            ),
-        ])
-
-        assert DataColumn.fully_equal(
-            completed_columns['c_sum_mhigh_and_mlow'],
+            result,
             expected_column,
             equal_nulls=True
         )
 
     def test_d_column_existent_property(
         self,
-        example_entity_rows_market_data,
         example_expanded_dividend_data,
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'d_ex_dividend_date_dividend'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows=example_expanded_dividend_data,
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
+        result = ColumnBuilder._process_column(
+            'd_ex_dividend_date_dividend',
+            {},
+            calculated_columns={},
+            data_block_rows_by_prefix={
+                'd': example_expanded_dividend_data
+            },
+            column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
         )
         expected_column = DataColumn.load([
             None,
@@ -1389,46 +1058,38 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
         ])
 
         assert DataColumn.fully_equal(
-            completed_columns['d_ex_dividend_date_dividend'],
+            result,
             expected_column,
             equal_nulls=True
         )
 
     def test_d_column_nonexistent_property(
         self,
-        example_entity_rows_market_data,
         example_expand_dated_factors_dividend_data
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
-            ColumnBuilder._process_columns_with_available_dependencies(
-                {'d_non_existent_column'},
-                completed_columns,
-                postponed_columns,
-                calculation_modules=[calculations],
-                expanded_dividend_data_rows=example_expand_dated_factors_dividend_data['expected_result_full'],
-                expanded_split_data_rows={},
-                infilled_fundamental_data_rows={},
-                market_data_rows=example_entity_rows_market_data,
+            ColumnBuilder._process_column(
+                'd_non_existent_column',
+                {},
+                calculated_columns={},
+                data_block_rows_by_prefix={
+                    'd': example_expand_dated_factors_dividend_data['expected_result_full']
+                },
+                column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
             )
 
     def test_f_column_existent_property(
         self,
-        example_entity_rows_market_data,
         example_entity_rows_fundamental_data,
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'f_fiscal_year'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows=example_entity_rows_fundamental_data,
-            market_data_rows=example_entity_rows_market_data,
+        result = ColumnBuilder._process_column(
+            'f_fiscal_year',
+            {},
+            calculated_columns={},
+            data_block_rows_by_prefix={
+                'f': example_entity_rows_fundamental_data
+            },
+            column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
         )
         expected_column = DataColumn.load([
             None,
@@ -1437,46 +1098,38 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
         ])
 
         assert DataColumn.fully_equal(
-            completed_columns['f_fiscal_year'],
+            result,
             expected_column,
             equal_nulls=True
         )
 
     def test_f_column_nonexistent_property(
         self,
-        example_entity_rows_market_data,
         example_entity_rows_fundamental_data
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
-            ColumnBuilder._process_columns_with_available_dependencies(
-                {'f_non_existent_column'},
-                completed_columns,
-                postponed_columns,
-                calculation_modules=[calculations],
-                expanded_dividend_data_rows={},
-                expanded_split_data_rows={},
-                infilled_fundamental_data_rows=example_entity_rows_fundamental_data,
-                market_data_rows=example_entity_rows_market_data,
+            ColumnBuilder._process_column(
+                'f_non_existent_column',
+                {},
+                calculated_columns={},
+                data_block_rows_by_prefix={
+                    'f': example_entity_rows_fundamental_data
+                },
+                column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
             )
 
     def test_fbs_column_existent_property(
         self,
-        example_entity_rows_market_data,
         example_entity_rows_fundamental_data,
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'fbs_total_liabilities_and_equity'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows=example_entity_rows_fundamental_data,
-            market_data_rows=example_entity_rows_market_data,
+        result = ColumnBuilder._process_column(
+            'fbs_total_liabilities_and_equity',
+            {},
+            calculated_columns={},
+            data_block_rows_by_prefix={
+                'fbs': example_entity_rows_fundamental_data
+            },
+            column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
         )
         expected_column = DataColumn.load([
             None,
@@ -1485,46 +1138,38 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
         ])
 
         assert DataColumn.fully_equal(
-            completed_columns['fbs_total_liabilities_and_equity'],
+            result,
             expected_column,
             equal_nulls=True
         )
 
     def test_fbs_column_nonexistent_property(
         self,
-        example_entity_rows_market_data,
         example_entity_rows_fundamental_data
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
-            ColumnBuilder._process_columns_with_available_dependencies(
-                {'fbs_non_existent_column'},
-                completed_columns,
-                postponed_columns,
-                calculation_modules=[calculations],
-                expanded_dividend_data_rows={},
-                expanded_split_data_rows={},
-                infilled_fundamental_data_rows=example_entity_rows_fundamental_data,
-                market_data_rows=example_entity_rows_market_data,
+            ColumnBuilder._process_column(
+                'fbs_non_existent_column',
+                {},
+                calculated_columns={},
+                data_block_rows_by_prefix={
+                    'fbs': example_entity_rows_fundamental_data
+                },
+                column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
             )
 
     def test_fcf_column_existent_property(
         self,
-        example_entity_rows_market_data,
         example_entity_rows_fundamental_data,
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'fcf_net_income'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows=example_entity_rows_fundamental_data,
-            market_data_rows=example_entity_rows_market_data,
+        result = ColumnBuilder._process_column(
+            'fcf_net_income',
+            {},
+            calculated_columns={},
+            data_block_rows_by_prefix={
+                'fcf': example_entity_rows_fundamental_data
+            },
+            column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
         )
         expected_column = DataColumn.load([
             None,
@@ -1533,46 +1178,38 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
         ])
 
         assert DataColumn.fully_equal(
-            completed_columns['fcf_net_income'],
+            result,
             expected_column,
             equal_nulls=True
         )
 
     def test_fcf_column_nonexistent_property(
         self,
-        example_entity_rows_market_data,
         example_entity_rows_fundamental_data
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
-            ColumnBuilder._process_columns_with_available_dependencies(
-                {'fcf_non_existent_column'},
-                completed_columns,
-                postponed_columns,
-                calculation_modules=[calculations],
-                expanded_dividend_data_rows={},
-                expanded_split_data_rows={},
-                infilled_fundamental_data_rows=example_entity_rows_fundamental_data,
-                market_data_rows=example_entity_rows_market_data,
+            ColumnBuilder._process_column(
+                'fcf_non_existent_column',
+                {},
+                calculated_columns={},
+                data_block_rows_by_prefix={
+                    'fcf': example_entity_rows_fundamental_data
+                },
+                column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
             )
 
     def test_fis_column_existent_property(
         self,
-        example_entity_rows_market_data,
         example_entity_rows_fundamental_data,
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'fis_gross_profit'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows=example_entity_rows_fundamental_data,
-            market_data_rows=example_entity_rows_market_data,
+        result = ColumnBuilder._process_column(
+            'fis_gross_profit',
+            {},
+            calculated_columns={},
+            data_block_rows_by_prefix={
+                'fis': example_entity_rows_fundamental_data
+            },
+            column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
         )
         expected_column = DataColumn.load([
             None,
@@ -1581,45 +1218,38 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
         ])
 
         assert DataColumn.fully_equal(
-            completed_columns['fis_gross_profit'],
+            result,
             expected_column,
             equal_nulls=True
         )
 
     def test_fis_column_nonexistent_property(
         self,
-        example_entity_rows_market_data,
         example_entity_rows_fundamental_data
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
-            ColumnBuilder._process_columns_with_available_dependencies(
-                {'fis_non_existent_column'},
-                completed_columns,
-                postponed_columns,
-                calculation_modules=[calculations],
-                expanded_dividend_data_rows={},
-                expanded_split_data_rows={},
-                infilled_fundamental_data_rows=example_entity_rows_fundamental_data,
-                market_data_rows=example_entity_rows_market_data,
+            ColumnBuilder._process_column(
+                'fis_non_existent_column',
+                {},
+                calculated_columns={},
+                data_block_rows_by_prefix={
+                    'fis': example_entity_rows_fundamental_data
+                },
+                column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
             )
 
     def test_m_column_existent_property(
         self,
         example_entity_rows_market_data,
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'m_close'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows={},
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
+        result = ColumnBuilder._process_column(
+            'm_close',
+            {},
+            calculated_columns={},
+            data_block_rows_by_prefix={
+                'm': example_entity_rows_market_data
+            },
+            column_extractors=ColumnBuilder._calculate_column_extractors([MarketDailyDataBlock]),
         )
         expected_column = DataColumn.load([
             example_entity_rows_market_data['2020-01-01'].close,
@@ -1628,42 +1258,35 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
         ])
 
         assert DataColumn.fully_equal(
-            completed_columns['m_close'],
+            result,
             expected_column,
             equal_nulls=True
         )
 
     def test_m_column_nonexistent_property(self, example_entity_rows_market_data):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
-            ColumnBuilder._process_columns_with_available_dependencies(
-                {'m_non_existent_column'},
-                completed_columns,
-                postponed_columns,
-                calculation_modules=[calculations],
-                expanded_dividend_data_rows={},
-                expanded_split_data_rows={},
-                infilled_fundamental_data_rows={},
-                market_data_rows=example_entity_rows_market_data,
+            ColumnBuilder._process_column(
+                'm_non_existent_column',
+                {},
+                calculated_columns={},
+                data_block_rows_by_prefix={
+                    'm': example_entity_rows_market_data
+                },
+                column_extractors=ColumnBuilder._calculate_column_extractors([MarketDailyDataBlock]),
             )
 
     def test_s_column_existent_property(
         self,
-        example_entity_rows_market_data,
         example_expanded_split_data,
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
-        ColumnBuilder._process_columns_with_available_dependencies(
-            {'s_split_date_numerator'},
-            completed_columns,
-            postponed_columns,
-            calculation_modules=[calculations],
-            expanded_dividend_data_rows={},
-            expanded_split_data_rows=example_expanded_split_data,
-            infilled_fundamental_data_rows={},
-            market_data_rows=example_entity_rows_market_data,
+        result = ColumnBuilder._process_column(
+            's_split_date_numerator',
+            {},
+            calculated_columns={},
+            data_block_rows_by_prefix={
+                's': example_expanded_split_data
+            },
+            column_extractors=ColumnBuilder._calculate_column_extractors([SplitsDataBlock]),
         )
         expected_column = DataColumn.load([
             None,
@@ -1672,108 +1295,50 @@ class TestPrivateProcessColumnsWithAvailableDependencies:
         ])
 
         assert DataColumn.fully_equal(
-            completed_columns['s_split_date_numerator'],
+            result,
             expected_column,
             equal_nulls=True
         )
 
     def test_s_column_nonexistent_property(
         self,
-        example_entity_rows_market_data,
         example_expanded_split_data
     ):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
-            ColumnBuilder._process_columns_with_available_dependencies(
-                {'s_non_existent_column'},
-                completed_columns,
-                postponed_columns,
-                calculation_modules=[calculations],
-                expanded_dividend_data_rows={},
-                expanded_split_data_rows=example_expanded_split_data,
-                infilled_fundamental_data_rows={},
-                market_data_rows=example_entity_rows_market_data,
+            ColumnBuilder._process_column(
+                's_non_existent_column',
+                {},
+                calculated_columns={},
+                data_block_rows_by_prefix={
+                    's': example_expanded_split_data
+                },
+                column_extractors=ColumnBuilder._calculate_column_extractors([SplitsDataBlock]),
             )
 
-    def test_unknown_prefix(self, example_entity_rows_market_data):
-        completed_columns: CompletedColumns = {}
-        postponed_columns: PostponedColumns = {}
+    def test_unknown_prefix(self):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
-            ColumnBuilder._process_columns_with_available_dependencies(
-                {'7_non_existent_prefix'},
-                completed_columns,
-                postponed_columns,
-                calculation_modules=[calculations],
-                expanded_dividend_data_rows={},
-                expanded_split_data_rows={},
-                infilled_fundamental_data_rows={},
-                market_data_rows=example_entity_rows_market_data,
+            ColumnBuilder._process_column(
+                '7_non_existent_prefix',
+                {},
+                calculated_columns={},
+                data_block_rows_by_prefix={},
+                column_extractors={},
             )
 
 
-class TestPrivatePropertyExistsInClass:
+class TestPrivateGetEntityPropertyNames:
     def test_existing_property(self):
         assert (
-            ColumnBuilder._property_exists_in_class(
-                fixture_entities.ExampleEntity,
-                'field_str'
+            'field_str'
+            in ColumnBuilder._get_entity_property_names(
+                fixture_entities.ExampleEntity
             )
-            is True
         )
 
     def test_missing_property(self):
         assert (
-            ColumnBuilder._property_exists_in_class(
-                fixture_entities.ExampleEntity,
-                'nonexistent_field'
+            'nonexistent_field'
+            not in ColumnBuilder._get_entity_property_names(
+                fixture_entities.ExampleEntity
             )
-            is False
         )
-
-
-class TestPrivateRemoveColumnDependency:
-    def test_remove_existing_column_dependency(self):
-        postponed: PostponedColumns = {}
-        column_name: ColumnIdentifier = 'column1'
-        dependency_name1: ColumnIdentifier = 'subcolumn1'
-        dependency_name2: ColumnIdentifier = 'subcolumn2'
-        ColumnBuilder._add_column_dependency(
-            postponed,
-            column_name,
-            dependency_name1
-        )
-        ColumnBuilder._add_column_dependency(
-            postponed,
-            column_name,
-            dependency_name2
-        )
-        ColumnBuilder._remove_column_dependency(
-            postponed,
-            dependency_name1
-        )
-        expected_result = {
-            column_name: [dependency_name2]
-        }
-
-        assert postponed == expected_result
-
-    def test_remove_nonexisting_column_dependency(self):
-        postponed: PostponedColumns = {}
-        column_name: ColumnIdentifier = 'column1'
-        dependency_name1: ColumnIdentifier = 'subcolumn1'
-        dependency_name2: ColumnIdentifier = 'subcolumn2'
-        ColumnBuilder._add_column_dependency(
-            postponed,
-            column_name,
-            dependency_name2
-        )
-        ColumnBuilder._remove_column_dependency(
-            postponed,
-            dependency_name1
-        )
-        expected_result = {
-            column_name: [dependency_name2]
-        }
-
-        assert postponed == expected_result

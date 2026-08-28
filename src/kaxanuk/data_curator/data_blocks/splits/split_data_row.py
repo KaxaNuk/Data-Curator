@@ -1,20 +1,11 @@
 import dataclasses
 import datetime
 
-from kaxanuk.data_curator.entities import BaseDataEntity
+from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
 )
 from kaxanuk.data_curator.services import entity_helper
-
-
-SPLIT_DATE_FIELDS = (
-    'split_date',
-)
-SPLIT_FACTOR_FIELDS = (
-    'numerator',
-    'denominator',
-)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

@@ -55,6 +55,9 @@ add_module_names = False
 autosummary_generate = True
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
+# Render the Returns description under a "Returns" label instead of "Return type", as the return types are
+# already documented by the functions' type hints.
+napoleon_use_rtype = False
 
 myst_enable_extensions = [
     'amsmath',

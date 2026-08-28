@@ -1,7 +1,7 @@
 import dataclasses
 
-from kaxanuk.data_curator.entities import BaseDataEntity
-from kaxanuk.data_curator.entities.split_data_row import SplitDataRow
+from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
+from .split_data_row import SplitDataRow
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,

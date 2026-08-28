@@ -1,12 +1,12 @@
 import dataclasses
-import datetime
 
-from kaxanuk.data_curator.entities import BaseDataEntity
-from kaxanuk.data_curator.entities.market_data_daily_row import MarketDataDailyRow
+from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
+from .fundamental_data_row import FundamentalDataRow
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
-    EntityValueError
+    EntityValueError,
+    FundamentalDataUnsortedRowDatesError,
 )
 from kaxanuk.data_curator.services import (
     entity_helper,
@@ -15,11 +15,9 @@ from kaxanuk.data_curator.services import (
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class MarketData(BaseDataEntity):
-    start_date: datetime.date
-    end_date: datetime.date
+class FundamentalData(BaseDataEntity):
     main_identifier: MainIdentifier
-    daily_rows: dict[str, MarketDataDailyRow]
+    rows: dict[str, FundamentalDataRow | None]
 
     def __post_init__(self):
         field_type_errors = entity_helper.detect_field_type_errors(self)
@@ -32,22 +30,23 @@ class MarketData(BaseDataEntity):
             raise EntityTypeError(msg)
 
         if not all(
-            isinstance(row, MarketDataDailyRow)
-            for row in self.daily_rows.values()
+            (
+                row is None
+                or isinstance(row, FundamentalDataRow)
+            )
+            for row in self.rows.values()
         ):
-            msg = f"Incorrect data in {self.__class__.__name__}.daily_rows"
+            msg = f"Incorrect data in {self.__class__.__name__}.rows"
 
             raise EntityValueError(msg)
 
         if any(
             not validator.is_date_pattern(key)
-            for key in self.daily_rows
+            for key in self.rows
         ):
-            msg = f"{self.__class__.__name__}.daily_rows keys need to be date strings in 'YYYY-MM-DD' format"
+            msg = f"{self.__class__.__name__}.rows keys need to be date strings in 'YYYY-MM-DD' format"
 
             raise EntityValueError(msg)
 
-        if list(self.daily_rows.keys()) != sorted(self.daily_rows.keys()):
-            msg = f"{self.__class__.__name__}.daily_rows are not correctly sorted by date"
-
-            raise EntityValueError(msg)
+        if not list(self.rows.keys()) == sorted(self.rows.keys()):
+            raise FundamentalDataUnsortedRowDatesError

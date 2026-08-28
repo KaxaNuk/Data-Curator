@@ -256,6 +256,25 @@ class TestIndexedRollingWindowOperation:
                 window_length="some string that's not an int"
             )
 
+    def test_key_repeated_in_separate_later_block(self):
+        with pytest.raises(CalculationHelperError):
+            helpers.indexed_rolling_window_operation(
+                key_column=DataColumn.load(['a', 'a', 'b', 'b', 'a', 'c']),
+                value_column=DataColumn.load([1.0, 1.0, 2.0, 2.0, 3.0, 4.0]),
+                operation_function=sum,
+                window_length=2
+            )
+
+    def test_multiple_keys_repeated_in_separate_later_blocks(self):
+        with pytest.raises(CalculationHelperError):
+            helpers.indexed_rolling_window_operation(
+                key_column=DataColumn.load(['a', 'b', 'a', 'b', 'c']),
+                value_column=DataColumn.load([1.0, 2.0, 1.0, 2.0, 3.0]),
+                operation_function=sum,
+                window_length=2
+            )
+
+
 @pytest.mark.parametrize(("column", "days", "expected_msg"), [
     # Case: 'column' is not a DataColumn
     ("not_a_DataColumn", 5, "features.helpers.annualized_volatility() column parameter must be a DataColumn object"),

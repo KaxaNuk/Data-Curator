@@ -13,18 +13,22 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from kaxanuk.data_curator.data_blocks.base_data_block import BaseDataBlock
+from kaxanuk.data_curator.data_blocks.dividends import DividendsDataBlock
+from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
+from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
+from kaxanuk.data_curator.data_blocks.splits import SplitsDataBlock
 from kaxanuk.data_curator.entities import (
+    BaseDataEntity,
     Configuration,
-    DividendData,
-    FundamentalData,
-    MarketData,
-    SplitData,
 )
 from kaxanuk.data_curator.exceptions import (
     ApiEndpointError,
     DataProviderPaymentError,
     IdentifierNotFoundError,
+    InjectedDependencyError,
 )
+from kaxanuk.data_curator.services.data_provider_toolkit import DataBlockEndpointTagMap
 
 
 class DataProviderInterface(metaclass=abc.ABCMeta):
@@ -41,108 +45,91 @@ class DataProviderInterface(metaclass=abc.ABCMeta):
 
     # Abstract methods that need to be implemented by any provider class:
 
+    @classmethod
     @abc.abstractmethod
-    def get_dividend_data(
+    def get_data_block_endpoint_tag_map(cls) -> DataBlockEndpointTagMap:
+        """
+        Return the endpoint field map that supplies each of the data blocks this provider can serve.
+
+        The keys are the authoritative list of the data blocks this provider can supply, so a data block this
+        provider serves without using the data provider toolkit still needs to be a key, even if its endpoint
+        field map is empty.
+
+        Returns
+        -------
+        Each data block class mapped to the provider tags of the endpoint fields that populate its entity fields
+        """
+
+    # @todo make this method abstract and remove its whole body once all the data providers implement it
+    def get_data_block_data(
         self,
         *,
         main_identifier: str,
-        start_date: datetime.date,
-        end_date: datetime.date,
-    ) -> DividendData:
+        data_block: type[BaseDataBlock],
+        configuration: Configuration,
+    ) -> BaseDataEntity:
         """
-        Return the dividend data for `main_identifier`.
+        Return the `data_block` data of `main_identifier`.
+
+        DEPRECATED IMPLEMENTATION: data providers that haven't implemented this method yet fall back to the
+        data block specific methods they used to implement, which only cover the built-in data blocks.
 
         Parameters
         ----------
         main_identifier
             The security's main identifier (ticker, etc.) used by the data provider
-        start_date
-            The start date of the period whose data we're returning
-        end_date
-            The end date of the period whose data we're returning
+        data_block
+            The data block class whose data entity we're returning
+        configuration
+            The Configuration entity with all the currently injected settings
 
         Returns
         -------
-        The DividendData entity containing the data
+        The main data entity of `data_block`, containing the data
+
+        Raises
+        ------
+        InjectedDependencyError
         """
+        if data_block is DividendsDataBlock:
 
-    @abc.abstractmethod
-    def get_fundamental_data(
-        self,
-        *,
-        main_identifier: str,
-        period: str,
-        start_date: datetime.date,
-        end_date: datetime.date,
-    ) -> FundamentalData:
-        """
-        Return the fundamental data for `main_identifier`.
+            return self.get_dividend_data(
+                main_identifier=main_identifier,
+                start_date=configuration.start_date,
+                end_date=configuration.end_date,
+            )
 
-        Parameters
-        ----------
-        main_identifier
-            The security's main identifier (ticker, etc.) used by the data provider
-        period
-            The identifier of the type of period we're using
-        start_date
-            The start date of the period whose data we're returning
-        end_date
-            The end date of the period whose data we're returning
+        if data_block is FundamentalsDataBlock:
 
-        Returns
-        -------
-        The FundamentalData entity containing the data
-        """
+            return self.get_fundamental_data(
+                main_identifier=main_identifier,
+                period=configuration.period,
+                start_date=configuration.start_date,
+                end_date=configuration.end_date,
+            )
 
-    @abc.abstractmethod
-    def get_market_data(
-        self,
-        *,
-        main_identifier: str,
-        start_date: datetime.date,
-        end_date: datetime.date,
-    ) -> MarketData:
-        """
-        Return the market data for `main_identifier`.
+        if data_block is MarketDailyDataBlock:
 
-        Parameters
-        ----------
-        main_identifier
-            The security's main identifier (ticker, etc.) used by the data provider
-        start_date
-            The start date of the period whose data we're returning
-        end_date
-            The end date of the period whose data we're returning
+            return self.get_market_data(
+                main_identifier=main_identifier,
+                start_date=configuration.start_date,
+                end_date=configuration.end_date,
+            )
 
-        Returns
-        -------
-        The MarketData entity containing the data
-        """
+        if data_block is SplitsDataBlock:
 
-    @abc.abstractmethod
-    def get_split_data(
-        self,
-        *,
-        main_identifier: str,
-        start_date: datetime.date,
-        end_date: datetime.date,
-    ) -> SplitData:
-        """
-        Return the split data for `main_identifier`.
+            return self.get_split_data(
+                main_identifier=main_identifier,
+                start_date=configuration.start_date,
+                end_date=configuration.end_date,
+            )
 
-        Parameters
-        ----------
-        main_identifier
-            The security's main identifier (ticker, etc.) used by the data provider
-        start_date
-            The start date of the period whose data we're returning
-        end_date
-            The end date of the period whose data we're returning
+        msg = " ".join([
+            f"The {type(self).__name__} data provider can only supply the built-in data blocks,",
+            f"so it can't supply {data_block.__name__} until it implements get_data_block_data",
+        ])
 
-        Returns
-        -------
-        The SplitData entity containing the data
-        """
+        raise InjectedDependencyError(msg)
 
     @abc.abstractmethod
     def initialize(

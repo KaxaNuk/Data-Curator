@@ -27,6 +27,11 @@ def annualized_volatility(
     Returns
     -------
     A new DataColumn object containing the annualized volatility values.
+
+    Raises
+    ------
+    CalculationHelperError
+        If column is not a DataColumn, or days is not a positive integer.
     """
     if not isinstance(column, DataColumn):
         msg = "features.helpers.annualized_volatility() column parameter must be a DataColumn object"
@@ -71,21 +76,25 @@ def chaikin_money_flow(
 
     Parameters
     ----------
-    high : DataColumn
+    high
         High prices.
-    low : DataColumn
+    low
         Low prices.
-    close : DataColumn
+    close
         Close prices.
-    volume : DataColumn
+    volume
         Trading volume.
-    days : int
+    days
         Number of days for the rolling calculation.
 
     Returns
     -------
-    DataColumn
-        The CMF values as a DataColumn.
+    The CMF values as a DataColumn.
+
+    Raises
+    ------
+    CalculationHelperError
+        If high, low, close or volume is not a DataColumn, or days is not a positive integer.
     """
     if not all(
         isinstance(col, DataColumn)
@@ -171,8 +180,12 @@ def exponential_moving_average(
 
     Returns
     -------
-    DataColumn
-        EMA values as a DataColumn.
+    EMA values as a DataColumn.
+
+    Raises
+    ------
+    CalculationHelperError
+        If column is not a DataColumn, or days is not a positive integer.
     """
     if not isinstance(column, DataColumn):
         msg = "column parameter must be a DataColumn object"
@@ -238,6 +251,10 @@ def indexed_rolling_window_operation(
     Useful for rolling windows on period data across periods, with each period having the same key and thus
     the same data.
 
+    Each key must occupy a single contiguous block of rows: once the rows of a key end, that same key must
+    not appear again further down the column.
+
+
     Parameters
     ----------
     key_column
@@ -252,6 +269,12 @@ def indexed_rolling_window_operation(
     Returns
     -------
     Column with the resulting values for each key in the same order as key_column.
+
+    Raises
+    ------
+    CalculationHelperError
+        If key_column or value_column is not a DataColumn, operation_function is not callable, window_length is not
+        a positive integer, or any key reappears in a separate later block of rows.
     """
     if not isinstance(key_column, DataColumn):
         msg = "features.helpers.indexed_rolling_window_operation() key_column parameter must be a DataColumn object"
@@ -319,13 +342,30 @@ def indexed_rolling_window_operation(
             .rolling(window_length)
             .apply(operation_function, raw=True)
     )
-    result = key_column.to_pandas().map(
-        rolling_applied.drop(
-            ['', None, float('nan')],
-            errors='ignore'
-        ),
-        na_action='ignore'
-    )
+    try:
+        result = key_column.to_pandas().map(
+            rolling_applied.drop(
+                ['', None, float('nan')],
+                errors='ignore'
+            ),
+            na_action='ignore'
+        )
+    except pandas.errors.InvalidIndexError as error:
+        repeated_keys = (
+            key_series[key_series.duplicated()]
+                .unique()
+                .tolist()
+        )
+        msg = ''.join([
+            "features.helpers.indexed_rolling_window_operation() requires each key_column key to occupy a single",
+            " contiguous block of rows, but the following keys reappear in a separate later block: ",
+            ', '.join(
+                str(repeated_key)
+                for repeated_key in repeated_keys
+            ),
+        ])
+
+        raise CalculationHelperError(msg) from error
 
     return DataColumn.load(result)
 
@@ -336,13 +376,17 @@ def log_returns(column: DataColumn) -> DataColumn:
 
     Parameters
     ----------
-    column : DataColumn
+    column
         Price series for which to compute log returns.
 
     Returns
     -------
-    DataColumn
-        Log returns series, with None for the first element.
+    Log returns series, with None for the first element.
+
+    Raises
+    ------
+    CalculationHelperError
+        If column is not a DataColumn.
     """
     if not isinstance(column, DataColumn):
         msg = "log_returns() requires a DataColumn input"
@@ -365,13 +409,12 @@ def replace_infinite_with_none(column: DataColumn) -> DataColumn:
 
     Parameters
     ----------
-    column : DataColumn
+    column
         The column containing the calculated results.
 
     Returns
     -------
-    DataColumn
-        A new DataColumn object with -inf and inf values replaced by None.
+    A new DataColumn object with -inf and inf values replaced by None.
     """
     array = column.to_pyarrow()
     finite_mask = pyarrow.compute.is_finite(array)
@@ -392,15 +435,19 @@ def relative_strength_index(*, column: DataColumn, days: int) -> DataColumn:
 
     Parameters
     ----------
-    column : DataColumn
+    column
         Price data for RSI calculation.
-    days : int
+    days
         Number of days for the RSI calculation.
 
     Returns
     -------
-    DataColumn
-        The RSI values as a DataColumn.
+    The RSI values as a DataColumn.
+
+    Raises
+    ------
+    CalculationHelperError
+        If column is not a DataColumn, or days is not a positive integer.
     """
     if not isinstance(column, DataColumn):
         msg = "features.helpers.relative_strength_index() column parameter must be a DataColumn object"
@@ -480,15 +527,19 @@ def simple_moving_average(column: DataColumn, days: int) -> DataColumn:
 
     Parameters
     ----------
-    column : DataColumn
+    column
         Price series for which to compute the moving average.
-    days : int
+    days
         Number of periods to include in the average.
 
     Returns
     -------
-    DataColumn
-        Simple moving average series, with None for initial elements until window is reached.
+    Simple moving average series, with None for initial elements until window is reached.
+
+    Raises
+    ------
+    CalculationHelperError
+        If column is not a DataColumn, or days is not a positive integer.
     """
     if not isinstance(column, DataColumn):
         msg = "simple_moving_average() requires a DataColumn input"

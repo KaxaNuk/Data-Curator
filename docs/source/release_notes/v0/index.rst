@@ -3,6 +3,21 @@
 V0 Changelog
 ============
 
+0.49.1 (2026-06-25)
+-------------------
+
+Changed
+~~~~~~~
+
+* Improved docs, especially for helpers and LSEG
+
+Fixed
+~~~~~
+
+* LSEG provider was incorrectly duplicating volume and vwap into the adjusted tags. Removed them while we check if there's a way to get the actual adjusted values.
+
+
+
 0.49.0 (2026-05-26)
 -------------------
 

@@ -29,13 +29,22 @@ Setting Up Your Development Environment
 
        pdm run install_dev
 
-5. **Verify the Test Suite**
+5. **Install the AI scaffolding for your AI coding assistant**
+   You can check the available targets at https://github.com/microsoft/apm/blob/main/docs/src/content/docs/concepts/primitives-and-targets.md#target-catalogue
+   The following example is for Claude:
+
+   ::
+
+       apm config set target claude
+       apm install
+
+6. **Verify the Test Suite**
 
    ::
 
        pdm run test
 
-6. **Run the Linter**
+7. **Run the Linter**
 
    ::
 
@@ -44,25 +53,28 @@ Setting Up Your Development Environment
 Branching and Pull Request Workflow
 -----------------------------------
 
-Users without write access must fork the repository; those with write access may create branches directly.
+Users without write access must fork the repository; those with write access may create branches directly, always based on the ``dev`` branch.
 
 Forking and Synchronizing
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Always keep your local ``main`` branch in sync:
+- Always keep your local ``dev`` branch in sync:
 
   ::
 
-      git checkout main
-      git pull upstream main --ff-only
+      git checkout dev
+      git pull upstream dev --ff-only
 
-Creating a Feature Branch
+Creating an Issue Branch
 ~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When contributing, all contributions must be based on an existing registered issue on the Data Curator GitHub repository. When created, each issue gets assigned an issue number, and the contribution branch name should be
+of the form ``issues/<issue-number>`` where ``<issue-number>`` is the number of the issue.
 
 - ::
 
-      git checkout -b feature/<short-description>
+      git checkout -b issues/<issue-number>
 
   Example:
 
-      git checkout -b feature/rolling-average-fix
+      git checkout -b issues/4
