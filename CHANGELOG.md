@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ExcelConfigurator.__init__` now takes a `data_blocks` list of the data blocks the parameters file can choose from, and expects data provider class names instead of snake_case aliases
 - Excel template now adds a new `Data_Providers` sheet for mappings from data blocks to data providers, replacing the `General` sheet `market_data_provider` and `fundamental_data_provider` keys
 - `DataProviderInterface.get_data_block_endpoint_tag_map` abstract class method
+- `helpers.indexed_rolling_window_operation` now checks and raises a clear error if keys repeat across non-contiguous row groups
 
 ### Deprecated
 - `kaxanuk.data_curator.main` parameters `market_data_provider` and `fundamental_data_provider`
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Catch FMP erroneous dividend data with duplicate ex-dividend dates
 - Wrong package namespace in the `ExcelConfigurator` error message suggesting how to install missing data provider extensions
+- Documentation generator was printing "Returns type" instead of "Returns", which doesn't make sense as our style guide disallows type hints inside docstrings,
 
 
 ## [0.49.1] - 2026-06-25
