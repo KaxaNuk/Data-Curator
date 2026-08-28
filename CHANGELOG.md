@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.50.0] - 2026-08-28
 ### Added
 - `ColumnBuilder.get_sorted_required_columns` method for returning the required columns topologically sorted by dependency order
 - `ColumnBuilder.initialize_data_blocks` new classmethod to precompute required data structures
