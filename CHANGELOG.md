@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+### Changed
+- `DividendDataRow.dividend` is now optional, but at least one of `dividend` or `dividend_split_adjusted` must be set, as there exist data providers that do not provide the unadjusted dividend
+- PyArrow requirement is now `>=26.0.0`, removing the `<24` cap now that the upstream regressions are fixed
+
+
 ## [0.50.0] - 2026-08-28
 ### Added
 - `ColumnBuilder.get_sorted_required_columns` method for returning the required columns topologically sorted by dependency order
