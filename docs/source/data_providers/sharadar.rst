@@ -58,6 +58,8 @@ Technical Details
   skipped and logged, and the rest of the run carries on. A rejected API key stops the run.
 - Sharadar reuses ticker symbols: when a company is delisted or renamed, its old symbol may get a suffix and
   later belong to another company. Keep the identifiers of a run current with Sharadar's tickers table.
+- Sharadar revises past data, as each row's ``lastupdated`` shows, so the same run made on another day may
+  return different figures. Keep the date a run was made alongside its output.
 
 Authentication is managed using an API key placed in the `.env` file via the variable:
 

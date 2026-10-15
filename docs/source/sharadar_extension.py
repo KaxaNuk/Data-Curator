@@ -109,6 +109,8 @@ Technical Details
   skipped and logged, and the rest of the run carries on. A rejected API key stops the run.
 - Sharadar reuses ticker symbols: when a company is delisted or renamed, its old symbol may get a suffix and
   later belong to another company. Keep the identifiers of a run current with Sharadar's tickers table.
+- Sharadar revises past data, as each row's ``lastupdated`` shows, so the same run made on another day may
+  return different figures. Keep the date a run was made alongside its output.
 
 Authentication is managed using an API key placed in the `.env` file via the variable:
 
@@ -205,6 +207,7 @@ def extract_all_fields() -> tuple[dict[str, dict[str, dict[Any, Any]]], dict[str
 
 def format_definition(
         raw_content: str | tuple[str, ...],
+        *,
         is_list: bool,
         tables: set[str],
         derived_columns: dict[str, str],
@@ -249,7 +252,12 @@ def generate_sharadar_fields_rst(app: Sphinx) -> None:
             for tag in sorted(tags_dict):
                 definitions = sorted(tags_dict[tag].items(), key=lambda item: str(item[0]))
                 lines = [
-                    format_definition(raw_content, info['is_list'], info['tables'], derived_columns)
+                    format_definition(
+                        raw_content,
+                        is_list=info['is_list'],
+                        tables=info['tables'],
+                        derived_columns=derived_columns,
+                    )
                     for raw_content, info in definitions
                 ]
 
