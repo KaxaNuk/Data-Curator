@@ -17,8 +17,6 @@ Every table is read through the query API, which shapes the module:
 
 * At most 30 tickers per request, so a large run issues thousands of requests.
 * Requests are rate limited per key; a throttled request waits for the announced reset instead of failing.
-* Responses are typed by PyArrow from their values, like the other providers; the field maps cast the dates
-  and `SharadarClient.concatenate_pages` reconciles types that differ between pages.
 """
 
 import collections
@@ -96,12 +94,9 @@ TABLE_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     'tickers': ('table', 'permaticker', 'ticker'),
 }
 
-
-# Columns are not declared: each response is typed from its values, like the other providers
 TABLE_NAMES: frozenset[str] = frozenset(TABLE_PRIMARY_KEYS)
 
 MAX_SPLIT_FRACTION_DENOMINATOR: typing.Final = 10000
-# Sharadar rounds split ratios, e.g. a four for three split comes as 1.33333
 SPLIT_RATIO_ROUNDING_TOLERANCE: typing.Final = 1e-4
 
 
@@ -148,7 +143,7 @@ class SharadarClient:
     MAX_TICKER_PARAM_LENGTH = 200
 
     MAX_PAGE_SIZE = 10000
-    MAX_PAGES_PER_REQUEST = 1000    # guards against a pagination loop that never ends
+    MAX_PAGES_PER_REQUEST = 1000
     # Sharadar sorts by one field only, so rows sharing a date come in no fixed order; paging goes by date
     PAGINATION_DATE_COLUMN = 'date'
 
@@ -156,7 +151,7 @@ class SharadarClient:
     RETRY_WAIT_SECONDS: tuple[float, ...] = (5.0, 15.0, 30.0, 60.0, 120.0)
     MAX_CONNECTION_RETRIES = len(RETRY_WAIT_SECONDS) + 1
     MAX_RETRY_WAIT_SECONDS = RETRY_WAIT_SECONDS[-1]
-    REQUEST_TIMEOUT_SECONDS = 60.0  # without one, a stalled connection would hang the run
+    REQUEST_TIMEOUT_SECONDS = 60.0
 
     # Requests are counted per key over 15 minutes; this header says when the window resets
     RATE_LIMIT_RESET_HEADER = 'X-RateLimit-Reset'
