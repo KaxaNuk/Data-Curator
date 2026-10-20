@@ -11,6 +11,7 @@ What you’ll find here:
 
 - :ref:`lseg` – LSEG Workspace integration, supported fields and setup
 - :ref:`fmp` – Financial Modeling Prep integration, supported fields and setup
+- :ref:`sharadar` – Sharadar integration, supported fields and setup
 - :ref:`data_tag_homogenization` – standard naming conventions applied to unify external tags
 
 .. toctree::
@@ -19,4 +20,5 @@ What you’ll find here:
 
    financial_modeling_prep
    lseg_workspace
+   sharadar
    data_tag_homogenization

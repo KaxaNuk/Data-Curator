@@ -91,6 +91,8 @@ If your data provider requires an API key, you need to pass it as an environment
 * Value: API key for the Financial Modeling Prep data provider, as a string.
 * Name: `KNDC_API_KEY_LSEG`
 * Value: API key for the LSEG Workspace data provider, as a string.
+* Name: `KNDC_API_KEY_SHARADAR`
+* Value: API key for the Sharadar data provider, as a string.
 
 #### Running the Container
 1. On the first run, the container will create the `Config` and `Output` subdirectories in the mounted volume, as well as

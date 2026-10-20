@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- Sharadar data provider
+
 ### Changed
 - `DividendDataRow.dividend` is now optional, but at least one of `dividend` or `dividend_split_adjusted` must be set, as there exist data providers that do not provide the unadjusted dividend
 - PyArrow requirement is now `>=26.0.0`, removing the `<24` cap now that the upstream regressions are fixed

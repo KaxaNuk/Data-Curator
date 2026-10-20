@@ -13,6 +13,7 @@ Currently supported data providers:
 
 - **LSEG Workspace** (see :ref:`lseg`)
 - **Financial Modeling Prep** (see :ref:`fmp`)
+- **Sharadar** (see :ref:`sharadar`)
 - **Yahoo Finance** (via separate extension: `kaxanuk.data-curator-extensions.yahoo-finance <https://pypi.org/project/kaxanuk.data-curator-extensions.yahoo-finance/>`_, supports limited data types)
 
 **Seamlessly integrate your own in-house datasets** with our flexible plugin architecture.
