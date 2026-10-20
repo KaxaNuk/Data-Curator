@@ -63,3 +63,4 @@ Consult these whenever you need to check a dependency's latest API or general do
 
 ### Web services
 - [Financial Modeling Prep API](https://site.financialmodelingprep.com/developer/docs)
+- [Sharadar API](https://sharadar.com/docs/intro)
