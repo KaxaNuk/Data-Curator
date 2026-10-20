@@ -16,7 +16,6 @@ Currently supported data providers:
 - **Sharadar** (see :ref:`sharadar`)
 - **Yahoo Finance** (via separate extension: `kaxanuk.data-curator-extensions.yahoo-finance <https://pypi.org/project/kaxanuk.data-curator-extensions.yahoo-finance/>`_, supports limited data types)
 
-
 **Seamlessly integrate your own in-house datasets** with our flexible plugin architecture.
 
 Interested in collaborating on a custom project? Get in touch at software@kaxanuk.mx

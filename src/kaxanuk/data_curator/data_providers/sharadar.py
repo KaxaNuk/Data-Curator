@@ -94,10 +94,10 @@ TABLE_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     'tickers': ('table', 'permaticker', 'ticker'),
 }
 
-TABLE_NAMES: frozenset[str] = frozenset(TABLE_PRIMARY_KEYS)
-
 MAX_SPLIT_FRACTION_DENOMINATOR: typing.Final = 10000
 SPLIT_RATIO_ROUNDING_TOLERANCE: typing.Final = 1e-4
+
+PROGRESS_LOG_LINES: typing.Final = 20     # progress lines per table, besides the first and last batch
 
 
 type JsonRecord = dict[str, typing.Any]
@@ -126,7 +126,9 @@ class SharadarUnparsableValuesError(DataProviderParsingError):
 
 class SharadarClient:
     """
-    Client for the Sharadar query API: ticker batching, pagination, retries and typing into PyArrow tables.
+    Client for the Sharadar query API: ticker batching, pagination, retries and connection errors.
+
+    It returns the records as the API sends them; validating and packaging them is the provider's job.
 
     Parameters
     ----------
@@ -159,8 +161,8 @@ class SharadarClient:
     RATE_LIMIT_BACKOFF_SECONDS = 30.0           # when no reset is announced
     RATE_LIMIT_JITTER_SECONDS = 5.0             # keeps parallel instances from retrying all at once
 
-    PROGRESS_LOG_LINES = 20         # progress lines per table, besides the first and last batch
-    UNPARSABLE_VALUE_SAMPLES = 3    # bad values quoted in an unreadable-values report
+    # any table authenticates the key; this one is used to validate it
+    VALIDATION_TABLE = 'actions'
 
     _ssl_context = None
 
@@ -217,7 +219,7 @@ class SharadarClient:
 
         return batches
 
-    def fetch_table(
+    def fetch_pages(
         self,
         *,
         table: str,
@@ -225,9 +227,11 @@ class SharadarClient:
         start_date: str | None = None,
         end_date: str | None = None,
         extra_params: dict[str, str] | None = None,
-    ) -> pyarrow.Table:
+    ) -> typing.Iterator[list[JsonRecord]]:
         """
-        Fetch a Sharadar table, batching the tickers, paginating, and logging progress per batch.
+        Fetch a Sharadar table page by page, batching the tickers and logging progress per batch.
+
+        Pages are yielded as they arrive, so the caller can process each before the next one is requested.
 
         Parameters
         ----------
@@ -242,24 +246,17 @@ class SharadarClient:
         extra_params
             Any additional query parameters, like the fundamentals ``dimension``
 
-        Returns
-        -------
-        The table's rows, typed from their values
+        Yields
+        ------
+        The records of each page, as the API sends them
 
         Raises
         ------
-        DataProviderFatalError
-            When `table` is not one this client reads
         DataProviderRateLimitError
             When a batch is still throttled after its retries, naming the batch and its tickers
         DataProviderServerError
             When a batch keeps failing after its retries, naming the batch and its tickers
         """
-        if table not in TABLE_NAMES:
-            msg = f"Unknown Sharadar table '{table}'"
-
-            raise DataProviderFatalError(None, msg)
-
         base_params: dict[str, str] = {
             'api_key': self.api_key,
             'format': 'json',
@@ -279,12 +276,11 @@ class SharadarClient:
             else [None]
         )
         batch_count = len(ticker_batches)
-        progress_step = max(1, math.ceil(batch_count / self.PROGRESS_LOG_LINES))
+        progress_step = max(1, math.ceil(batch_count / PROGRESS_LOG_LINES))
         if batch_count > 1:
             msg = f"Sharadar table {table}: fetching {len(tickers or []):,} tickers in {batch_count:,} batches"
             logging.getLogger(__name__).info(msg)
 
-        batch_tables: list[pyarrow.Table] = []
         fetched_rows = 0
 
         for (batch_number, ticker_batch) in enumerate(ticker_batches, start=1):
@@ -293,7 +289,11 @@ class SharadarClient:
                 batch_params['ticker'] = ','.join(ticker_batch)
 
             try:
-                page_tables = self._fetch_paginated(table, batch_params)
+                for page_records in self._fetch_paginated(table, batch_params):
+                    fetched_rows += len(page_records)
+
+                    yield page_records
+
             except (DataProviderRateLimitError, DataProviderServerError) as error:
                 msg = " ".join(
                     part
@@ -309,14 +309,6 @@ class SharadarClient:
 
                 raise type(error)(error.http_code, msg) from error
 
-            # consecutive pages share their boundary date; batches never share a ticker
-            batch_table = self.drop_duplicate_keys(
-                self.concatenate_pages(page_tables),
-                TABLE_PRIMARY_KEYS[table],
-            )
-            batch_tables.append(batch_table)
-            fetched_rows += batch_table.num_rows
-
             if (
                 batch_count > 1
                 and (
@@ -330,367 +322,46 @@ class SharadarClient:
                 )
                 logging.getLogger(__name__).info(msg)
 
-        if len(batch_tables) < 1:
-
-            return pyarrow.table({})
-
-        return self.concatenate_pages(batch_tables)
-
-    @staticmethod
-    def drop_duplicate_keys(
-        table_data: pyarrow.Table,
-        primary_key: typing.Sequence[str],
-    ) -> pyarrow.Table:
+    def validate_api_key(self) -> bool | None:
         """
-        Keep the first row of every primary key, in arrival order.
+        Validate the API key with a single request.
 
-        Parameters
-        ----------
-        table_data
-            The table to deduplicate
-        primary_key
-            The columns that identify a row
+        The query API answers a wrong key with a free-tier 200, so the export URL is asked instead: it replies
+        401 to an unknown key and redirects otherwise. The redirect is not followed, so nothing is downloaded.
 
         Returns
         -------
-        The table without repeated keys
+        Whether `api_key` is valid
         """
-        if table_data.num_rows < 2:     # noqa: PLR2004  a single row can't repeat itself
-
-            return table_data
-
-        row_number_column = '__row_number'
-        first_row_numbers = (
-            table_data
-            .select(list(primary_key))
-            .append_column(row_number_column, pyarrow.array(range(table_data.num_rows), type=pyarrow.int64()))
-            .group_by(list(primary_key), use_threads=False)
-            .aggregate([(row_number_column, 'min')])
-            .column(f'{row_number_column}_min')
-        )
-        if len(first_row_numbers) == table_data.num_rows:
-
-            return table_data
-
-        return table_data.take(
-            first_row_numbers.take(pyarrow.compute.sort_indices(first_row_numbers))
-        )
-
-    @classmethod
-    def records_to_table(
-        cls,
-        table: str,
-        records: typing.Sequence[JsonRecord],
-    ) -> pyarrow.Table:
-        """
-        Build a PyArrow table from raw JSON records, inferring types like the other providers do.
-
-        Parameters
-        ----------
-        table
-            The name of the Sharadar table the records belong to, for error reporting
-        records
-            The raw records, as decoded from the response's ``data`` key
-
-        Returns
-        -------
-        The table the records make up
-
-        Raises
-        ------
-        SharadarUnparsableValuesError
-            When the page can't be read, naming the tickers whose values disagree with their column
-        """
-        if len(records) < 1:
-
-            return pyarrow.table({})
+        url = "".join([
+            f'{self.BASE_URL}/{self.VALIDATION_TABLE}',
+            f'?api_key={urllib.parse.quote(self.api_key)}',
+            # 5 years is the window Sharadar keeps a ready-made export file for, so the request is answered
+            # with a redirect to that file instead of streaming the table; any other window streams it
+            '&years=5',
+        ])
+        opener = urllib.request.build_opener(_NoRedirectHandler)
 
         try:
+            with opener.open(url, timeout=self.REQUEST_TIMEOUT_SECONDS) as response:
+                # an unredirected success would still mean the key was accepted
+                return response.status < http.HTTPStatus.BAD_REQUEST.value
 
-            return cls._parse_records(table, records)
-        except (DataProviderParsingError, DataProviderToolkitError) as error:
-            # PyArrow reports a row number, not a ticker, so the offending tickers are worked out here
+        except urllib.error.HTTPError as error:
+            # a redirect means the key was accepted; other statuses are about the subscription, not the key
 
-            raise cls._unparsable_values_error(table, records) from error
+            return error.code != http.HTTPStatus.UNAUTHORIZED.value
 
-    @classmethod
-    def _parse_records(
-        cls,
-        table: str,
-        records: typing.Sequence[JsonRecord],
-    ) -> pyarrow.Table:
-        """
-        Read records into a table through the toolkit call every provider uses.
+        except (urllib.error.URLError, TimeoutError) as error:
+            msg = f"Could not reach Sharadar to validate the API key: {error}"
 
-        Parameters
-        ----------
-        table
-            The name of the Sharadar table, which names the endpoint
-        records
-            The raw records to read
-
-        Returns
-        -------
-        The table the records make up
-        """
-        records_json = json.dumps(records)
-
-        return DataProviderToolkit.create_endpoint_tables_from_json_mapping({
-            table: records_json
-        })[table]
-
-    @classmethod
-    def _unparsable_values_error(
-        cls,
-        table: str,
-        records: typing.Sequence[JsonRecord],
-    ) -> SharadarUnparsableValuesError:
-        """
-        Build the error for an unreadable page, naming the tickers whose values disagree.
-
-        Each ticker is read on its own; a column's type is what most tickers infer, and the tickers inferring
-        something else hold the offending values. Slow, but it only runs once a page has failed.
-
-        Parameters
-        ----------
-        table
-            The name of the Sharadar table
-        records
-            The raw records of the page
-
-        Returns
-        -------
-        The error to raise
-        """
-        records_by_ticker: dict[str, list[JsonRecord]] = {}
-        for record in records:
-            ticker = record.get('ticker', '(no ticker)')
-            records_by_ticker.setdefault(ticker, []).append(record)
-
-        unreadable_tickers: dict[str, None] = {}
-        ticker_column_families: dict[str, dict[str, str]] = {}
-        disagreements: list[str] = []
-        for (ticker, ticker_records) in records_by_ticker.items():
-            try:
-                ticker_table = cls._parse_records(table, ticker_records)
-            except (DataProviderParsingError, DataProviderToolkitError):
-                # this ticker's own rows already disagree among themselves
-                unreadable_tickers[ticker] = None
-                odd_value = cls._odd_value_out(ticker_records)
-                if (
-                    odd_value is not None
-                    and len(disagreements) < cls.UNPARSABLE_VALUE_SAMPLES
-                ):
-                    disagreements.append(f"{ticker} {odd_value}")
-
-                continue
-
-            ticker_column_families[ticker] = {
-                field.name: cls._type_family(field.type)
-                for field in ticker_table.schema
-                if not pyarrow.types.is_null(field.type)
-            }
-
-        majority_families = cls._column_majority_families(ticker_column_families)
-        for (ticker, column_families) in ticker_column_families.items():
-            for (column, column_family) in column_families.items():
-                if column_family == majority_families[column]:
-                    continue
-
-                unreadable_tickers[ticker] = None
-                if len(disagreements) < cls.UNPARSABLE_VALUE_SAMPLES:
-                    sample_value = records_by_ticker[ticker][0].get(column)
-                    disagreements.append(
-                        " ".join([
-                            f"{ticker} {column}={sample_value!r} reads as {column_family}",
-                            f"where the other tickers send {majority_families[column]}",
-                        ])
-                    )
-
-        message = " ".join([
-            f"Sharadar table {table} returned a page that could not be read in one pass:",
-            f"{len(unreadable_tickers)} tickers hold values that disagree with their column.",
-            f"Examples: {'; '.join(disagreements)}" if len(disagreements) > 0 else "",
-        ]).strip()
-
-        return SharadarUnparsableValuesError(message, frozenset(unreadable_tickers))
-
-    @staticmethod
-    def _type_family(
-        column_type: pyarrow.DataType,
-    ) -> str:
-        """
-        Return the family a column's inferred type belongs to.
-
-        Compared by family because whole-number prices infer integers where others infer decimals, and both
-        are fine.
-
-        Parameters
-        ----------
-        column_type
-            The type inferred for a column
-
-        Returns
-        -------
-        number, text, timestamp, boolean, or the type itself otherwise
-        """
-        if pyarrow.types.is_boolean(column_type):
-
-            return 'boolean'
-
-        if (
-            pyarrow.types.is_integer(column_type)
-            or pyarrow.types.is_floating(column_type)
-        ):
-
-            return 'number'
-
-        if (
-            pyarrow.types.is_string(column_type)
-            or pyarrow.types.is_large_string(column_type)
-        ):
-
-            return 'text'
-
-        if pyarrow.types.is_temporal(column_type):
-
-            return 'timestamp'
-
-        return str(column_type)
-
-    @staticmethod
-    def _value_family(
-        value: typing.Any,
-    ) -> str:
-        """
-        Return the family of a raw JSON value, matching what `_type_family` returns for its column.
-
-        Parameters
-        ----------
-        value
-            The value as JSON carried it
-
-        Returns
-        -------
-        The name of the family the value belongs to
-        """
-        if isinstance(value, bool):
-
-            return 'boolean'
-
-        if isinstance(value, (int, float)):
-
-            return 'number'
-
-        if isinstance(value, str):
-
-            return 'text'
-
-        return type(value).__name__
-
-    @classmethod
-    def _odd_value_out(
-        cls,
-        ticker_records: typing.Sequence[JsonRecord],
-    ) -> str | None:
-        """
-        Return the value that disagrees with the rest of its column, among one ticker's records.
-
-        Parameters
-        ----------
-        ticker_records
-            The records of a single ticker
-
-        Returns
-        -------
-        The column and value that disagree, like ``close='17O.55'``, or None when nothing stands out
-        """
-        values_by_column: dict[str, list[typing.Any]] = {}
-        for record in ticker_records:
-            for (column, value) in record.items():
-                if value is not None:
-                    values_by_column.setdefault(column, []).append(value)
-
-        for (column, values) in values_by_column.items():
-            family_counts = collections.Counter(
-                cls._value_family(value)
-                for value in values
-            )
-            if len(family_counts) < 2:    # noqa: PLR2004  one family is a column that agrees with itself
-                continue
-
-            rarest_family = family_counts.most_common()[-1][0]
-            odd_value = next(
-                value
-                for value in values
-                if cls._value_family(value) == rarest_family
-            )
-
-            return f"{column}={odd_value!r}"
-
-        return None
-
-    @staticmethod
-    def _column_majority_families(
-        ticker_column_families: dict[str, dict[str, str]],
-    ) -> dict[str, str]:
-        """
-        Return the type family most tickers infer for each column.
-
-        Parameters
-        ----------
-        ticker_column_families
-            The type family each ticker inferred for each of its columns
-
-        Returns
-        -------
-        Each column mapped to its majority family
-        """
-        family_counts: dict[str, collections.Counter] = {}
-        for column_families in ticker_column_families.values():
-            for (column, column_family) in column_families.items():
-                family_counts.setdefault(column, collections.Counter())[column_family] += 1
-
-        return {
-            column: counts.most_common(1)[0][0]
-            for (column, counts) in family_counts.items()
-        }
-
-    @staticmethod
-    def concatenate_pages(
-        page_tables: typing.Sequence[pyarrow.Table],
-    ) -> pyarrow.Table:
-        """
-        Concatenate the pages of a query, reconciling the types each one inferred.
-
-        A column all null in one page infers null there and a real type elsewhere, and a column may be missing
-        from a page altogether.
-
-        Parameters
-        ----------
-        page_tables
-            The tables of each page, in the order they were fetched
-
-        Returns
-        -------
-        The concatenated table, with every column any page carried
-        """
-        filled_pages = [
-            page_table
-            for page_table in page_tables
-            if page_table.num_columns > 0
-        ]
-        if len(filled_pages) < 1:
-
-            return pyarrow.table({})
-
-        return pyarrow.concat_tables(filled_pages, promote_options='permissive')
+            raise DataProviderServerError(None, msg) from error
 
     def _fetch_paginated(
         self,
         table: str,
         params: dict[str, str],
-    ) -> list[pyarrow.Table]:
+    ) -> typing.Iterator[list[JsonRecord]]:
         """
         Fetch every page of a single query.
 
@@ -705,9 +376,9 @@ class SharadarClient:
         params
             The query parameters, without the pagination ones
 
-        Returns
-        -------
-        One table per page, in fetch order; at least one, even if empty
+        Yields
+        ------
+        The records of each page, in fetch order; at least one page, even if empty
 
         Raises
         ------
@@ -716,7 +387,6 @@ class SharadarClient:
         DataProviderFatalError
             When a single date holds a whole page of rows
         """
-        page_tables: list[pyarrow.Table] = []
         pages_by_date = self.PAGINATION_DATE_COLUMN in TABLE_PRIMARY_KEYS[table]
         skip = 0
         latest_date_left: str | None = None
@@ -732,13 +402,12 @@ class SharadarClient:
                 page_params['skip'] = str(skip)
 
             page_records = self._request_records(table, page_params)
-            page_tables.append(
-                self.records_to_table(table, page_records)
-            )
+
+            yield page_records
 
             if len(page_records) < self.page_size:
 
-                return page_tables
+                return
 
             if pages_by_date:
                 latest_date_left = self._next_page_latest_date(table, page_records, latest_date_left)
@@ -752,8 +421,6 @@ class SharadarClient:
                     "truncating. Narrow the date range.",
                 ])
                 logging.getLogger(__name__).warning(msg)
-
-        return page_tables
 
     @classmethod
     def _next_page_latest_date(
@@ -892,7 +559,7 @@ class SharadarClient:
                 request = urllib.request.Request(url)   # noqa: S310    URL is always built from BASE_URL
                 with urllib.request.urlopen(    # noqa: S310
                     request,
-                    context=self.load_ssl_context(),
+                    context=self._load_ssl_context(),
                     timeout=self.REQUEST_TIMEOUT_SECONDS,
                 ) as response:
 
@@ -900,7 +567,7 @@ class SharadarClient:
 
             except urllib.error.HTTPError as error:
                 try:
-                    self.raise_for_http_error(table, error)     # non-retryable errors leave through here
+                    self._raise_for_http_error(table, error)    # non-retryable errors leave through here
                 except DataProviderRateLimitError as rate_limit_error:
                     last_error = rate_limit_error   # a large run is bound to hit it, so it is waited out
                 else:
@@ -971,12 +638,10 @@ class SharadarClient:
             except ValueError:
                 pass    # the header may hold a date instead, which isn't parsed
 
-        return cls.RETRY_WAIT_SECONDS[
-            min(attempt_number, len(cls.RETRY_WAIT_SECONDS)) - 1
-        ]
+        return cls.RETRY_WAIT_SECONDS[min(attempt_number, len(cls.RETRY_WAIT_SECONDS)) - 1]
 
     @classmethod
-    def raise_for_http_error(
+    def _raise_for_http_error(
         cls,
         table: str,
         error: urllib.error.HTTPError,
@@ -1152,7 +817,7 @@ class SharadarClient:
         return f'{cls.BASE_URL}/{urllib.parse.quote(table)}?{query}'
 
     @classmethod
-    def load_ssl_context(cls) -> ssl.SSLContext:
+    def _load_ssl_context(cls) -> ssl.SSLContext:
         """
         Load the SSL context used for every request.
 
@@ -1245,9 +910,7 @@ def _split_numerator(column: DataColumn) -> DataColumn:
     ])
 
 
-def _split_fractions(
-    column: DataColumn,
-) -> list[tuple[float | None, float | None]]:
+def _split_fractions(column: DataColumn) -> list[tuple[float | None, float | None]]:
     """
     Recover the numerator and denominator behind each split ratio.
 
@@ -1278,10 +941,7 @@ def _split_fractions(
 
             continue
 
-        simplest_fraction = (
-            fractions.Fraction(ratio)
-            .limit_denominator(MAX_SPLIT_FRACTION_DENOMINATOR)
-        )
+        simplest_fraction = fractions.Fraction(ratio).limit_denominator(MAX_SPLIT_FRACTION_DENOMINATOR)
         reproduces_ratio = (
             simplest_fraction.numerator > 0
             and math.isclose(float(simplest_fraction), ratio, rel_tol=SPLIT_RATIO_ROUNDING_TOLERANCE)
@@ -1340,8 +1000,10 @@ class Sharadar(
         The api key for connecting to the provider
     """
 
-    # any table authenticates the key; this one is used to validate it
-    VALIDATION_TABLE = 'actions'
+    # the client every request goes through; a class variable so tests can replace it with a mock
+    _sharadar_client: type[SharadarClient] = SharadarClient
+
+    UNPARSABLE_VALUE_SAMPLES = 3    # bad values quoted in an unreadable-values report
 
     # values of the tickers table's `table` column
     STOCKS_TABLE = 'stocks'
@@ -1533,8 +1195,7 @@ class Sharadar(
         ):
             raise DataProviderMissingKeyError
 
-        self.api_key = api_key
-        self.client = SharadarClient(api_key=api_key)
+        self.client = self._sharadar_client(api_key=api_key)
         self._configuration: Configuration | None = None
         self._identifier_batches: list[tuple[str, ...]] = []
         self._identifier_batch_numbers: dict[str, int] = {}
@@ -1542,56 +1203,6 @@ class Sharadar(
         # identifier -> why it could not be loaded, in the order they failed
         self._unavailable_identifiers: dict[str, str] = {}
         self._ticker_metadata: dict[str, dict[str, typing.Any]] = {}
-
-    @classmethod
-    def get_data_block_endpoint_tag_map(cls) -> DataBlockEndpointTagMap:
-        return {
-            DividendsDataBlock: cls._dividend_data_endpoint_map,
-            FundamentalsDataBlock: cls._fundamental_data_endpoint_map,
-            MarketDailyDataBlock: cls._market_data_endpoint_map,
-            SplitsDataBlock: cls._split_data_endpoint_map,
-        }
-
-    def initialize(
-        self,
-        *,
-        configuration: Configuration,
-    ) -> None:
-        """
-        Load the ticker metadata of the run and split it into batches; the other tables load per batch later.
-
-        Parameters
-        ----------
-        configuration
-            The Configuration entity with all the currently injected settings
-        """
-        self._configuration = configuration
-        self._loaded_batches = {}
-        self._unavailable_identifiers = {}
-
-        identifiers = tuple(dict.fromkeys(configuration.identifiers))
-        self._identifier_batches = SharadarClient.batch_tickers(identifiers)
-        self._identifier_batch_numbers = {
-            identifier: batch_number
-            for (batch_number, batch) in enumerate(self._identifier_batches, start=1)
-            for identifier in batch
-        }
-        msg = f"Sharadar acquiring {len(identifiers)} identifiers through the query API"
-        logging.getLogger(__name__).info(msg)
-
-        self._ticker_metadata = self._load_ticker_metadata(identifiers)
-        unknown_identifiers = [
-            identifier
-            for identifier in identifiers
-            if identifier not in self._ticker_metadata
-        ]
-        if len(unknown_identifiers) > 0:
-            msg = " ".join([
-                "Sharadar has no ticker metadata for the following identifiers,",
-                "so they will be reported as not found:",
-                ", ".join(unknown_identifiers),
-            ])
-            logging.getLogger(__name__).warning(msg)
 
     def get_data_block_data(
         self,
@@ -1637,6 +1248,67 @@ class Sharadar(
             raise InjectedDependencyError(msg)
 
         return loader(main_identifier)
+
+    @classmethod
+    def get_data_block_endpoint_tag_map(cls) -> DataBlockEndpointTagMap:
+        return {
+            DividendsDataBlock: cls._dividend_data_endpoint_map,
+            FundamentalsDataBlock: cls._fundamental_data_endpoint_map,
+            MarketDailyDataBlock: cls._market_data_endpoint_map,
+            SplitsDataBlock: cls._split_data_endpoint_map,
+        }
+
+    def initialize(
+        self,
+        *,
+        configuration: Configuration,
+    ) -> None:
+        """
+        Load the ticker metadata of the run and split it into batches; the other tables load per batch later.
+
+        Parameters
+        ----------
+        configuration
+            The Configuration entity with all the currently injected settings
+        """
+        self._configuration = configuration
+        self._loaded_batches = {}
+        self._unavailable_identifiers = {}
+
+        identifiers = tuple(dict.fromkeys(configuration.identifiers))
+        self._identifier_batches = self.client.batch_tickers(identifiers)
+        self._identifier_batch_numbers = {
+            identifier: batch_number
+            for (batch_number, batch) in enumerate(self._identifier_batches, start=1)
+            for identifier in batch
+        }
+        msg = f"Sharadar acquiring {len(identifiers)} identifiers through the query API"
+        logging.getLogger(__name__).info(msg)
+
+        self._ticker_metadata = self._load_ticker_metadata(identifiers)
+        unknown_identifiers = [
+            identifier
+            for identifier in identifiers
+            if identifier not in self._ticker_metadata
+        ]
+        if len(unknown_identifiers) > 0:
+            msg = " ".join([
+                "Sharadar has no ticker metadata for the following identifiers,",
+                "so they will be reported as not found:",
+                ", ".join(unknown_identifiers),
+            ])
+            logging.getLogger(__name__).warning(msg)
+
+    def validate_api_key(self) -> bool | None:
+        """
+        Validate the API key through the client.
+
+        Returns
+        -------
+        Whether `api_key` is valid
+        """
+
+        return self.client.validate_api_key()
 
     def _market_data(
         self,
@@ -1957,48 +1629,6 @@ class Sharadar(
             }
         )
 
-    def validate_api_key(self) -> bool | None:
-        """
-        Validate the API key with a single request.
-
-        The query API answers a wrong key with a free-tier 200, so the export URL is asked instead: it replies
-        401 to an unknown key and redirects otherwise. The redirect is not followed, so nothing is downloaded.
-
-        Returns
-        -------
-        Whether `api_key` is valid
-        """
-        if (
-            self.api_key is None
-            or len(self.api_key) < 1
-        ):
-
-            return False
-
-        url = "".join([
-            f'{SharadarClient.BASE_URL}/{self.VALIDATION_TABLE}',
-            f'?api_key={urllib.parse.quote(self.api_key)}',
-            # 5 years is the window Sharadar keeps a ready-made export file for, so the request is answered
-            # with a redirect to that file instead of streaming the table; any other window streams it
-            '&years=5',
-        ])
-        opener = urllib.request.build_opener(_NoRedirectHandler)
-
-        try:
-            with opener.open(url, timeout=SharadarClient.REQUEST_TIMEOUT_SECONDS) as response:
-                # an unredirected success would still mean the key was accepted
-                return response.status < http.HTTPStatus.BAD_REQUEST.value
-
-        except urllib.error.HTTPError as error:
-            # a redirect means the key was accepted; other statuses are about the subscription, not the key
-
-            return error.code != http.HTTPStatus.UNAUTHORIZED.value
-
-        except (urllib.error.URLError, TimeoutError) as error:
-            msg = f"Could not reach Sharadar to validate the API key: {error}"
-
-            raise DataProviderServerError(None, msg) from error
-
     def _load_ticker_metadata(
         self,
         identifiers: typing.Sequence[str],
@@ -2158,7 +1788,7 @@ class Sharadar(
         self._loaded_batches.pop(table, None)
 
         batch_count = len(self._identifier_batches)
-        progress_step = max(1, math.ceil(batch_count / SharadarClient.PROGRESS_LOG_LINES))
+        progress_step = max(1, math.ceil(batch_count / PROGRESS_LOG_LINES))
         if (
             batch_number == 1
             or batch_number % progress_step == 0
@@ -2347,9 +1977,7 @@ class Sharadar(
         report
             The line describing what just happened, logged above the cumulative list
         """
-        self._unavailable_identifiers.update(
-            dict.fromkeys(identifiers, reason)
-        )
+        self._unavailable_identifiers.update(dict.fromkeys(identifiers, reason))
         msg = "\n  ".join([
             report,
             " ".join([
@@ -2397,7 +2025,7 @@ class Sharadar(
         filter_dates: bool = True,
     ) -> pyarrow.Table:
         """
-        Load a Sharadar table through the query API.
+        Load a Sharadar table through the client, typing each page as it arrives.
 
         Parameters
         ----------
@@ -2408,12 +2036,16 @@ class Sharadar(
         extra_params
             Any additional query parameters, like the fundamentals dimension
         filter_dates
-            Whether to restrict the table to the configured date range; fundamentals are read from their whole
-            history
+            Whether to restrict the table to the configured date range; False for the undated tickers table
 
         Returns
         -------
-        The loaded table
+        The loaded table, without the rows repeated across pages
+
+        Raises
+        ------
+        SharadarUnparsableValuesError
+            When a page holds values that can't be read, naming the tickers they belong to
         """
         if not filter_dates:
             start_date = None
@@ -2423,10 +2055,368 @@ class Sharadar(
             start_date = self._configuration.start_date
         end_date = self._configuration.end_date if filter_dates else None
 
-        return self.client.fetch_table(
+        pages = self.client.fetch_pages(
             table=table,
             tickers=identifiers,
             start_date=start_date.strftime('%Y-%m-%d') if start_date is not None else None,
             end_date=end_date.strftime('%Y-%m-%d') if end_date is not None else None,
             extra_params=extra_params,
         )
+        page_tables = [
+            self._records_to_table(table, page_records)
+            for page_records in pages
+        ]
+
+        # consecutive pages of a query share their boundary date, so its rows arrive twice
+        return self._drop_duplicate_keys(
+            self._concatenate_pages(page_tables),
+            TABLE_PRIMARY_KEYS[table],
+        )
+
+    @staticmethod
+    def _drop_duplicate_keys(
+        table_data: pyarrow.Table,
+        primary_key: typing.Sequence[str],
+    ) -> pyarrow.Table:
+        """
+        Keep the first row of every primary key, in arrival order.
+
+        Parameters
+        ----------
+        table_data
+            The table to deduplicate
+        primary_key
+            The columns that identify a row
+
+        Returns
+        -------
+        The table without repeated keys
+        """
+        if table_data.num_rows < 2:     # noqa: PLR2004  a single row can't repeat itself
+
+            return table_data
+
+        row_number_column = '__row_number'
+        first_row_numbers = (
+            table_data
+            .select(list(primary_key))
+            .append_column(row_number_column, pyarrow.array(range(table_data.num_rows), type=pyarrow.int64()))
+            .group_by(list(primary_key), use_threads=False)
+            .aggregate([(row_number_column, 'min')])
+            .column(f'{row_number_column}_min')
+        )
+        if len(first_row_numbers) == table_data.num_rows:
+
+            return table_data
+
+        return table_data.take(
+            first_row_numbers.take(pyarrow.compute.sort_indices(first_row_numbers))
+        )
+
+    @classmethod
+    def _records_to_table(
+        cls,
+        table: str,
+        records: typing.Sequence[JsonRecord],
+    ) -> pyarrow.Table:
+        """
+        Build a PyArrow table from raw JSON records, inferring types like the other providers do.
+
+        Parameters
+        ----------
+        table
+            The name of the Sharadar table the records belong to, for error reporting
+        records
+            The raw records, as decoded from the response's ``data`` key
+
+        Returns
+        -------
+        The table the records make up
+
+        Raises
+        ------
+        SharadarUnparsableValuesError
+            When the page can't be read, naming the tickers whose values disagree with their column
+        """
+        if len(records) < 1:
+
+            return pyarrow.table({})
+
+        try:
+
+            return cls._parse_records(table, records)
+        except (DataProviderParsingError, DataProviderToolkitError) as error:
+            # PyArrow reports a row number, not a ticker, so the offending tickers are worked out here
+
+            raise cls._unparsable_values_error(table, records) from error
+
+    @classmethod
+    def _parse_records(
+        cls,
+        table: str,
+        records: typing.Sequence[JsonRecord],
+    ) -> pyarrow.Table:
+        """
+        Read records into a table through the toolkit call every provider uses.
+
+        Parameters
+        ----------
+        table
+            The name of the Sharadar table, which names the endpoint
+        records
+            The raw records to read
+
+        Returns
+        -------
+        The table the records make up
+        """
+        records_json = json.dumps(records)
+
+        return DataProviderToolkit.create_endpoint_tables_from_json_mapping({table: records_json})[table]
+
+    @classmethod
+    def _unparsable_values_error(
+        cls,
+        table: str,
+        records: typing.Sequence[JsonRecord],
+    ) -> SharadarUnparsableValuesError:
+        """
+        Build the error for an unreadable page, naming the tickers whose values disagree.
+
+        Each ticker is read on its own; a column's type is what most tickers infer, and the tickers inferring
+        something else hold the offending values. Slow, but it only runs once a page has failed.
+
+        Parameters
+        ----------
+        table
+            The name of the Sharadar table
+        records
+            The raw records of the page
+
+        Returns
+        -------
+        The error to raise
+        """
+        records_by_ticker: dict[str, list[JsonRecord]] = {}
+        for record in records:
+            ticker = record.get('ticker', '(no ticker)')
+            records_by_ticker.setdefault(ticker, []).append(record)
+
+        unreadable_tickers: dict[str, None] = {}
+        ticker_column_families: dict[str, dict[str, str]] = {}
+        disagreements: list[str] = []
+        for (ticker, ticker_records) in records_by_ticker.items():
+            try:
+                ticker_table = cls._parse_records(table, ticker_records)
+            except (DataProviderParsingError, DataProviderToolkitError):
+                # this ticker's own rows already disagree among themselves
+                unreadable_tickers[ticker] = None
+                odd_value = cls._odd_value_out(ticker_records)
+                if (
+                    odd_value is not None
+                    and len(disagreements) < cls.UNPARSABLE_VALUE_SAMPLES
+                ):
+                    disagreements.append(f"{ticker} {odd_value}")
+
+                continue
+
+            ticker_column_families[ticker] = {
+                field.name: cls._type_family(field.type)
+                for field in ticker_table.schema
+                if not pyarrow.types.is_null(field.type)
+            }
+
+        majority_families = cls._column_majority_families(ticker_column_families)
+        for (ticker, column_families) in ticker_column_families.items():
+            for (column, column_family) in column_families.items():
+                if column_family == majority_families[column]:
+                    continue
+
+                unreadable_tickers[ticker] = None
+                if len(disagreements) < cls.UNPARSABLE_VALUE_SAMPLES:
+                    sample_value = records_by_ticker[ticker][0].get(column)
+                    disagreements.append(
+                        " ".join([
+                            f"{ticker} {column}={sample_value!r} reads as {column_family}",
+                            f"where the other tickers send {majority_families[column]}",
+                        ])
+                    )
+
+        message = " ".join([
+            f"Sharadar table {table} returned a page that could not be read in one pass:",
+            f"{len(unreadable_tickers)} tickers hold values that disagree with their column.",
+            f"Examples: {'; '.join(disagreements)}" if len(disagreements) > 0 else "",
+        ]).strip()
+
+        return SharadarUnparsableValuesError(message, frozenset(unreadable_tickers))
+
+    @staticmethod
+    def _type_family(
+        column_type: pyarrow.DataType,
+    ) -> str:
+        """
+        Return the family a column's inferred type belongs to.
+
+        Compared by family because whole-number prices infer integers where others infer decimals, and both
+        are fine.
+
+        Parameters
+        ----------
+        column_type
+            The type inferred for a column
+
+        Returns
+        -------
+        number, text, timestamp, boolean, or the type itself otherwise
+        """
+        if pyarrow.types.is_boolean(column_type):
+
+            return 'boolean'
+
+        if (
+            pyarrow.types.is_integer(column_type)
+            or pyarrow.types.is_floating(column_type)
+        ):
+
+            return 'number'
+
+        if (
+            pyarrow.types.is_string(column_type)
+            or pyarrow.types.is_large_string(column_type)
+        ):
+
+            return 'text'
+
+        if pyarrow.types.is_temporal(column_type):
+
+            return 'timestamp'
+
+        return str(column_type)
+
+    @staticmethod
+    def _value_family(
+        value: typing.Any,
+    ) -> str:
+        """
+        Return the family of a raw JSON value, matching what `_type_family` returns for its column.
+
+        Parameters
+        ----------
+        value
+            The value as JSON carried it
+
+        Returns
+        -------
+        The name of the family the value belongs to
+        """
+        if isinstance(value, bool):
+
+            return 'boolean'
+
+        if isinstance(value, (int, float)):
+
+            return 'number'
+
+        if isinstance(value, str):
+
+            return 'text'
+
+        return type(value).__name__
+
+    @classmethod
+    def _odd_value_out(
+        cls,
+        ticker_records: typing.Sequence[JsonRecord],
+    ) -> str | None:
+        """
+        Return the value that disagrees with the rest of its column, among one ticker's records.
+
+        Parameters
+        ----------
+        ticker_records
+            The records of a single ticker
+
+        Returns
+        -------
+        The column and value that disagree, like ``close='17O.55'``, or None when nothing stands out
+        """
+        values_by_column: dict[str, list[typing.Any]] = {}
+        for record in ticker_records:
+            for (column, value) in record.items():
+                if value is not None:
+                    values_by_column.setdefault(column, []).append(value)
+
+        for (column, values) in values_by_column.items():
+            family_counts = collections.Counter(
+                cls._value_family(value)
+                for value in values
+            )
+            if len(family_counts) < 2:    # noqa: PLR2004  one family is a column that agrees with itself
+                continue
+
+            rarest_family = family_counts.most_common()[-1][0]
+            odd_value = next(
+                value
+                for value in values
+                if cls._value_family(value) == rarest_family
+            )
+
+            return f"{column}={odd_value!r}"
+
+        return None
+
+    @staticmethod
+    def _column_majority_families(
+        ticker_column_families: dict[str, dict[str, str]],
+    ) -> dict[str, str]:
+        """
+        Return the type family most tickers infer for each column.
+
+        Parameters
+        ----------
+        ticker_column_families
+            The type family each ticker inferred for each of its columns
+
+        Returns
+        -------
+        Each column mapped to its majority family
+        """
+        family_counts: dict[str, collections.Counter] = {}
+        for column_families in ticker_column_families.values():
+            for (column, column_family) in column_families.items():
+                family_counts.setdefault(column, collections.Counter())[column_family] += 1
+
+        return {
+            column: counts.most_common(1)[0][0]
+            for (column, counts) in family_counts.items()
+        }
+
+    @staticmethod
+    def _concatenate_pages(
+        page_tables: typing.Sequence[pyarrow.Table],
+    ) -> pyarrow.Table:
+        """
+        Concatenate the pages of a query, reconciling the types each one inferred.
+
+        A column all null in one page infers null there and a real type elsewhere, and a column may be missing
+        from a page altogether.
+
+        Parameters
+        ----------
+        page_tables
+            The tables of each page, in the order they were fetched
+
+        Returns
+        -------
+        The concatenated table, with every column any page carried
+        """
+        filled_pages = [
+            page_table
+            for page_table in page_tables
+            if page_table.num_columns > 0
+        ]
+        if len(filled_pages) < 1:
+
+            return pyarrow.table({})
+
+        return pyarrow.concat_tables(filled_pages, promote_options='permissive')

@@ -8,25 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- Sharadar data provider, covering market data for stocks and funds, fundamentals, dividends and splits.
-  Selectable as `Sharadar` in the configuration file, with its API key in the `KNDC_API_KEY_SHARADAR`
-  environment variable.
-- The Sharadar provider reads everything through the query API and writes nothing to disk. Tables load one
-  batch of 30 identifiers at a time, so memory stays flat whatever the size of the run.
-- Rate limited requests wait for the announced reset; network and server errors, including connections dropped
-  mid-read, are retried for about four minutes. A batch that still fails, a table the subscription doesn't
-  cover, or a value that can't be read skips only the identifiers involved, which are logged so they can be run
-  again; a rejected key stops the run.
-- Dated tables are paged by date, since Sharadar orders rows of the same date differently on every request and
-  paging by offset lost rows. The date range is sent as `date.gte`/`date.lte`, as `from` returns one extra row.
-- Only the as-reported dimension the run asks for reaches the fundamentals data block; any other is dropped.
-- Fundamentals are read from their whole history rather than from the start date, so the first day of a run
-  already carries the filing in effect on it.
-- Split numerators and denominators are recovered from Sharadar's rounded ratio (1.33333 reads as 4/3).
-- The reported currency is read from the fundamentals row of Sharadar's tickers table, the currency filings
-  report in, rather than the one the instrument trades in: an ADR like Toyota's reads as JPY, not USD.
-- Sharadar publishes dividends only adjusted for later splits, so its value fills the split adjusted dividend
-  and the paid one is left empty (AAPL's 0.77 of 2019 reads as Sharadar's 0.1925, after its 2020 4 for 1 split).
+- Sharadar data provider
 
 ### Changed
 - `DividendDataRow.dividend` is now optional, but at least one of `dividend` or `dividend_split_adjusted` must be set, as there exist data providers that do not provide the unadjusted dividend
