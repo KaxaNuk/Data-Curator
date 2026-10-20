@@ -30,7 +30,7 @@ class SharadarClient(sharadar.SharadarClient):
         self,
         *,
         table,
-        tickers=None,
+        tickers,
         start_date=None,
         end_date=None,
         extra_params=None,
@@ -41,10 +41,10 @@ class SharadarClient(sharadar.SharadarClient):
         yield [
             record
             for record in _TABLE_RECORDS[table]
-            if (tickers is None or record['ticker'] in tickers)
-            and (dimension is None or record.get('dimension') == dimension)
-            and (start_date is None or 'date' not in record or record['date'] >= start_date)
-            and (end_date is None or 'date' not in record or record['date'] <= end_date)
+            if record['ticker'] in tickers
+            and (dimension is None or record['dimension'] == dimension)
+            and (start_date is None or record['date'] >= start_date)
+            and (end_date is None or record['date'] <= end_date)
         ]
 
     def validate_api_key(

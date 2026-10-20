@@ -45,7 +45,7 @@ END_DATE = datetime.date(2025, 12, 31)
 
 
 @pytest.fixture(scope='module', autouse=True)
-def isolated_toolkit_memoization() -> None:
+def clear_toolkit_memoization() -> None:
     """
     Clear the toolkit's memoized column remaps around this module.
 

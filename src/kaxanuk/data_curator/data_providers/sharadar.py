@@ -85,15 +85,6 @@ from kaxanuk.data_curator.services.data_provider_toolkit import (
 )
 
 
-# Primary key columns of each table, per Sharadar's DDL
-TABLE_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
-    'stocks': ('ticker', 'date'),
-    'funds': ('ticker', 'date'),
-    'fundamentals': ('ticker', 'dimension', 'date', 'reportperiod'),
-    'actions': ('date', 'action', 'ticker', 'name', 'contraticker', 'contraname'),
-    'tickers': ('table', 'permaticker', 'ticker'),
-}
-
 MAX_SPLIT_FRACTION_DENOMINATOR: typing.Final = 10000
 SPLIT_RATIO_ROUNDING_TOLERANCE: typing.Final = 1e-4
 
@@ -148,6 +139,8 @@ class SharadarClient:
     MAX_PAGES_PER_REQUEST = 1000
     # Sharadar sorts by one field only, so rows sharing a date come in no fixed order; paging goes by date
     PAGINATION_DATE_COLUMN = 'date'
+    # tables without a date column; they can't be paged reliably, so they must fit in a single page
+    UNDATED_TABLES = frozenset({'tickers'})
 
     # About four minutes in all, enough to ride out a short network outage during a long run
     RETRY_WAIT_SECONDS: tuple[float, ...] = (5.0, 15.0, 30.0, 60.0, 120.0)
@@ -223,13 +216,13 @@ class SharadarClient:
         self,
         *,
         table: str,
-        tickers: typing.Sequence[str] | None = None,
+        tickers: typing.Sequence[str],
         start_date: str | None = None,
         end_date: str | None = None,
         extra_params: dict[str, str] | None = None,
     ) -> typing.Iterator[list[JsonRecord]]:
         """
-        Fetch a Sharadar table page by page, batching the tickers and logging progress per batch.
+        Fetch a Sharadar table page by page for one batch of tickers.
 
         Pages are yielded as they arrive, so the caller can process each before the next one is requested.
 
@@ -238,7 +231,7 @@ class SharadarClient:
         table
             The name of the Sharadar table
         tickers
-            The tickers to fetch, or None for no ticker filter
+            The tickers to fetch, within the limits `batch_tickers` keeps a batch to
         start_date
             The earliest date to fetch, in ``YYYY-MM-DD`` format
         end_date
@@ -253,74 +246,24 @@ class SharadarClient:
         Raises
         ------
         DataProviderRateLimitError
-            When a batch is still throttled after its retries, naming the batch and its tickers
+            When the request is still throttled after its retries
         DataProviderServerError
-            When a batch keeps failing after its retries, naming the batch and its tickers
+            When the request keeps failing after its retries
         """
-        base_params: dict[str, str] = {
+        params: dict[str, str] = {
             'api_key': self.api_key,
             'format': 'json',
+            'ticker': ','.join(tickers),
         }
         # `from` combined with the paging's `date.lte` returns one row before the range; `date.gte` doesn't
         if start_date is not None:
-            base_params[f'{self.PAGINATION_DATE_COLUMN}.gte'] = start_date
+            params[f'{self.PAGINATION_DATE_COLUMN}.gte'] = start_date
         if end_date is not None:
-            base_params[f'{self.PAGINATION_DATE_COLUMN}.lte'] = end_date
+            params[f'{self.PAGINATION_DATE_COLUMN}.lte'] = end_date
         if extra_params is not None:
-            base_params.update(extra_params)
+            params.update(extra_params)
 
-        # a repeated ticker could land in two batches, which deduplication can't see across
-        ticker_batches: list[tuple[str, ...] | None] = (
-            list(self.batch_tickers(list(dict.fromkeys(tickers))))
-            if tickers is not None
-            else [None]
-        )
-        batch_count = len(ticker_batches)
-        progress_step = max(1, math.ceil(batch_count / PROGRESS_LOG_LINES))
-        if batch_count > 1:
-            msg = f"Sharadar table {table}: fetching {len(tickers or []):,} tickers in {batch_count:,} batches"
-            logging.getLogger(__name__).info(msg)
-
-        fetched_rows = 0
-
-        for (batch_number, ticker_batch) in enumerate(ticker_batches, start=1):
-            batch_params = dict(base_params)
-            if ticker_batch is not None:
-                batch_params['ticker'] = ','.join(ticker_batch)
-
-            try:
-                for page_records in self._fetch_paginated(table, batch_params):
-                    fetched_rows += len(page_records)
-
-                    yield page_records
-
-            except (DataProviderRateLimitError, DataProviderServerError) as error:
-                msg = " ".join(
-                    part
-                    for part in (
-                        f"Sharadar table {table} failed",
-                        f"on batch {batch_number} of {batch_count}" if batch_count > 1 else "",
-                        f"for tickers {', '.join(ticker_batch)}" if ticker_batch is not None else "",
-                        # the exception adds its own prefix, so only the original detail is carried over
-                        f"after exhausting its retries: {str(error).partition(': ')[2] or error}",
-                    )
-                    if len(part) > 0
-                )
-
-                raise type(error)(error.http_code, msg) from error
-
-            if (
-                batch_count > 1
-                and (
-                    batch_number % progress_step == 0
-                    or batch_number == batch_count
-                )
-            ):
-                msg = (
-                    f"Sharadar table {table}: batch {batch_number} of {batch_count} fetched"
-                    f" ({fetched_rows:,} rows so far)"
-                )
-                logging.getLogger(__name__).info(msg)
+        yield from self._fetch_paginated(table, params)
 
     def validate_api_key(self) -> bool | None:
         """
@@ -366,8 +309,10 @@ class SharadarClient:
         Fetch every page of a single query.
 
         Dated tables are paged by date, descending: rows of the same date come in a different order on every
-        request, so paging with ``skip`` lost 11 to 15 rows per 211,138. Each page asks for the rows dated on or
-        before the last one received, and the caller drops the repeated ones. A full page means more remain.
+        request, so paging with ``skip`` lost 11 to 15 rows per 211,138. A full page may end partway through its
+        last date, so that date is left out of it and the next page asks for the rows dated on or before it,
+        receiving it whole. A shorter page is the last one. Undated tables have nothing to page by, and ``skip``
+        loses and repeats rows on them too, so they must fit in a single page.
 
         Parameters
         ----------
@@ -385,45 +330,52 @@ class SharadarClient:
         DataProviderParsingError
             When a full page of a dated table is not in descending date order
         DataProviderFatalError
-            When a single date holds a whole page of rows
+            When a single date holds a whole page of rows, an undated table fills a page, or the query holds more
+            than `MAX_PAGES_PER_REQUEST` pages
         """
-        pages_by_date = self.PAGINATION_DATE_COLUMN in TABLE_PRIMARY_KEYS[table]
-        skip = 0
         latest_date_left: str | None = None
 
-        for page_number in range(self.MAX_PAGES_PER_REQUEST):
+        for _page_number in range(self.MAX_PAGES_PER_REQUEST):
             page_params = dict(params)
             page_params['limit'] = str(self.page_size)
-            if pages_by_date:
+            if table not in self.UNDATED_TABLES:
                 page_params['sort'] = f'{self.PAGINATION_DATE_COLUMN}.desc'
             if latest_date_left is not None:
                 page_params[f'{self.PAGINATION_DATE_COLUMN}.lte'] = latest_date_left
-            elif skip > 0:
-                page_params['skip'] = str(skip)
 
             page_records = self._request_records(table, page_params)
-
-            yield page_records
-
             if len(page_records) < self.page_size:
+
+                yield page_records
 
                 return
 
-            if pages_by_date:
-                latest_date_left = self._next_page_latest_date(table, page_records, latest_date_left)
-            else:
-                skip += len(page_records)
-
-            if page_number == (self.MAX_PAGES_PER_REQUEST - 1):
+            if table in self.UNDATED_TABLES:
                 msg = " ".join([
-                    f"Sharadar table {table} returned more than",
-                    f"{self.MAX_PAGES_PER_REQUEST * self.page_size} rows for a single query;",
-                    "truncating. Narrow the date range.",
+                    f"Sharadar table {table} returned a full page of {len(page_records)} rows, and without a date",
+                    "column it can't be paged without losing or repeating rows; request fewer tickers at a time",
                 ])
-                logging.getLogger(__name__).warning(msg)
+
+                raise DataProviderFatalError(None, msg)
+
+            latest_date_left = self._find_next_page_latest_date(table, page_records, latest_date_left)
+
+            # the page's last date may be cut short, so it is left whole to the next page
+            yield [
+                record
+                for record in page_records
+                if record[self.PAGINATION_DATE_COLUMN] > latest_date_left
+            ]
+
+        msg = " ".join([
+            f"Sharadar table {table} holds more than {self.MAX_PAGES_PER_REQUEST} pages of rows for a single query;",
+            "narrow the date range or request fewer tickers at a time",
+        ])
+
+        raise DataProviderFatalError(None, msg)
 
     @classmethod
-    def _next_page_latest_date(
+    def _find_next_page_latest_date(
         cls,
         table: str,
         page_records: typing.Sequence[JsonRecord],
@@ -580,7 +532,7 @@ class SharadarClient:
                 last_error = error
 
             if attempt_number < self.MAX_CONNECTION_RETRIES:
-                wait_seconds = self._retry_wait_seconds(attempt_number, last_error)
+                wait_seconds = self._calculate_retry_wait_seconds(attempt_number, last_error)
                 msg = (
                     f"Sharadar table {table} request failed ({last_error}),"
                     f" retrying in {wait_seconds:.1f}s (attempt {attempt_number}/{self.MAX_CONNECTION_RETRIES})"
@@ -597,7 +549,7 @@ class SharadarClient:
         raise DataProviderServerError(None, msg)
 
     @classmethod
-    def _retry_wait_seconds(
+    def _calculate_retry_wait_seconds(
         cls,
         attempt_number: int,
         error: Exception | None,
@@ -669,8 +621,8 @@ class SharadarClient:
         if error.code == http.HTTPStatus.TOO_MANY_REQUESTS.value:
             raise DataProviderRateLimitError(   # retryable, but raised so the caller waits for the reset
                 error.code,
-                cls._error_message(table, payload, error),
-                retry_after=cls._rate_limit_wait_seconds(error.headers),
+                cls._build_error_message(table, payload, error),
+                retry_after=cls._calculate_rate_limit_wait_seconds(error.headers),
             )
 
         if error.code >= http.HTTPStatus.INTERNAL_SERVER_ERROR.value:
@@ -680,7 +632,7 @@ class SharadarClient:
         cls._raise_for_error_payload(table, error.code, payload, error)
 
     @classmethod
-    def _rate_limit_wait_seconds(
+    def _calculate_rate_limit_wait_seconds(
         cls,
         headers: typing.Mapping[str, str],
     ) -> float | None:
@@ -745,7 +697,7 @@ class SharadarClient:
         DataProviderFatalError
             When the request is malformed, which means a bug in this client
         """
-        message = cls._error_message(table, payload, error)
+        message = cls._build_error_message(table, payload, error)
 
         if status_code == http.HTTPStatus.UNAUTHORIZED.value:
 
@@ -758,7 +710,7 @@ class SharadarClient:
         raise DataProviderFatalError(status_code, message)
 
     @staticmethod
-    def _error_message(
+    def _build_error_message(
         table: str,
         payload: dict[str, typing.Any],
         error: urllib.error.HTTPError | None = None,
@@ -872,7 +824,7 @@ def _extract_fiscal_year(column: DataColumn) -> DataColumn:
     )
 
 
-def _split_denominator(column: DataColumn) -> DataColumn:
+def _extract_split_denominator(column: DataColumn) -> DataColumn:
     """
     Return the denominator of each split ratio.
 
@@ -887,11 +839,11 @@ def _split_denominator(column: DataColumn) -> DataColumn:
     """
     return DataColumn.load([
         fraction[1]
-        for fraction in _split_fractions(column)
+        for fraction in _calculate_split_fractions(column)
     ])
 
 
-def _split_numerator(column: DataColumn) -> DataColumn:
+def _extract_split_numerator(column: DataColumn) -> DataColumn:
     """
     Return the numerator of each split ratio.
 
@@ -906,11 +858,11 @@ def _split_numerator(column: DataColumn) -> DataColumn:
     """
     return DataColumn.load([
         fraction[0]
-        for fraction in _split_fractions(column)
+        for fraction in _calculate_split_fractions(column)
     ])
 
 
-def _split_fractions(column: DataColumn) -> list[tuple[float | None, float | None]]:
+def _calculate_split_fractions(column: DataColumn) -> list[tuple[float | None, float | None]]:
     """
     Recover the numerator and denominator behind each split ratio.
 
@@ -1067,11 +1019,11 @@ class Sharadar(
             ),
             SplitDataRow.numerator: PreprocessedFieldMapping(
                 ['value'],
-                [_split_numerator]
+                [_extract_split_numerator]
             ),
             SplitDataRow.denominator: PreprocessedFieldMapping(
                 ['value'],
-                [_split_denominator]
+                [_extract_split_denominator]
             ),
         },
     }
@@ -1233,10 +1185,10 @@ class Sharadar(
             When asked for a data block Sharadar does not serve
         """
         loaders = {
-            DividendsDataBlock: self._dividend_data,
-            FundamentalsDataBlock: self._fundamental_data,
-            MarketDailyDataBlock: self._market_data,
-            SplitsDataBlock: self._split_data,
+            DividendsDataBlock: self._get_dividend_data,
+            FundamentalsDataBlock: self._get_fundamental_data,
+            MarketDailyDataBlock: self._get_market_data,
+            SplitsDataBlock: self._get_split_data,
         }
         loader = loaders.get(data_block)
         if loader is None:
@@ -1285,7 +1237,7 @@ class Sharadar(
         msg = f"Sharadar acquiring {len(identifiers)} identifiers through the query API"
         logging.getLogger(__name__).info(msg)
 
-        self._ticker_metadata = self._load_ticker_metadata(identifiers)
+        self._ticker_metadata = self._load_ticker_metadata()
         unknown_identifiers = [
             identifier
             for identifier in identifiers
@@ -1310,7 +1262,7 @@ class Sharadar(
 
         return self.client.validate_api_key()
 
-    def _market_data(
+    def _get_market_data(
         self,
         main_identifier: str,
     ) -> MarketData:
@@ -1331,8 +1283,8 @@ class Sharadar(
         IdentifierNotFoundError
             When the identifier has no price table, or that table returned no rows for it
         """
-        endpoint = self._market_data_endpoint(main_identifier)
-        endpoint_rows = self._endpoint_rows(endpoint, main_identifier)
+        endpoint = self._select_market_data_endpoint(main_identifier)
+        endpoint_rows = self._get_endpoint_rows(endpoint, main_identifier)
         if endpoint_rows.num_rows == 0:
             msg = f"{main_identifier} market data endpoints returned no data"
 
@@ -1364,7 +1316,7 @@ class Sharadar(
             }
         )
 
-    def _fundamental_data(
+    def _get_fundamental_data(
         self,
         main_identifier: str,
     ) -> FundamentalData:
@@ -1401,7 +1353,7 @@ class Sharadar(
             return empty_fundamental_data
 
         endpoint = self.Endpoints.FUNDAMENTALS
-        endpoint_rows = self._endpoint_rows(endpoint, main_identifier)
+        endpoint_rows = self._get_endpoint_rows(endpoint, main_identifier)
         if endpoint_rows.num_rows == 0:
             msg = f"{main_identifier} fundamental data endpoints returned no data"
             logging.getLogger(__name__).warning(msg)
@@ -1486,7 +1438,7 @@ class Sharadar(
             }
         )
 
-    def _dividend_data(
+    def _get_dividend_data(
         self,
         main_identifier: str,
     ) -> DividendData:
@@ -1507,7 +1459,7 @@ class Sharadar(
             rows={}
         )
         endpoint = self.Endpoints.ACTIONS_DIVIDEND
-        endpoint_rows = self._endpoint_rows(endpoint, main_identifier)
+        endpoint_rows = self._get_endpoint_rows(endpoint, main_identifier)
         if endpoint_rows.num_rows == 0:
             msg = f"{main_identifier} dividend data endpoints returned no data"
             logging.getLogger(__name__).warning(msg)
@@ -1574,7 +1526,7 @@ class Sharadar(
             }
         )
 
-    def _split_data(
+    def _get_split_data(
         self,
         main_identifier: str,
     ) -> SplitData:
@@ -1595,7 +1547,7 @@ class Sharadar(
             rows={}
         )
         endpoint = self.Endpoints.ACTIONS_SPLIT
-        endpoint_rows = self._endpoint_rows(endpoint, main_identifier)
+        endpoint_rows = self._get_endpoint_rows(endpoint, main_identifier)
         if endpoint_rows.num_rows == 0:
             msg = f"{main_identifier} split data endpoints returned no data"
             logging.getLogger(__name__).warning(msg)
@@ -1629,45 +1581,42 @@ class Sharadar(
             }
         )
 
-    def _load_ticker_metadata(
-        self,
-        identifiers: typing.Sequence[str],
-    ) -> dict[str, dict[str, typing.Any]]:
+    def _load_ticker_metadata(self) -> dict[str, dict[str, typing.Any]]:
         """
         Load the tickers table rows of the run's identifiers: price table, fundamentals, currency and category.
 
         The tickers table holds a row per Sharadar table: the stocks row carries the currency the instrument
         trades in, and the fundamentals row the one its filings report in, which is the one kept here.
 
-        Parameters
-        ----------
-        identifiers
-            The identifiers of the run
-
         Returns
         -------
         Mapping of ticker to its tables, currency and category
         """
-        tickers_table = self._request_table('tickers', identifiers=identifiers, filter_dates=False)
         metadata: dict[str, dict[str, typing.Any]] = {}
 
-        for row in tickers_table.select(['ticker', 'table', 'currency', 'category']).to_pylist():
-            ticker = row['ticker']
-            if ticker not in metadata:
-                metadata[ticker] = {
-                    'tables': set(),
-                    'currency': None,
-                    'category': row['category'],
-                }
+        for (batch_number, batch_identifiers) in enumerate(self._identifier_batches, start=1):
+            self._log_batch_progress('tickers', batch_number)
+            tickers_table = self._request_table('tickers', identifiers=batch_identifiers)
+            if tickers_table.num_rows == 0:
+                continue
 
-            metadata[ticker]['tables'].add(row['table'])
-            if row['table'] == self.FUNDAMENTALS_TABLE:
-                # an ADR trades in dollars while reporting in its home currency, like Toyota's yen
-                metadata[ticker]['currency'] = row['currency']
+            for row in tickers_table.select(['ticker', 'table', 'currency', 'category']).to_pylist():
+                ticker = row['ticker']
+                if ticker not in metadata:
+                    metadata[ticker] = {
+                        'tables': set(),
+                        'currency': None,
+                        'category': row['category'],
+                    }
+
+                metadata[ticker]['tables'].add(row['table'])
+                if row['table'] == self.FUNDAMENTALS_TABLE:
+                    # an ADR trades in dollars while reporting in its home currency, like Toyota's yen
+                    metadata[ticker]['currency'] = row['currency']
 
         return metadata
 
-    def _market_data_endpoint(
+    def _select_market_data_endpoint(
         self,
         main_identifier: str,
     ) -> 'Sharadar.Endpoints':
@@ -1702,7 +1651,7 @@ class Sharadar(
 
         raise IdentifierNotFoundError(msg)
 
-    def _endpoint_rows(
+    def _get_endpoint_rows(
         self,
         endpoint: 'Sharadar.Endpoints',
         main_identifier: str,
@@ -1732,7 +1681,7 @@ class Sharadar(
 
             return pyarrow.table({})
 
-        batch = self._batch_rows(table_name, batch_number)
+        batch = self._load_batch_rows(table_name, batch_number)
         unavailable_reason = self._unavailable_identifiers.get(main_identifier)
         if unavailable_reason is not None:
             msg = f"{main_identifier} could not be loaded from Sharadar: {unavailable_reason}"
@@ -1754,7 +1703,7 @@ class Sharadar(
 
         return rows
 
-    def _batch_rows(
+    def _load_batch_rows(
         self,
         table: str,
         batch_number: int,
@@ -1787,15 +1736,7 @@ class Sharadar(
         # released first, so two batches of a table are never held at once
         self._loaded_batches.pop(table, None)
 
-        batch_count = len(self._identifier_batches)
-        progress_step = max(1, math.ceil(batch_count / PROGRESS_LOG_LINES))
-        if (
-            batch_number == 1
-            or batch_number % progress_step == 0
-            or batch_number == batch_count
-        ):
-            msg = f"Sharadar table {table}: loading batch {batch_number} of {batch_count}"
-            logging.getLogger(__name__).info(msg)
+        self._log_batch_progress(table, batch_number)
 
         extra_params = None
         if table == self.FUNDAMENTALS_TABLE:
@@ -1808,7 +1749,7 @@ class Sharadar(
                 identifiers=batch_identifiers,
                 extra_params=extra_params,
             )
-            dimension_rows = self._rows_of_requested_dimension(table, requested_rows, extra_params)
+            dimension_rows = self._select_requested_dimension_rows(table, requested_rows, extra_params)
             # an empty batch comes back without columns
             rows = (
                 dimension_rows.sort_by([('ticker', 'ascending'), ('date', 'ascending')])
@@ -1831,8 +1772,9 @@ class Sharadar(
                 batch_identifiers,
                 reason=reason,
                 report=" ".join([
-                    f"Sharadar table {table}: batch {batch_number} of {batch_count} could not be downloaded,",
-                    f"skipping its {len(batch_identifiers)} identifiers and carrying on with the run:",
+                    f"Sharadar table {table}: batch {batch_number} of {len(self._identifier_batches)}",
+                    f"could not be downloaded, skipping its {len(batch_identifiers)} identifiers",
+                    "and carrying on with the run:",
                     str(error),
                 ]),
             )
@@ -1849,14 +1791,39 @@ class Sharadar(
         loaded_batch = _LoadedBatch(
             number=batch_number,
             rows=rows,
-            ticker_rows=self._ticker_row_ranges(rows) if rows.num_rows > 0 else {},
+            ticker_rows=self._calculate_ticker_row_ranges(rows) if rows.num_rows > 0 else {},
         )
         self._loaded_batches[table] = loaded_batch
 
         return loaded_batch
 
+    def _log_batch_progress(
+        self,
+        table: str,
+        batch_number: int,
+    ) -> None:
+        """
+        Log the loading of a table's batch: the first, the last, and about `PROGRESS_LOG_LINES` in between.
+
+        Parameters
+        ----------
+        table
+            The name of the Sharadar table
+        batch_number
+            The number of the batch, starting at 1
+        """
+        batch_count = len(self._identifier_batches)
+        progress_step = max(1, math.ceil(batch_count / PROGRESS_LOG_LINES))
+        if (
+            batch_number == 1
+            or batch_number % progress_step == 0
+            or batch_number == batch_count
+        ):
+            msg = f"Sharadar table {table}: loading batch {batch_number} of {batch_count}"
+            logging.getLogger(__name__).info(msg)
+
     @staticmethod
-    def _rows_of_requested_dimension(
+    def _select_requested_dimension_rows(
         table: str,
         rows: pyarrow.Table,
         extra_params: dict[str, str] | None,
@@ -1926,6 +1893,11 @@ class Sharadar(
         Returns
         -------
         The rows of the readable identifiers, empty if none
+
+        Raises
+        ------
+        SharadarUnparsableValuesError
+            When the page can't be read but no identifier holds the offending values on its own
         """
         if len(identifiers) < 1:
 
@@ -1939,6 +1911,10 @@ class Sharadar(
                 extra_params=extra_params,
             )
         except SharadarUnparsableValuesError as error:
+            if len(error.tickers) < 1:
+
+                raise   # no identifier to leave out, so requesting the batch again would fail the same way
+
             self._skip_identifiers(
                 sorted(error.tickers),
                 reason=str(error),
@@ -1988,7 +1964,7 @@ class Sharadar(
         logging.getLogger(__name__).error(msg)
 
     @staticmethod
-    def _ticker_row_ranges(
+    def _calculate_ticker_row_ranges(
         table: pyarrow.Table,
     ) -> dict[str, tuple[int, int]]:
         """
@@ -2022,10 +1998,12 @@ class Sharadar(
         *,
         identifiers: typing.Sequence[str],
         extra_params: dict[str, str] | None = None,
-        filter_dates: bool = True,
     ) -> pyarrow.Table:
         """
         Load a Sharadar table through the client, typing each page as it arrives.
+
+        Dated tables are restricted to the configured date range, except fundamentals, which are read from their
+        whole history.
 
         Parameters
         ----------
@@ -2035,25 +2013,24 @@ class Sharadar(
             The identifiers to restrict the table to
         extra_params
             Any additional query parameters, like the fundamentals dimension
-        filter_dates
-            Whether to restrict the table to the configured date range; False for the undated tickers table
 
         Returns
         -------
-        The loaded table, without the rows repeated across pages
+        The loaded table
 
         Raises
         ------
         SharadarUnparsableValuesError
             When a page holds values that can't be read, naming the tickers they belong to
         """
-        if not filter_dates:
+        is_dated_table = table not in self.client.UNDATED_TABLES
+        if not is_dated_table:
             start_date = None
         elif table == self.FUNDAMENTALS_TABLE:
             start_date = self.FUNDAMENTALS_HISTORY_START_DATE
         else:
             start_date = self._configuration.start_date
-        end_date = self._configuration.end_date if filter_dates else None
+        end_date = self._configuration.end_date if is_dated_table else None
 
         pages = self.client.fetch_pages(
             table=table,
@@ -2063,58 +2040,14 @@ class Sharadar(
             extra_params=extra_params,
         )
         page_tables = [
-            self._records_to_table(table, page_records)
+            self._create_table_from_records(table, page_records)
             for page_records in pages
         ]
 
-        # consecutive pages of a query share their boundary date, so its rows arrive twice
-        return self._drop_duplicate_keys(
-            self._concatenate_pages(page_tables),
-            TABLE_PRIMARY_KEYS[table],
-        )
-
-    @staticmethod
-    def _drop_duplicate_keys(
-        table_data: pyarrow.Table,
-        primary_key: typing.Sequence[str],
-    ) -> pyarrow.Table:
-        """
-        Keep the first row of every primary key, in arrival order.
-
-        Parameters
-        ----------
-        table_data
-            The table to deduplicate
-        primary_key
-            The columns that identify a row
-
-        Returns
-        -------
-        The table without repeated keys
-        """
-        if table_data.num_rows < 2:     # noqa: PLR2004  a single row can't repeat itself
-
-            return table_data
-
-        row_number_column = '__row_number'
-        first_row_numbers = (
-            table_data
-            .select(list(primary_key))
-            .append_column(row_number_column, pyarrow.array(range(table_data.num_rows), type=pyarrow.int64()))
-            .group_by(list(primary_key), use_threads=False)
-            .aggregate([(row_number_column, 'min')])
-            .column(f'{row_number_column}_min')
-        )
-        if len(first_row_numbers) == table_data.num_rows:
-
-            return table_data
-
-        return table_data.take(
-            first_row_numbers.take(pyarrow.compute.sort_indices(first_row_numbers))
-        )
+        return self._concatenate_pages(page_tables)
 
     @classmethod
-    def _records_to_table(
+    def _create_table_from_records(
         cls,
         table: str,
         records: typing.Sequence[JsonRecord],
@@ -2148,7 +2081,7 @@ class Sharadar(
         except (DataProviderParsingError, DataProviderToolkitError) as error:
             # PyArrow reports a row number, not a ticker, so the offending tickers are worked out here
 
-            raise cls._unparsable_values_error(table, records) from error
+            raise cls._build_unparsable_values_error(table, records) from error
 
     @classmethod
     def _parse_records(
@@ -2175,7 +2108,7 @@ class Sharadar(
         return DataProviderToolkit.create_endpoint_tables_from_json_mapping({table: records_json})[table]
 
     @classmethod
-    def _unparsable_values_error(
+    def _build_unparsable_values_error(
         cls,
         table: str,
         records: typing.Sequence[JsonRecord],
@@ -2211,7 +2144,7 @@ class Sharadar(
             except (DataProviderParsingError, DataProviderToolkitError):
                 # this ticker's own rows already disagree among themselves
                 unreadable_tickers[ticker] = None
-                odd_value = cls._odd_value_out(ticker_records)
+                odd_value = cls._find_odd_value_out(ticker_records)
                 if (
                     odd_value is not None
                     and len(disagreements) < cls.UNPARSABLE_VALUE_SAMPLES
@@ -2221,12 +2154,12 @@ class Sharadar(
                 continue
 
             ticker_column_families[ticker] = {
-                field.name: cls._type_family(field.type)
+                field.name: cls._classify_column_type(field.type)
                 for field in ticker_table.schema
                 if not pyarrow.types.is_null(field.type)
             }
 
-        majority_families = cls._column_majority_families(ticker_column_families)
+        majority_families = cls._find_column_majority_families(ticker_column_families)
         for (ticker, column_families) in ticker_column_families.items():
             for (column, column_family) in column_families.items():
                 if column_family == majority_families[column]:
@@ -2251,7 +2184,7 @@ class Sharadar(
         return SharadarUnparsableValuesError(message, frozenset(unreadable_tickers))
 
     @staticmethod
-    def _type_family(
+    def _classify_column_type(
         column_type: pyarrow.DataType,
     ) -> str:
         """
@@ -2294,11 +2227,11 @@ class Sharadar(
         return str(column_type)
 
     @staticmethod
-    def _value_family(
+    def _classify_json_value(
         value: typing.Any,
     ) -> str:
         """
-        Return the family of a raw JSON value, matching what `_type_family` returns for its column.
+        Return the family of a raw JSON value, matching what `_classify_column_type` returns for its column.
 
         Parameters
         ----------
@@ -2324,7 +2257,7 @@ class Sharadar(
         return type(value).__name__
 
     @classmethod
-    def _odd_value_out(
+    def _find_odd_value_out(
         cls,
         ticker_records: typing.Sequence[JsonRecord],
     ) -> str | None:
@@ -2348,7 +2281,7 @@ class Sharadar(
 
         for (column, values) in values_by_column.items():
             family_counts = collections.Counter(
-                cls._value_family(value)
+                cls._classify_json_value(value)
                 for value in values
             )
             if len(family_counts) < 2:    # noqa: PLR2004  one family is a column that agrees with itself
@@ -2358,7 +2291,7 @@ class Sharadar(
             odd_value = next(
                 value
                 for value in values
-                if cls._value_family(value) == rarest_family
+                if cls._classify_json_value(value) == rarest_family
             )
 
             return f"{column}={odd_value!r}"
@@ -2366,7 +2299,7 @@ class Sharadar(
         return None
 
     @staticmethod
-    def _column_majority_families(
+    def _find_column_majority_families(
         ticker_column_families: dict[str, dict[str, str]],
     ) -> dict[str, str]:
         """

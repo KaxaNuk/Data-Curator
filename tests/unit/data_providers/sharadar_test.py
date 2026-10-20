@@ -11,7 +11,7 @@ import pytest
 from kaxanuk.data_curator.data_providers.sharadar import (
     Sharadar,
     SharadarClient,
-    _split_fractions,
+    _calculate_split_fractions,
 )
 from kaxanuk.data_curator.entities import Configuration
 from kaxanuk.data_curator.exceptions import (
@@ -64,7 +64,7 @@ class _DroppedConnectionResponse(io.BytesIO):
 
 
 class TestFetchPages:
-    def test_fetch_pages_loses_no_row_where_a_page_boundary_splits_a_date(self, monkeypatch) -> None:
+    def test_fetch_pages_returns_every_row_once_where_a_page_boundary_splits_a_date(self, monkeypatch) -> None:
         """Three rows share every date, so a page of seven rows ends inside a date on most pages."""
         records = [
             {'ticker': ticker, 'date': f'2024-03-{day:02d}'}
@@ -74,13 +74,13 @@ class TestFetchPages:
         client = SharadarClient(api_key='test-api-key', page_size=7)
         monkeypatch.setattr(client, '_request_records', _ShufflingQueryApi(records))
 
-        result = {
+        result = sorted(
             (record['ticker'], record['date'])
             for page in client.fetch_pages(table='stocks', tickers=['KXA', 'KXB', 'KXC'])
             for record in page
-        }
+        )
 
-        assert result == {(record['ticker'], record['date']) for record in records}
+        assert result == sorted((record['ticker'], record['date']) for record in records)
 
 
 class TestPrivateRequestWithRetries:
@@ -120,16 +120,16 @@ class TestPrivateRequestWithRetries:
         assert len(attempts) == 1
 
 
-class TestPrivateRetryWaitSeconds:
+class TestPrivateCalculateRetryWaitSeconds:
     def test_a_throttled_request_waits_for_the_announced_reset(self) -> None:
         error = DataProviderRateLimitError(429, 'Rate limited', retry_after=300.0)
 
-        result = SharadarClient._retry_wait_seconds(1, error)
+        result = SharadarClient._calculate_retry_wait_seconds(1, error)
 
         assert 300.0 <= result <= 300.0 + SharadarClient.RATE_LIMIT_JITTER_SECONDS
 
 
-class TestPrivateSplitFractions:
+class TestPrivateCalculateSplitFractions:
     @pytest.mark.parametrize(
         ('ratio', 'expected'),
         [
@@ -139,20 +139,20 @@ class TestPrivateSplitFractions:
             (1e-05, (1e-05, 1.0)),      # too small for any fraction: kept as published rather than as 0/1
         ],
     )
-    def test_split_fractions_recovers_the_fraction_behind_a_ratio(self, ratio, expected) -> None:
-        result = _split_fractions(DataColumn.load([ratio]))
+    def test_calculate_split_fractions_recovers_the_fraction_behind_a_ratio(self, ratio, expected) -> None:
+        result = _calculate_split_fractions(DataColumn.load([ratio]))
 
         assert result == [expected]
 
 
-class TestPrivateRowsOfRequestedDimension:
+class TestPrivateSelectRequestedDimensionRows:
     def test_rows_of_another_dimension_are_dropped(self) -> None:
         rows = pyarrow.table({
             'ticker': ['KXNB', 'KXNB'],
             'dimension': ['ARQ', 'MRQ'],
         })
 
-        result = Sharadar._rows_of_requested_dimension('fundamentals', rows, {'dimension': 'ARQ'})
+        result = Sharadar._select_requested_dimension_rows('fundamentals', rows, {'dimension': 'ARQ'})
 
         assert result.column('dimension').to_pylist() == ['ARQ']
 
@@ -167,9 +167,10 @@ class TestPrivateLoadTickerMetadata:
             'category': ['ADR Common Stock', 'ADR Common Stock'],
         })
         provider = Sharadar(api_key='test-api-key')
+        provider._identifier_batches = [('TM',)]
         monkeypatch.setattr(provider, '_request_table', lambda *_arguments, **_options: tickers_rows)
 
-        result = provider._load_ticker_metadata(['TM'])
+        result = provider._load_ticker_metadata()
 
         assert result['TM']['currency'] == 'JPY'
 
@@ -199,7 +200,7 @@ class TestPrivateRequestTable:
         assert requested['start_date'] == expected_start_date
 
 
-class TestPrivateBatchRows:
+class TestPrivateLoadBatchRows:
     def test_a_table_the_plan_does_not_cover_skips_only_its_batch(self, monkeypatch) -> None:
         def deny_access(*_arguments, **_options):
             raise DataProviderAuthorizationError(403, 'Exceeds your subscription')
@@ -209,6 +210,6 @@ class TestPrivateBatchRows:
         provider._identifier_batches = [('KXA', 'KXB'), ('KXC',)]
         monkeypatch.setattr(provider, '_request_table', deny_access)
 
-        provider._batch_rows('funds', 1)
+        provider._load_batch_rows('funds', 1)
 
         assert set(provider._unavailable_identifiers) == {'KXA', 'KXB'}
