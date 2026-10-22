@@ -145,6 +145,41 @@ class TestPrivateCalculateSplitFractions:
         assert result == [expected]
 
 
+class TestPrivateFindMissingIncomeStatementRows:
+    def test_only_a_filing_with_every_income_statement_value_empty_is_found(self) -> None:
+        """CMFV's ARQ filings of 2000-01-21, 1999-10-05 and 2001-03-30: complete, empty, and partial."""
+        rows = pyarrow.table({
+            'FundamentalDataRowBalanceSheet.assets': [3535510, 3918885, 699923],
+            'FundamentalDataRowIncomeStatement.revenues': [62000, None, 70478],
+            'FundamentalDataRowIncomeStatement.net_income': [-568593, None, None],
+        })
+
+        result = Sharadar._find_missing_income_statement_rows(rows)
+
+        assert result.to_pylist() == [False, True, False]
+
+
+class TestPrivateFindRepeatedFiscalPeriodRows:
+    def test_only_the_earlier_periods_of_a_repeated_fiscal_period_are_found(self) -> None:
+        """ANLY's ARQ filings from 2001-03-31 to 2002-06-30, across its change of fiscal year end from June."""
+        rows = pyarrow.table({
+            'FundamentalDataRow.period_end_date': [
+                datetime.date(2001, 3, 31),
+                datetime.date(2001, 6, 30),
+                datetime.date(2001, 9, 30),
+                datetime.date(2001, 12, 31),
+                datetime.date(2002, 3, 31),
+                datetime.date(2002, 6, 30),
+            ],
+            'FundamentalDataRow.fiscal_year': [2001, 2001, 2002, 2001, 2002, 2002],
+            'FundamentalDataRow.fiscal_period': ['Q3', 'Q4', 'Q1', 'Q4', 'Q1', 'Q2'],
+        })
+
+        result = Sharadar._find_repeated_fiscal_period_rows(rows)
+
+        assert result.to_pylist() == [False, True, True, False, False, False]
+
+
 class TestPrivateSelectRequestedDimensionRows:
     def test_rows_of_another_dimension_are_dropped(self) -> None:
         rows = pyarrow.table({

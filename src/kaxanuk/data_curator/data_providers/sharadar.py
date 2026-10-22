@@ -23,6 +23,7 @@ import collections
 import datetime
 import enum
 import fractions
+import functools
 import http
 import http.client
 import itertools
@@ -1262,6 +1263,87 @@ class Sharadar(
 
         return self.client.validate_api_key()
 
+    @staticmethod
+    def _find_missing_income_statement_rows(
+        consolidated_table: pyarrow.Table,
+    ) -> pyarrow.ChunkedArray | None:
+        """
+        Find the filings Sharadar published with every income statement value empty.
+
+        Some as reported filings carry their balance sheet but no income statement at all, which can't be packed,
+        and would otherwise discard every filing of the identifier.
+
+        Parameters
+        ----------
+        consolidated_table
+            The consolidated fundamentals rows
+
+        Returns
+        -------
+        A mask of the rows whose income statement columns are all null, or None when there are none
+        """
+        income_statement_column_prefix = f"{FundamentalDataRowIncomeStatement.__name__}."
+        income_statement_null_masks = [
+            pyarrow.compute.is_null(consolidated_table.column(column_name))
+            for column_name in consolidated_table.column_names
+            if column_name.startswith(income_statement_column_prefix)
+        ]
+        if len(income_statement_null_masks) < 1:
+
+            return None
+
+        mask = functools.reduce(
+            pyarrow.compute.and_,
+            income_statement_null_masks,
+        )
+        if not pyarrow.compute.any(mask).as_py():
+
+            return None
+
+        return mask
+
+    @staticmethod
+    def _find_repeated_fiscal_period_rows(
+        consolidated_table: pyarrow.Table,
+    ) -> pyarrow.Array | None:
+        """
+        Find the filings whose fiscal year and period a filing of a later period repeats.
+
+        After a change of fiscal year end, Sharadar labels the periods of the new fiscal calendar with labels
+        already used under the old one, which the features keyed on those labels can't tell apart. The latest
+        period keeps the label, as in Sharadar's restated dimensions, which relabel the earlier ones.
+
+        Parameters
+        ----------
+        consolidated_table
+            The consolidated fundamentals rows, in filing order and without amended or late filings
+
+        Returns
+        -------
+        A mask of the rows whose fiscal year and period a later row repeats, or None when none repeats
+        """
+        label_column_names = [
+            FundamentalsDataBlock.get_field_qualified_name(FundamentalDataRow.fiscal_year),
+            FundamentalsDataBlock.get_field_qualified_name(FundamentalDataRow.fiscal_period),
+        ]
+        row_positions = pyarrow.array(range(consolidated_table.num_rows))
+        latest_label_positions = (
+            consolidated_table
+            .select(label_column_names)
+            .append_column('row_position', row_positions)
+            .group_by(label_column_names)
+            .aggregate([('row_position', 'max')])
+            .column('row_position_max')
+        )
+        mask = pyarrow.compute.invert(
+            pyarrow.compute.is_in(row_positions, value_set=latest_label_positions)
+        )
+        if not pyarrow.compute.any(mask).as_py():
+
+            return None
+
+        return mask
+
     def _get_market_data(
         self,
         main_identifier: str,
@@ -1401,6 +1483,30 @@ class Sharadar(
                 FundamentalDataRow.fiscal_period
             ): 'fiscal_period',
         }
+        missing_income_statement_rows_mask = self._find_missing_income_statement_rows(
+            consolidated_fundamental_table
+        )
+        if missing_income_statement_rows_mask is not None:
+            missing_income_statement_rows_table = (
+                consolidated_fundamental_table
+                .select(warning_output_columns_map.keys())
+                .filter(missing_income_statement_rows_mask)
+            )
+            discrepancy_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=missing_income_statement_rows_table,
+                output_column_renames=warning_output_columns_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} has filings published with an empty income statement.",
+                "Omitting fundamental data for the periods corresponding to the following filings:",
+                discrepancy_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            consolidated_fundamental_table = consolidated_fundamental_table.filter(
+                pyarrow.compute.invert(missing_income_statement_rows_mask)
+            )
+
         irregular_rows_mask = FundamentalsDataBlock.find_consolidated_table_irregular_filing_rows(
             consolidated_table=consolidated_fundamental_table
         )
@@ -1423,6 +1529,29 @@ class Sharadar(
 
             consolidated_fundamental_table = consolidated_fundamental_table.filter(
                 pyarrow.compute.invert(irregular_rows_mask)
+            )
+
+        # @todo temporary, until the features keyed on fiscal year and period handle a repeated one
+        repeated_fiscal_period_rows_mask = self._find_repeated_fiscal_period_rows(consolidated_fundamental_table)
+        if repeated_fiscal_period_rows_mask is not None:
+            repeated_fiscal_period_rows_table = (
+                consolidated_fundamental_table
+                .select(warning_output_columns_map.keys())
+                .filter(repeated_fiscal_period_rows_mask)
+            )
+            discrepancy_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=repeated_fiscal_period_rows_table,
+                output_column_renames=warning_output_columns_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} has filings of different periods with the same fiscal year and period.",
+                "Keeping the latest period of each, and omitting fundamental data for the following filings:",
+                discrepancy_output_table
+            ])
+            logging.getLogger(__name__).warning(msg)
+
+            consolidated_fundamental_table = consolidated_fundamental_table.filter(
+                pyarrow.compute.invert(repeated_fiscal_period_rows_mask)
             )
 
         if consolidated_fundamental_table.num_rows == 0:
