@@ -43,9 +43,9 @@ ENTITY_SECTIONS = {
     "SplitDataRow": ("Splits", "s_"),
 }
 
-# The columns the provider joins into Sharadar's rows, which are not fields of the table they are listed under
+# The columns the provider joins into Sharadar's rows from another table: their label, and the table they are read from
 DERIVED_COLUMNS = {
-    'currency': 'currency, from the tickers table',
+    'currency': ('currency, from the tickers table', 'tickers'),
 }
 
 INTRO_TEXT = """
@@ -54,8 +54,10 @@ INTRO_TEXT = """
 Sharadar
 =============================
 
-**Sharadar** publishes end of day prices, fundamentals and corporate actions for US listed stocks and funds,
-including delisted ones, which makes it suited to point in time research free of survivorship bias.
+**Sharadar** is a provider of end of day US market data, fundamentals and corporate actions, covering both
+active and delisted companies, which makes it suited to point in time research free of survivorship bias.
+This library integrates Sharadar's query API to access historical prices, financial statements and corporate
+actions for supported instruments.
 
 - Visit their `official documentation <https://sharadar.com/docs/intro>`_.
 
@@ -64,53 +66,55 @@ including delisted ones, which makes it suited to point in time research free of
 Sharadar Features
 ------------------
 
+Sharadar publishes its data as tables, all read through the same query API.
+Below is an overview of the types of data available through this integration.
+
 Market Data
 ~~~~~~~~~~~~~~~~~
 
-Daily prices of **stocks** and of **funds** (ETFs, closed-end funds and ETNs). Which of the two tables holds
-an identifier is read from Sharadar's tickers table.
+Sharadar provides historical end of day **time-series data** for:
 
-- **Split adjusted**: open, high, low, close and volume
-- **Unadjusted**: close only
-- **Dividend and split adjusted**: close only
+- **Stocks**
+- **Funds** (ETFs, closed-end funds and ETNs)
+
+Each instrument supports:
+
+- **Price fields**:
+
+  - Open, High, Low, Close, Volume
+
+- **Adjustment types**:
+
+  - Split-adjusted, for every price field
+  - Raw (unadjusted), for the close only
+  - Dividend & split-adjusted, for the close only
 
 Fundamentals
 ~~~~~~~~~~~~~~~~~
 
-Income statement, balance sheet and cash flow of each filing, in the **as-reported** dimensions only (ARQ for
-quarterly runs, ARY for annual ones). These are point in time: each filing is dated on the day it was filed and
-its figures are not revised by later filings. Any other dimension Sharadar returns is dropped. Filings are read
-from their whole history, so the first day of a run already carries the filing in effect on it.
+Sharadar offers **as-reported financial statements** for public companies, available in:
 
-**Share counts and per-share values are adjusted for later splits**, even in the as-reported dimensions: AAPL's
-filing of January 2020 carries 17.7 billion shares and an EPS of 1.26, where Apple reported about 4.4 billion and
-4.99 before its 2020 split. Combine them with split adjusted prices, never with unadjusted ones.
+- **Quarterly**
+- **Annual**
 
-The reporting currency is taken from the fundamentals row of the tickers table, since the fundamentals table
-carries none; its stocks row holds the trading currency instead. Companies filing in a foreign currency report
-their fundamentals in it, like Toyota in yen, while their prices are in US dollars.
+The supported statement types include:
 
-Dividends and Splits
-~~~~~~~~~~~~~~~~~~~~~
+- Income Statements
+- Balance Sheets
+- Cash Flow Statements
 
-Both come from Sharadar's actions table.
+Statements are point in time: each filing is dated on the day it was filed and is not revised by later filings,
+so every day of a run carries the latest filing available on it.
 
-- Sharadar publishes each dividend **only adjusted for the splits after it**. That value fills the split
-  adjusted dividend, and the dividend as paid is left empty: AAPL's 0.77 of 2019 reads as 0.1925, after its
-  2020 4 for 1 split. Deriving the paid amount, if needed, belongs in a custom calculation.
+Corporate Actions
+~~~~~~~~~~~~~~~~~
+
+- **Dividends**: ex-dividend date and amount, published only adjusted for later splits. The amount as paid can
+  be derived in a custom calculation.
+- **Splits**: date, numerator and denominator of the split ratio.
 
 Technical Details
 ~~~~~~~~~~~~~~~~~
-
-- Every table is read through Sharadar's query API, 30 identifiers per request.
-- Rate limited requests wait for the reset Sharadar announces, and network or server errors are retried for
-  about four minutes.
-- An identifier that needs a table the subscription doesn't cover, like a fund on a stocks-only plan, is
-  skipped and logged, and the rest of the run carries on. A rejected API key stops the run.
-- Sharadar reuses ticker symbols: when a company is delisted or renamed, its old symbol may get a suffix and
-  later belong to another company. Keep the identifiers of a run current with Sharadar's tickers table.
-- Sharadar revises past data, as each row's ``lastupdated`` shows, so the same run made on another day may
-  return different figures. Keep the date a run was made alongside its output.
 
 Authentication is managed using an API key placed in the `.env` file via the variable:
 
@@ -166,7 +170,7 @@ def get_field_info(value_obj: Any) -> tuple[str | tuple[str, ...], bool]:
     return str(value_obj), False
 
 
-def extract_all_fields() -> tuple[dict[str, dict[str, dict[Any, Any]]], dict[str, str]]:
+def extract_all_fields() -> tuple[dict[str, dict[str, dict[Any, Any]]], dict[str, tuple[str, str]]]:
     sharadar_module = load_sharadar_module()
     if sharadar_module is None:
         return {}, {}
@@ -210,7 +214,7 @@ def format_definition(
         *,
         is_list: bool,
         tables: set[str],
-        derived_columns: dict[str, str],
+        derived_columns: dict[str, tuple[str, str]],
 ) -> str:
     table_tooltip = " | ".join(sorted(tables))
 
@@ -219,7 +223,8 @@ def format_definition(
         return f"[ {', '.join(inner_items)} ] `* <sharadar_preprocessed_legend_>`_"
 
     if raw_content in derived_columns:
-        return f":abbr:`{derived_columns[raw_content]} ({table_tooltip})` `† <sharadar_derived_legend_>`_"
+        derived_label, derived_table = derived_columns[raw_content]
+        return f":abbr:`{derived_label} ({derived_table})` `† <sharadar_derived_legend_>`_"
 
     return f":abbr:`{raw_content} ({table_tooltip})`"
 
@@ -283,7 +288,7 @@ def generate_sharadar_fields_rst(app: Sphinx) -> None:
             r"\* Fields enclosed in brackets [ ... ] with an asterisk indicate preprocessed tags." + "\n\n"
         )
         f.write(".. _sharadar_derived_legend:\n\n")
-        f.write(r"† Values computed by the provider rather than read as published." + "\n")
+        f.write(r"† Fields read from another Sharadar table than the rest of their section." + "\n")
 
 
 def setup(app: Sphinx) -> dict[str, Any]:
