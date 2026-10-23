@@ -6,7 +6,7 @@ from kaxanuk.data_curator.entities import Configuration
 from kaxanuk.data_curator.exceptions import ConfigurationError
 
 
-class TestPostInit:
+class TestDunderPostInit:
     @pytest.mark.parametrize(
         'column',
         [
