@@ -686,12 +686,10 @@ class DataColumn:
         ):
             return null_result
 
+        # dividing by integers returns floats, as in Python's own division
         if (
             pyarrow.types.is_decimal(self.type)
-            or (
-                pyarrow.types.is_integer(self.type)
-                and isinstance(dividend, decimal.Decimal)
-            )
+            or pyarrow.types.is_integer(self.type)
         ):
             divisor = pyarrow.compute.cast(
                 self.array,
@@ -850,15 +848,10 @@ class DataColumn:
         else:
             masked_divisor = divisor
 
+        # dividing integers returns floats, as in Python's own division
         if (
             pyarrow.types.is_decimal(self.type)
-            or (
-                pyarrow.types.is_integer(self.type)
-                and (
-                    isinstance(divisor, decimal.Decimal)
-                    or pyarrow.types.is_integer(divisor.type)
-                )
-            )
+            or pyarrow.types.is_integer(self.type)
         ):
             dividend = self.array.cast(
                 pyarrow.float64()

@@ -334,6 +334,21 @@ class TestDunderFloordiv:
             result
         )
 
+    def test_int_column_floordiv_int_scalar(self):
+        column = DataColumn.load(
+            [5, 7, 9]
+        )
+        expected = DataColumn.load(
+            [2.0, 3.0, 4.0]
+        )
+        result = column // 2
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            approximate_floats=True,
+        )
+
 
 # noinspection DuplicatedCode
 class TestDunderMod:
@@ -379,6 +394,21 @@ class TestDunderMod:
             expected,
             approximate_floats=True,
             equal_nulls=True,
+        )
+
+    def test_int_column_modulo_int_scalar(self):
+        column = DataColumn.load(
+            [5, 7, 9]
+        )
+        expected = DataColumn.load(
+            [1.0, 1.0, 1.0]
+        )
+        result = column % 2
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            approximate_floats=True,
         )
 
 
@@ -647,6 +677,21 @@ class TestDunderRfloordiv:
             result
         )
 
+    def test_int_scalar_floordiv_int_column(self):
+        column = DataColumn.load(
+            [3, 4]
+        )
+        expected = DataColumn.load(
+            [3.0, 2.0]
+        )
+        result = 10 // column
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            approximate_floats=True,
+        )
+
 
 # noinspection DuplicatedCode
 class TestDunderRmod:
@@ -692,6 +737,21 @@ class TestDunderRmod:
             expected,
             approximate_floats=True,
             equal_nulls=True,
+        )
+
+    def test_int_scalar_modulo_int_column(self):
+        column = DataColumn.load(
+            [3, 4]
+        )
+        expected = DataColumn.load(
+            [1.0, 2.0]
+        )
+        result = 10 % column
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            approximate_floats=True,
         )
 
 
@@ -962,6 +1022,21 @@ class TestDunderRtruediv:
 
         assert pyarrow.types.is_floating(result.type)
 
+    def test_int_scalar_divided_by_int_column(self):
+        column = DataColumn.load(
+            [2, 4, 5]
+        )
+        expected = DataColumn.load(
+            [5.0, 2.5, 2.0]
+        )
+        result = 10 / column
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            approximate_floats=True,
+        )
+
 
 # noinspection DuplicatedCode
 class TestDunderSub:
@@ -1231,6 +1306,36 @@ class TestDunderTruediv:
         result = column1 / column2
 
         assert pyarrow.types.is_floating(result.type)
+
+    def test_int_column_divided_by_int_scalar(self):
+        column = DataColumn.load(
+            [2, 4, 6]
+        )
+        expected = DataColumn.load(
+            [1.0, 2.0, 3.0]
+        )
+        result = column / 2
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            approximate_floats=True,
+        )
+
+    def test_int_column_divided_by_float_scalar(self):
+        column = DataColumn.load(
+            [3, 6]
+        )
+        expected = DataColumn.load(
+            [2.0, 4.0]
+        )
+        result = column / 1.5
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            approximate_floats=True,
+        )
 
 
 # noinspection DuplicatedCode
