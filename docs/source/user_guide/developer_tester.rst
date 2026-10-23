@@ -36,7 +36,7 @@ Inside the repository directory (where `pyproject.toml` resides), install the pr
 
    pdm run install_dev
 
-At this point, your virtual environment (managed by PDM) contains all runtime and dev tools required to lint, test, and build documentation. :contentReference[oaicite:0]{index=0}
+At this point, your virtual environment (managed by PDM) contains all runtime and dev tools required to lint, test, and build documentation.
 
 Development Tasks
 -----------------
@@ -44,15 +44,15 @@ Development Tasks
 Example Scripts
 ~~~~~~~~~~~~~~~
 
-You can find example entry scripts under the `examples/` subdirectory. To experiment:
+You can generate the example Excel entry script with the CLI. To experiment:
 
 .. code-block:: bash
 
-   # Copy an example script to your working directory
-   cp examples/example_run.py ~/my_workdir/
+   # Initialize the entry script and its configuration in your working directory
    cd ~/my_workdir/
+   kaxanuk.data_curator init excel
    # Modify and run it as needed
-   python example_run.py
+   python __main__.py
 
 Run the Linter
 ~~~~~~~~~~~~~~
@@ -63,7 +63,7 @@ Ensure code style and formatting standards by running:
 
    pdm run lint
 
-This invokes the configured linter (e.g., Ruff, Mypy) across the codebase and flags any violations. :contentReference[oaicite:1]{index=1}
+This invokes the configured linter (Ruff) across the codebase and flags any violations.
 
 Run the Test Suite with Coverage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -74,7 +74,7 @@ Execute all automated tests and generate a coverage report:
 
    pdm run test
 
-The test suite leverages `pytest` and is configured to produce coverage statistics. Ensure that any new code you add is covered by unit tests to maintain 100% coverage on modified or added lines. :contentReference[oaicite:2]{index=2}
+The test suite leverages `pytest` and is configured to produce coverage statistics. Ensure that any new code you add is covered by unit tests to maintain 100% coverage on modified or added lines.
 
 Contributing Pull Requests
 ---------------------------
@@ -86,15 +86,15 @@ Before submitting a pull request, confirm mandatory criteria are met:
 - The entire test suite passes without errors.
 - Code coverage does not decrease; any new or modified code must include corresponding tests covering 100% of those changes.
 
-Following these guidelines helps maintain code quality and ensures your contribution is accepted. :contentReference[oaicite:3]{index=3}
+Following these guidelines helps maintain code quality and ensures your contribution is accepted.
 
 Next Steps
 ----------
 
 - **Explore Example Tests**
-  Examine existing test modules (e.g., under `tests/`) to understand patterns for writing new unit tests. :contentReference[oaicite:4]{index=4}
-- **Integrate CI/CD**
-  Configure GitHub Actions (or another CI system) to automatically run `pdm run lint` and `pdm run test` on pull requests.
+  Examine existing test modules (e.g., under `tests/`) to understand patterns for writing new unit tests.
+- **Continuous Integration**
+  GitHub Actions already runs ruff and pytest on pushes and pull requests to ``main`` and ``dev`` (``.github/workflows/main.yml``).
 - **Update Coverage Tools**
   If needed, adjust `pytest` and coverage settings (e.g., in `pyproject.toml`) to ensure coverage reports meet project standards.
 - **Maintain Code Quality**

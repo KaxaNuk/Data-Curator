@@ -14,7 +14,7 @@ Use Pip to install the library from PyPI:
 
    pip install --upgrade kaxanuk.data_curator
 
-This command installs `kaxanuk.data_curator` along with all its dependencies (e.g., `openpyxl`, `pandas`, `pyarrow`, `pandas_ta`, etc.). :contentReference[oaicite:0]{index=0}
+This command installs `kaxanuk.data_curator` along with all its dependencies (e.g., `openpyxl`, `pandas`, `pyarrow`, etc.).
 
 Create an Entry Script
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -22,8 +22,8 @@ Create an Entry Script
 Create a new Python file (e.g., ``run_data_curator.py``) in your project directory. The script must:
 
 - Import the `kaxanuk.data_curator` package.
-- Construct a `Configuration` object (from ``kaxanuk.data_curator.entities``) that mirrors the settings you would normally set in ``parameters_datacurator.xlsx``.
-- Instantiate one or more data provider classes (implementing the appropriate interfaces).
+- Construct a `Configuration` object (from ``kaxanuk.data_curator.entities``) that mirrors the settings you would normally set in ``data_curator_parameters.xlsx``.
+- Instantiate one or more data provider classes (implementing ``DataProviderInterface``).
 - Instantiate the output handler(s) you wish to use (e.g., CSV or Parquet).
 - Call the `kaxanuk.data_curator.main(...)` function with the assembled arguments.
 
@@ -31,42 +31,42 @@ Below is a minimal example:
 
 .. code-block:: python
 
+   import datetime
+   import logging
+
+   import kaxanuk.data_curator
+   from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
+   from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
+   from kaxanuk.data_curator.data_providers import FinancialModelingPrep
    from kaxanuk.data_curator.entities import Configuration
-   from kaxanuk.data_curator.data_providers import AlphaVantageProvider
-   from kaxanuk.data_curator.output_handlers import ParquetOutputHandler
-   from kaxanuk.data_curator import main as run_data_curator
+   from kaxanuk.data_curator.output_handlers import ParquetOutput
 
    # 1. Build a Configuration object
-   config = Configuration(
-       market_data_provider_name="AlphaVantage",
-       market_data_api_key="YOUR_ALPHA_VANTAGE_KEY",
-       fundamental_data_provider_name="AlphaVantage",
-       fundamental_data_api_key="YOUR_ALPHA_VANTAGE_KEY",
-       start_date="2024-01-01",
-       end_date="2024-12-31",
-       period="1d",
-       instruments=["AAPL", "MSFT"],
-       output_format="parquet",
-       logger_level="INFO"
+   configuration = Configuration(
+       start_date=datetime.date(2024, 1, 1),
+       end_date=datetime.date(2024, 12, 31),
+       period="quarterly",
+       identifiers=("AAPL", "MSFT"),
+       columns=("m_date", "m_close", "fis_revenues"),
    )
 
-   # 2. Instantiate data providers
-   #    (Alternatively, pass provider names in Configuration and let Data Curator instantiate)
-   market_dp = AlphaVantageProvider(api_key=config.market_data_api_key)
-   fundamental_dp = AlphaVantageProvider(api_key=config.fundamental_data_api_key)
+   # 2. Instantiate a data provider, which can supply several data blocks
+   data_provider = FinancialModelingPrep(api_key="YOUR_FMP_API_KEY")
 
    # 3. Instantiate an output handler
-   output_handler = ParquetOutputHandler(output_dir="./Output")
+   output_handler = ParquetOutput(output_base_dir="./Output")
 
-   # 4. Call the main function
-   run_data_curator(
-       configuration=config,
-       market_data_provider=market_dp,
-       fundamental_data_provider=fundamental_dp,
+   # 4. Call the main function, mapping each data block to its data provider
+   kaxanuk.data_curator.main(
+       configuration=configuration,
+       data_block_providers={
+           MarketDailyDataBlock: data_provider,
+           FundamentalsDataBlock: data_provider,
+       },
        output_handlers=[output_handler],
-       custom_calculation_modules=None,     # or a list of Python module names
-       logger_level=config.logger_level,
-       logger_format="%(asctime)s %(levelname)s: %(message)s"
+       custom_calculation_modules=None,     # or a list of imported Python modules
+       logger_level=logging.INFO,
+       logger_format="%(asctime)s %(levelname)s: %(message)s",
    )
 
 Save the script and run it:
@@ -75,27 +75,30 @@ Save the script and run it:
 
    python run_data_curator.py
 
-Data Curator will execute according to the supplied `Configuration`, fetch data from the specified providers, apply any predefined or custom calculations, and write output files into the ``Output/`` directory. :contentReference[oaicite:1]{index=1}
+Data Curator will execute according to the supplied `Configuration`, fetch data from the specified providers, apply any predefined or custom calculations, and write output files into the ``Output/`` directory.
 
 Implement a Custom Data Provider
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-If you need to integrate a data source not supported out-of-the-box, create a class that implements the financial data provider protocol. Your class must inherit from:
+If you need to integrate a data source not supported out-of-the-box, create a class that implements the data provider interface. Your class must inherit from:
 
-``kaxanuk.data_curator.data_providers.FinancialDataProviderInterface``
+``kaxanuk.data_curator.data_providers.DataProviderInterface``
 
-and implement all required methods for each data block it supports (e.g., market data, fundamentals, dividends, splits, etc.). :contentReference[oaicite:2]{index=2}
+and return the data of each data block it supports (e.g., market data, fundamentals, dividends, splits, etc.) from ``get_data_block_data``.
 
 Below is a skeleton example illustrating the required structure:
 
 .. code-block:: python
 
-   from datetime import date
-   from typing import List, Dict
-   from pandas import DataFrame
-   from kaxanuk.data_curator.data_providers import FinancialDataProviderInterface
+   from kaxanuk.data_curator.data_blocks.base_data_block import BaseDataBlock
+   from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
+   from kaxanuk.data_curator.data_providers import DataProviderInterface
+   from kaxanuk.data_curator.entities import (
+       BaseDataEntity,
+       Configuration,
+   )
 
-   class MyCustomProvider(FinancialDataProviderInterface):
+   class MyCustomProvider(DataProviderInterface):
        """
        Example custom provider that fetches data from a hypothetical REST API.
        """
@@ -104,99 +107,105 @@ Below is a skeleton example illustrating the required structure:
            self.api_key = api_key
            # Initialize any HTTP clients, base URLs, etc.
 
-       def get_market_data(self, instrument: str, start_date: date, end_date: date, period: str) -> DataFrame:
+       @classmethod
+       def get_data_block_endpoint_tag_map(cls):
            """
-           Fetch time series market data for the given ticker between start_date and end_date.
-           Must return a Pandas DataFrame with columns: 'date', 'open', 'high', 'low', 'close', 'volume', etc.
+           Map each data block this provider supplies to the tags of its endpoint fields (empty if unused).
+           """
+           return {
+               MarketDailyDataBlock: {},
+           }
+
+       def get_data_block_data(
+           self,
+           *,
+           main_identifier: str,
+           data_block: type[BaseDataBlock],
+           configuration: Configuration,
+       ) -> BaseDataEntity:
+           """
+           Fetch the data block's data for main_identifier between configuration.start_date and end_date.
+           Must return the data block's main entity (e.g., MarketData for MarketDailyDataBlock).
            """
            # 1. Build API request URL
            # 2. Issue request and parse JSON or CSV
-           # 3. Construct a DataFrame with the required schema
-           # 4. Return the DataFrame (indexed or column-based, as per Data Curator’s expectations)
+           # 3. Construct the entities, which validate their own fields
            raise NotImplementedError
 
-       def get_fundamental_data(self, instrument: str, start_date: date, end_date: date) -> DataFrame:
+       def initialize(self, *, configuration: Configuration) -> None:
            """
-           Fetch fundamental (income statement, balance sheet) data.
-           Must return a DataFrame with one row per reporting period and columns like 'total_revenue', 'net_income', etc.
+           Run any setup logic before processing the identifiers, like bulk downloads.
            """
-           raise NotImplementedError
 
-       def get_dividends(self, instrument: str, start_date: date, end_date: date) -> DataFrame:
+       def validate_api_key(self) -> bool | None:
            """
-           Optionally fetch dividend history. Must return a DataFrame with columns: 'date', 'dividend_amount'.
+           Return whether the API key is valid, or None if the provider doesn't use API keys.
            """
-           return DataFrame(columns=["date", "dividend_amount"])
-
-       def get_splits(self, instrument: str, start_date: date, end_date: date) -> DataFrame:
-           """
-           Optionally fetch stock split history. Must return a DataFrame with columns: 'date', 'split_ratio'.
-           """
-           return DataFrame(columns=["date", "split_ratio"])
-
-       # If your provider offers additional alternative data (e.g., earnings transcripts, news),
-       # implement those methods as documented in the interface.
+           return None
 
    # Example usage in your entry script:
-   # from run_data_curator import config
-   # custom_provider = MyCustomProvider(api_key=config.market_data_api_key)
-   # run_data_curator(..., market_data_provider=custom_provider, fundamental_data_provider=custom_provider, ...)
+   # custom_provider = MyCustomProvider(api_key="YOUR_API_KEY")
+   # kaxanuk.data_curator.main(..., data_block_providers={MarketDailyDataBlock: custom_provider}, ...)
 
 Implement a Custom Data Block
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A “data block” in Data Curator refers to a specific type of data (e.g., market data, dividends, fundamentals). If you want to define a new data block—such as alternative metrics from a third-party API—you need to:
+A “data block” in Data Curator packages a specific type of data (e.g., market data, dividends, fundamentals) with the entities holding it and the prefixes of its columns (e.g., ``m_``). If you want to customize a data block—such as adding metrics from a third-party API—you need to:
 
-- Create a new class that implements the corresponding Data Block interface (e.g., ``MarketDataBlockInterface``, ``FundamentalDataBlockInterface``) found under ``kaxanuk.data_curator.data_providers`` or ``kaxanuk.data_curator.features``.
-- Register your custom block within the provider or via a plugin mechanism.
+- Create its entity classes, as frozen dataclasses inheriting from ``kaxanuk.data_curator.entities.BaseDataEntity``.
+- Create a new class inheriting from ``kaxanuk.data_curator.data_blocks.base_data_block.BaseDataBlock``.
 
 The minimal steps are:
 
-1. Identify the interface for the block you wish to implement. For example, if you want a new “alternative factors” block, find or define:
-
-   ``kaxanuk.data_curator.data_providers.AlternativeDataBlockInterface``
-   (or create a new protocol in ``data_providers`` and add it to the provider registration logic).
-
-2. Inherit from that interface and implement the required methods:
+1. Declare the entities, whose row fields become columns under their prefix (e.g., ``m_short_interest``):
 
    .. code-block:: python
 
-      from pandas import DataFrame
-      from kaxanuk.data_curator.data_providers import AlternativeDataBlockInterface
+      import dataclasses
+      import datetime
+      import decimal
 
-      class MyAlternativeBlock(AlternativeDataBlockInterface):
-          """
-          Provides alternative financial metrics not covered by standard blocks.
-          """
+      from kaxanuk.data_curator.data_blocks.base_data_block import BaseDataBlock
+      from kaxanuk.data_curator.entities import BaseDataEntity, MainIdentifier
 
-          def fetch(self, instrument: str, start_date, end_date) -> DataFrame:
-              """
-              Must return a DataFrame with an index or column labelled 'date' and one column per metric.
-              """
-              # 1. Call your data source
-              # 2. Parse results into a DataFrame indexed by date
-              # 3. Return the DataFrame
-              raise NotImplementedError
+      @dataclasses.dataclass(frozen=True, slots=True)
+      class MyMarketDataRow(BaseDataEntity):
+          date: datetime.date
+          close: decimal.Decimal | None
+          short_interest: decimal.Decimal | None
 
-   3. Modify your custom provider so that it returns an instance of your new block when Data Curator requests it. Typically, providers expose a method like:
+      @dataclasses.dataclass(frozen=True, slots=True)
+      class MyMarketData(BaseDataEntity):
+          main_identifier: MainIdentifier
+          rows: dict[str, MyMarketDataRow]     # keyed by their 'YYYY-MM-DD' date
 
-      ``get_alternative_data_block(self, instrument, start_date, end_date) -> DataFrame``
+2. Declare the data block, mapping each column prefix to its entity:
 
-      Ensure Data Curator’s registry (or your entry script) knows to use your block.
+   .. code-block:: python
 
-Once your custom block class is correctly implemented and registered, Data Curator will include those columns in the final output under a new “Alternative Data” section for each instrument.
+      class MyMarketDailyDataBlock(BaseDataBlock):
+          clock_sync_field = MyMarketDataRow.date
+          grouping_identifier_field = MyMarketData.main_identifier
+          main_entity = MyMarketData
+          prefix_entity_map = {
+              'm': MyMarketDataRow,
+          }
+
+3. Return its ``main_entity`` from your provider's ``get_data_block_data``, add it to its ``get_data_block_endpoint_tag_map``, and pass it as a ``data_block_providers`` key to ``main``.
+
+A data block shadows any built-in one sharing its prefixes, so this one replaces ``MarketDailyDataBlock`` for the whole run, while one with new prefixes (e.g., ``alt``) adds its columns alongside the built-in ones.
 
 Troubleshooting & Tips
 ~~~~~~~~~~~~~~~~~~~~~~
 
 - **Missing Methods in Your Custom Provider?**
-  Ensure your class inherits exactly from `FinancialDataProviderInterface` and that you have implemented all abstract methods. A missing method will cause a runtime error. :contentReference[oaicite:3]{index=3}
-- **DataFrame Schema Mismatch?**
-  Verify that DataFrame columns match expected names (e.g., “date”, “open”, “close”, “total_revenue”, etc.). Misnamed columns will be dropped or cause errors during merging.
+  Ensure your class inherits from `DataProviderInterface` and that you have implemented all abstract methods. A missing method will cause a runtime error.
+- **Entity Validation Errors?**
+  The built-in entities validate their fields on creation, so check your provider fills them with the expected types (e.g., ``datetime.date`` dates, ``decimal.Decimal`` prices). Custom entities only validate what their own ``__post_init__`` checks.
 - **Logger Configuration**
-  By default, `main(...)` uses simple logging to stdout. To write logs to a file, pass `logger_file="path/to/logfile.log"` and adjust `logger_format`.
+  By default, `main(...)` uses simple logging to stderr. To write logs to a file, pass `logger_file="path/to/logfile.log"` and adjust `logger_format`.
 - **Custom Modules**
-  To include additional Python modules for custom calculations, pass a list of module paths (as strings) to the `custom_calculation_modules` parameter in `main(...)`. Those modules must export functions prefixed with `c_`.
+  To include additional Python modules for custom calculations, pass a list of the imported modules to the `custom_calculation_modules` parameter in `main(...)`. Those modules must export functions prefixed with `c_`.
 - **Runtime Dependencies**
   If your custom provider or block uses external libraries (e.g., `requests`, `numpy`), confirm they are installed in your environment before running the entry script.
 
@@ -204,13 +213,13 @@ Next Steps
 ~~~~~~~~~~
 
 - **Explore Built-in Examples**
-  Review the example entry scripts under the “examples” directory in the GitHub repository for patterns you can adapt. :contentReference[oaicite:4]{index=4}
+  Review the Excel entry script template ``templates/data_curator/__main__.py`` in the GitHub repository for patterns you can adapt.
 - **Version Control**
   Commit your entry script, any custom provider/block modules, and a minimal requirements file (e.g., ``requirements.txt``) to track your integration logic.
 - **Automated Testing**
-  Write unit tests for your custom provider and block classes (e.g., using `pytest`) to ensure they return correctly formatted DataFrames even when data is missing or malformed.
+  Write unit tests for your custom provider and block classes (e.g., using `pytest`) to ensure they return correctly populated entities even when data is missing or malformed.
 - **Deploy in a Container**
-  If you later decide to use a containerized workflow, package your custom modules into a directory that can be mounted to `/app/Config` or adjust container `PYTHONPATH` so that Data Curator recognizes your components at runtime.
+  If you later decide to use a containerized workflow, mount your project directory to `/app` with your entry script saved as `__main__.py`, which the container runs on each start, importing your custom modules from it.
 
 See also
 --------
