@@ -9,17 +9,6 @@ import re
 from kaxanuk.data_curator.exceptions import ConfigurationError
 
 
-# @todo get this from the data blocks
-CONFIGURATION_COLUMN_PREFIXES = {
-    'c': 'calculations',
-    'd': 'dividends',
-    'f': 'fundamental_data',
-    'fbs': 'fundamental_data_balance_sheet',
-    'fcf': 'fundamental_data_cash_flow',
-    'fis': 'fundamental_data_income',
-    'm': 'market_data',
-    's': 'split_data',
-}
 # @todo this goes into the fundamentals data block
 CONFIGURATION_PERIODS = (
     'annual',
@@ -58,9 +47,10 @@ class Configuration:
 
             raise ConfigurationError(msg)
 
-        valid_prefixes = "|".join(CONFIGURATION_COLUMN_PREFIXES.keys())
+        # only the prefixed format is checked here, as the valid prefixes depend on the data blocks of each run,
+        # which ColumnBuilder validates the columns against
         column_pattern = re.compile(
-            r"^(" + valid_prefixes + r")_[A-Za-z0-9_]+$"
+            r"^[a-z][a-z0-9]*_[A-Za-z0-9_]+$"
         )
         incorrect_columns = [
             column for column in self.columns
