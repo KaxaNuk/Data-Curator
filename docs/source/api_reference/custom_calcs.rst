@@ -19,6 +19,7 @@ Each custom function:
 - Must start with the prefix ``c_``.
 - Can have any valid Python name after the prefix.
 - Receives **`DataColumn`** objects as arguments.
+- Can also take a ``configuration`` parameter, which receives the run's ``Configuration`` object.
 - Must return an iterable (preferably a `DataColumn`, `pyarrow.Array`) of the **same length**.
 - Functions can be composed, they may be used directly or as intermediate steps within other calculations.
 
@@ -29,20 +30,20 @@ Here’s a simple example of a custom function that calculates net margin:
 
 .. code-block:: python
 
-   def c_net_margin(net_income, revenue):
-       return net_income / revenue
+   def c_net_margin(fis_net_income, fis_revenues):
+       return fis_net_income / fis_revenues
 
-When this function is called, `net_income` and `revenue` are passed as `DataColumn` objects, so this function supports operations like `+`, `-`, `/`, comparisons, and null-safe logic automatically.
+When this function is called, `fis_net_income` and `fis_revenues` are passed as `DataColumn` objects, so this function supports operations like `+`, `-`, `/`, comparisons, and null-safe logic automatically.
 
 Why DataColumn?
 ---------------
 
-All arguments to your functions are instances of :ref:`data_column`. This provides:
+All column arguments to your functions are instances of :ref:`data_column`. This provides:
 
 - Arithmetic like `col1 + col2`
 - Logical operators like `col1 > 5`
 - Null-safe operations (any operation involving a null yields null)
-- Seamless conversion to pandas, pyarrow, or numpy if needed
+- Seamless conversion to pandas or pyarrow if needed
 
 Usage in Excel
 --------------

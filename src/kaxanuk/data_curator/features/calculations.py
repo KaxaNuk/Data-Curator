@@ -3,8 +3,7 @@ Features Calculation Functions.
 
 Here you can find how we calculate all features from market, fundamental and alternative data.
 You can implement your own columns by injecting a custom_calculations module into data_curator.main().
-Each output column corresponds to a function with the exact same name but prepended with "c_".
-For example column "my_feature" corresponds to function "c_my_feature".
+Each output column starting with "c_" corresponds to a function with the exact same name.
 
 Every function defines as its parameters the names of the columns it uses as input, which are passed
 to it as a DataColumn object wrapping a pyarrow array. You can use basic arithmetic on the DataColumn's

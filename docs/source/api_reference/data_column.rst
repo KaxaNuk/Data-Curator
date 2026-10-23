@@ -95,7 +95,7 @@ These work across multiple `DataColumn` objects, pyarrow scalars or booleans. Op
 .. code-block:: python
 
    DataColumn.boolean_and(col1 > 0, col2 < 100)
-   DataColumn.boolean_or(col1.is_null(), col2 == 5)
+   DataColumn.boolean_or(col1 < 0, col2 == 5)
 
 Equality Utilities
 ------------------
@@ -130,7 +130,7 @@ You can create and convert `DataColumn` objects easily:
 - `.to_pandas()` — convert to `pandas.Series`
 - `.to_pyarrow()` — convert to `pyarrow.Array`
 - `.type` — get native `pyarrow` type
-- `.is_null()` — detect if the array is fully null
+- `.is_null()` — whether the array has pyarrow's null type (as with columns that had no data at all)
 
 Advanced Behavior
 -----------------

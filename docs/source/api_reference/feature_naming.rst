@@ -60,10 +60,11 @@ Naming Rules for Calculated Features
 
 7. **Specifying Adjustment Types**
 
-   - If a feature depends on prices adjusted for dividends, splits, or both, append ``_dividend_and_split_adjusted`` at the end.
-   - Example:
+   - If a feature depends on adjusted prices, append ``_split_adjusted`` for split-only adjustments, or ``_dividend_and_split_adjusted`` for both.
+   - Examples:
 
-     - ``c_simple_moving_average_5d_dividend_and_split_adjusted``
+     - ``c_simple_moving_average_5d_close_split_adjusted``
+     - ``c_simple_moving_average_5d_close_dividend_and_split_adjusted``
 
 8. **Specifying Price Type**
 

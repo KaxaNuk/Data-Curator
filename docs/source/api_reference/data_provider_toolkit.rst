@@ -3,7 +3,7 @@
 Data Provider Toolkit
 =====================
 
-.. module:: data_provider_toolkit
+.. module:: kaxanuk.data_curator.services.data_provider_toolkit
 
 .. autoclass:: PreprocessedFieldMapping
    :members:

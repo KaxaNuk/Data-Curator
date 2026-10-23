@@ -17,7 +17,7 @@ Below is the entry point for the CLI. Run ``kaxanuk.data_curator --help`` to see
 
 .. click:: kaxanuk.data_curator.services.cli:cli
    :prog: kaxanuk.data_curator
-   :show-nested:
+   :nested: full
 
 Commands
 --------
@@ -87,6 +87,7 @@ Update only the entry script to the latest template:
 .. code-block:: console
 
    $ kaxanuk.data_curator update entry_script
+   Updating data curator configuration files for format: entry_script
    Updated entry script
 
 Install or run the Excel entry script (if ``__main__.py`` is missing, it will install; otherwise run):
@@ -94,4 +95,6 @@ Install or run the Excel entry script (if ``__main__.py`` is missing, it will in
 .. code-block:: console
 
    $ kaxanuk.data_curator autorun
+   Created directory Config
+   Created directory Output
    Installed all files successfully. Please configure the files in the Config folder and run again
