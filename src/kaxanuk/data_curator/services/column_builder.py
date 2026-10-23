@@ -999,6 +999,8 @@ class ColumnBuilder:
         """
         Infill the data rows, duplicating the previous row for each date in `dates` not present in `data_rows`.
 
+        Each date gets the latest data row dated on or before it, or None if there's no such row.
+
         Parameters
         ----------
         dates
@@ -1019,39 +1021,24 @@ class ColumnBuilder:
 
         # @todo save each repeating date's data as a separate Array, all consolidated inside a ChunkedArray
         infilled_data = {}
-        data_row_dates = iter(data_rows.keys())
-        previous_data_row_date = None
-        current_data_row_date = next(data_row_dates)
-
-        try:
-            first_date = next(dates)
-        except StopIteration as err:
-            raise ColumnBuilderNoDatesToInfillError from err
-
-        # Find the data_row right before the first date in dates
-        if first_date > current_data_row_date:
-            while first_date >= current_data_row_date:
-                try:
-                    previous_data_row_date = current_data_row_date
-                    current_data_row_date = next(data_row_dates)
-                    continue
-                except StopIteration:
-                    break
-
-        # need to fill in the first element as we already advanced the dates internal cursor
-        infilled_data[first_date] = data_rows.get(previous_data_row_date)
-
+        data_row_dates = list(data_rows.keys())
+        next_data_row_index = 0
+        latest_data_row_date = None
         for date in dates:
-            if date < current_data_row_date:
-                infilled_data[date] = data_rows.get(previous_data_row_date)
-            else:
-                try:
-                    previous_data_row_date = current_data_row_date
-                    current_data_row_date = next(data_row_dates)
-                except StopIteration:
-                    pass
+            # advance past every data row dated on or before this date, as several can fall between two dates
+            while (
+                next_data_row_index < len(data_row_dates)
+                and data_row_dates[next_data_row_index] <= date
+            ):
+                latest_data_row_date = data_row_dates[next_data_row_index]
+                next_data_row_index += 1
 
-                infilled_data[date] = data_rows.get(previous_data_row_date)
+            infilled_data[date] = data_rows.get(latest_data_row_date)
+
+        if len(infilled_data) < 1:
+            msg = "No dates were passed for infilling the data rows"
+
+            raise ColumnBuilderNoDatesToInfillError(msg)
 
         return infilled_data
 
