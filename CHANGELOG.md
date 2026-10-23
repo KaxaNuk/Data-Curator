@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.51.0] - 2026-10-23
+### Added
+- Sharadar data provider
+
+### Changed
+- `DividendDataRow.dividend` is now optional, but at least one of `dividend` or `dividend_split_adjusted` must be set, as there exist data providers that do not provide the unadjusted dividend
+- PyArrow requirement is now `>=26.0.0`, removing the `<24` cap now that the upstream regressions are fixed
+- Breaking: `kaxanuk.data_curator.main` now requires the `data_block_providers` parameter
+- Breaking: `ExcelConfigurator.__init__` now requires the `data_blocks` parameter
+- Breaking: `ExcelConfigurator` now only accepts parameters files of the current format, with any older format having to be updated by running `kaxanuk.data_curator update excel`
+- `Configuration` now only validates the format of its column names, leaving their prefixes to be validated against the data blocks of each run, so custom data blocks can declare new prefixes
+
+### Deprecated
+- `ExcelConfigurator.__new__` check that exits with instructions for updating outdated entry scripts that don't pass the `data_blocks` parameter, which will be removed in the next version
+
+### Removed
+- Deprecated `kaxanuk.data_curator.main` parameters `market_data_provider` and `fundamental_data_provider`
+- Deprecated `ExcelConfigurator` methods `get_market_data_provider` and `get_fundamental_data_provider`
+- Support for the deprecated parameters file format, which selected its data providers in the `General` sheet `market_data_provider` and `fundamental_data_provider` keys, and identified them by their snake_case aliases instead of their class names
+
+### Fixed
+- `ColumnBuilder` syncing of non-dated-factor data blocks like fundamentals to the master clock dates was dropping a data row dated on the first output date, and lagging behind when several data rows fell between two consecutive output dates
+- `DataColumn` division of an integer column by a Python number crashed with `AttributeError`, also breaking `//` and `%`, while dividing a number by an integer column returned truncated integers instead of floats
+
+
 ## [0.50.0] - 2026-08-28
 ### Added
 - `ColumnBuilder.get_sorted_required_columns` method for returning the required columns topologically sorted by dependency order

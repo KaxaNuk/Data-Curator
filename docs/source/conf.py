@@ -46,6 +46,7 @@ extensions = [
     "features_extension",
     "fmp_extension",
     "lseg_extension",
+    "sharadar_extension",
     "changelog_extension",
     'sphinx_click',
     "helpers_extension",

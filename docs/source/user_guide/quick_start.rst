@@ -48,7 +48,9 @@ The system can run either on your local Python environment or on Docker.
    .. code-block:: text
 
       your-project/
+      ├── __main__.py                       ← the entry script that runs the system
       ├── Config/
+      │   ├── custom_calculations.py        ← add your own calculated features here (optional)
       │   ├── data_curator_parameters.xlsx   ← edit this to configure tickers and settings
       │   └── .env                          ← add your API key here (if required)
       └── Output/                           ← your results will appear here

@@ -884,6 +884,66 @@ class TestPrivateInfillData:
             == expected_result
         )
 
+    def test_infill_data_rows_with_first_date_on_first_row(self):
+        data_rows = {
+            '2021-04-03': ExampleSubEntity1(
+                1,
+                'subtest1'
+            ),
+            '2021-04-06': ExampleSubEntity1(
+                2,
+                'subtest2'
+            ),
+        }
+        expected_result = {
+            '2021-04-03': data_rows['2021-04-03'],
+            '2021-04-04': data_rows['2021-04-03'],
+            '2021-04-06': data_rows['2021-04-06'],
+        }
+        dates = iter(
+            expected_result.keys()
+        )
+
+        assert (
+            ColumnBuilder._infill_data(
+                dates,
+                data_rows
+            )
+            == expected_result
+        )
+
+    def test_infill_data_rows_with_several_rows_between_dates(self):
+        data_rows = {
+            '2021-04-03': ExampleSubEntity1(
+                1,
+                'subtest1'
+            ),
+            '2021-04-04': ExampleSubEntity1(
+                2,
+                'subtest2'
+            ),
+            '2021-04-05': ExampleSubEntity1(
+                3,
+                'subtest3'
+            ),
+        }
+        expected_result = {
+            '2021-04-02': None,
+            '2021-04-06': data_rows['2021-04-05'],
+            '2021-04-07': data_rows['2021-04-05'],
+        }
+        dates = iter(
+            expected_result.keys()
+        )
+
+        assert (
+            ColumnBuilder._infill_data(
+                dates,
+                data_rows
+            )
+            == expected_result
+        )
+
     def test_infill_data_rows_without_dates(self):
         dates = iter({})
         data_rows = {

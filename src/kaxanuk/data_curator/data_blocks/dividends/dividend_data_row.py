@@ -5,6 +5,7 @@ import decimal
 from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
+    EntityValueError,
 )
 from kaxanuk.data_curator.services import entity_helper
 
@@ -15,7 +16,7 @@ class DividendDataRow(BaseDataEntity):
     ex_dividend_date: datetime.date
     record_date: datetime.date | None
     payment_date: datetime.date | None
-    dividend: decimal.Decimal
+    dividend: decimal.Decimal | None
     dividend_split_adjusted: decimal.Decimal | None
 
     def __post_init__(self):
@@ -27,3 +28,14 @@ class DividendDataRow(BaseDataEntity):
             ])
 
             raise EntityTypeError(msg)
+
+        if (
+            self.dividend is None
+            and self.dividend_split_adjusted is None
+        ):
+            msg = " ".join([
+                f"{self.__class__.__name__} requires at least one of dividend or dividend_split_adjusted",
+                f"for ex_dividend_date {self.ex_dividend_date!s}",
+            ])
+
+            raise EntityValueError(msg)

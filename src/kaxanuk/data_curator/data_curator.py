@@ -14,13 +14,8 @@ import inspect
 import logging
 import os
 import types
-import warnings
 
 from kaxanuk.data_curator.data_blocks.base_data_block import BaseDataBlock
-from kaxanuk.data_curator.data_blocks.dividends import DividendsDataBlock
-from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
-from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
-from kaxanuk.data_curator.data_blocks.splits import SplitsDataBlock
 from kaxanuk.data_curator.entities import (
     BaseDataEntity,
     Configuration,
@@ -46,17 +41,13 @@ from kaxanuk.data_curator.services.column_builder import ColumnBuilder
 def main(
     *,  # Force user to call function with keyword arguments
     configuration: Configuration,
+    data_block_providers: dict[type[BaseDataBlock], DataProviderInterface],
     output_handlers: list[OutputHandlerInterface],
     custom_calculation_modules: list[types.ModuleType]|None = None,
     logger_level: int = logging.WARNING,
     logger_format: str = "[%(levelname)s] %(message)s",
     logger_file: str | os.PathLike | None = None,
-    # @todo make this parameter required when we remove the deprecated ones:
-    data_block_providers: dict[type[BaseDataBlock], DataProviderInterface] | None = None,
     master_clock_data_block: type[BaseDataBlock] | None = None,
-    # deprecated parameters:
-    market_data_provider: DataProviderInterface | None = None,
-    fundamental_data_provider: DataProviderInterface | None = None,
 ) -> None:
     """
     Run the data curator system.
@@ -65,6 +56,10 @@ def main(
     ----------
     configuration
         Assembled Configuration entity containing the user's selected configurations
+    data_block_providers
+        Map of each data block class to the data provider object instance that will supply its data.
+        The same data provider can be assigned to any number of data blocks. Any custom data block shadows
+        each built-in data block sharing its prefixes, replacing it for the whole run.
     output_handlers
         Objects that will handle the columnar data output, will be run one by one per each main_identifier
     custom_calculation_modules
@@ -77,18 +72,10 @@ def main(
         The format for the logger messages. will be injected to logging.basicConfig()
     logger_file
         An optional logger file to write the logging messages to. Accepts the same argument types as `os.fspath`
-    data_block_providers
-        Map of each data block class to the data provider object instance that will supply its data.
-        The same data provider can be assigned to any number of data blocks. Any custom data block shadows
-        each built-in data block sharing its prefixes, replacing it for the whole run.
     master_clock_data_block
         The data block whose dates all the other data blocks' rows will be synced against, and which must be one
         of the data_block_providers keys. Defaults to the built-in market daily data block, or to the custom data
         block that shadowed it.
-    market_data_provider
-        Deprecated, use data_block_providers instead. The market data provider object instance
-    fundamental_data_provider
-        Deprecated, use data_block_providers instead. The fundamental data provider object instance
 
     Returns
     -------
@@ -109,57 +96,6 @@ def main(
         level=logger_level,
         filename=logger_file
     )
-
-    if market_data_provider is not None:
-        warnings.warn(
-            "The main() market_data_provider parameter is deprecated and will be removed in a future version."
-            " Use data_block_providers instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-    if fundamental_data_provider is not None:
-        warnings.warn(
-            "The main() fundamental_data_provider parameter is deprecated and will be removed in a future version."
-            " Use data_block_providers instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-    # @todo remove this once we remove the deprecated parameters
-    if (
-        data_block_providers is not None
-        and (
-            market_data_provider is not None
-            or fundamental_data_provider is not None
-        )
-    ):
-        msg = " ".join([
-            "The deprecated market_data_provider and fundamental_data_provider parameters can't be passed to main",
-            "together with data_block_providers, as they'd be ignored. Assign their data blocks in",
-            "data_block_providers instead.",
-        ])
-
-        raise PassedArgumentError(msg)
-
-    if data_block_providers is None:
-        data_block_providers = {}
-        if not isinstance(market_data_provider, DataProviderInterface):
-            msg = "Market data provider passed to main doesn't implement DataProviderInterface"
-
-            raise InjectedDependencyError(msg)
-
-        data_block_providers[MarketDailyDataBlock] = market_data_provider
-
-        if fundamental_data_provider is not None:
-            if not isinstance(fundamental_data_provider, DataProviderInterface):
-                msg = "Fundamental data provider passed to main doesn't implement DataProviderInterface"
-
-                raise InjectedDependencyError(msg)
-
-            data_block_providers[DividendsDataBlock] = fundamental_data_provider
-            data_block_providers[FundamentalsDataBlock] = fundamental_data_provider
-            data_block_providers[SplitsDataBlock] = fundamental_data_provider
 
     if not isinstance(data_block_providers, dict):
         msg = " ".join([

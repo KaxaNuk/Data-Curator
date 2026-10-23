@@ -1,14 +1,15 @@
 """
 Integration tests for LsegWorkspace data provider.
 
-These tests exercise the full LsegWorkspace processing pipeline using real
+These tests exercise the full LsegWorkspace processing pipeline using
 pickle fixtures instead of the live LSEG API.  Only the API transport
 layer (session management, HTTP fetch, currency lookup) is mocked; all data
 parsing, filtering, deduplication, dividend-adjustment, and entity assembly
 run through the production code.
 
-Fixtures contain real LSEG bulk-format data for AAPL.OQ and NVDA.OQ
-covering market, fundamental, dividend, and split data.
+Fixtures replicate the LSEG bulk format for the made-up KXNA.OQ and KXNB.OQ,
+covering market, fundamental, dividend, and split data, with all their values
+altered so that no real LSEG data gets redistributed.
 """
 
 import datetime
@@ -47,7 +48,7 @@ PICKLE_FUNDAMENTAL_PATH = FIXTURE_DIR / "lseg_fundamental_test.pkl"
 PICKLE_SPLIT_PATH = FIXTURE_DIR / "lseg_split_test.pkl"
 PICKLE_DIVIDEND_PATH = FIXTURE_DIR / "lseg_dividend_test.pkl"
 
-FIXTURE_RICS = ("NVDA.OQ", "AAPL.OQ")
+FIXTURE_RICS = ("KXNB.OQ", "KXNA.OQ")
 
 START_DATE = datetime.date(2020, 1, 1)
 END_DATE = datetime.date(2026, 12, 31)
@@ -187,7 +188,7 @@ class TestMarketDataIntegration:
     def test_returns_market_data_entity(self, initialized_provider):
         """Verify get_market_data returns a properly typed MarketData entity."""
         result = initialized_provider.get_market_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
@@ -420,7 +421,7 @@ class TestFundamentalDataIntegration:
     def test_returns_fundamental_data_entity(self, initialized_provider):
         """Verify get_fundamental_data returns a FundamentalData entity."""
         result = initialized_provider.get_fundamental_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             period="quarterly",
             start_date=START_DATE,
             end_date=END_DATE,
@@ -636,7 +637,7 @@ class TestDividendDataIntegration:
     def test_returns_dividend_data_entity(self, initialized_provider):
         """Verify get_dividend_data returns a DividendData entity."""
         result = initialized_provider.get_dividend_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
@@ -764,7 +765,7 @@ class TestSplitDataIntegration:
     def test_returns_split_data_entity(self, initialized_provider):
         """Verify get_split_data returns a SplitData entity."""
         result = initialized_provider.get_split_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
@@ -819,43 +820,43 @@ class TestSplitDataIntegration:
                     f"Non-positive denominator {row.denominator} for {ric} on {key}"
                 )
 
-    def test_known_apple_four_for_one_split(self, initialized_provider):
-        """Verify the known AAPL 4:1 stock split on 2020-08-31 is present."""
+    def test_kxna_four_for_one_split(self, initialized_provider):
+        """Verify the KXNA 4:1 stock split on 2020-08-31 is present."""
         result = initialized_provider.get_split_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
         assert "2020-08-31" in result.rows, (
-            "Expected AAPL 4:1 split on 2020-08-31"
+            "Expected KXNA 4:1 split on 2020-08-31"
         )
         row = result.rows["2020-08-31"]
         assert row.numerator == 4
         assert row.denominator == 1
 
-    def test_known_nvidia_four_for_one_split(self, initialized_provider):
-        """Verify the known NVDA 4:1 stock split on 2021-07-20 is present."""
+    def test_kxnb_four_for_one_split(self, initialized_provider):
+        """Verify the KXNB 4:1 stock split on 2021-07-20 is present."""
         result = initialized_provider.get_split_data(
-            main_identifier="NVDA.OQ",
+            main_identifier="KXNB.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
         assert "2021-07-20" in result.rows, (
-            "Expected NVDA 4:1 split on 2021-07-20"
+            "Expected KXNB 4:1 split on 2021-07-20"
         )
         row = result.rows["2021-07-20"]
         assert row.numerator == 4
         assert row.denominator == 1
 
-    def test_known_nvidia_ten_for_one_split(self, initialized_provider):
-        """Verify the known NVDA 10:1 stock split on 2024-06-07 is present."""
+    def test_kxnb_ten_for_one_split(self, initialized_provider):
+        """Verify the KXNB 10:1 stock split on 2024-06-07 is present."""
         result = initialized_provider.get_split_data(
-            main_identifier="NVDA.OQ",
+            main_identifier="KXNB.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
         assert "2024-06-07" in result.rows, (
-            "Expected NVDA 10:1 split on 2024-06-07"
+            "Expected KXNB 10:1 split on 2024-06-07"
         )
         row = result.rows["2024-06-07"]
         assert row.numerator == 10
@@ -881,26 +882,26 @@ class TestSplitDataIntegration:
                 initialized_provider.cache[ric]
             )
 
-    def test_aapl_has_exactly_one_split(self, initialized_provider):
-        """Verify AAPL has exactly one split event in the fixture data."""
+    def test_kxna_has_exactly_one_split(self, initialized_provider):
+        """Verify KXNA has exactly one split event in the fixture data."""
         result = initialized_provider.get_split_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
         assert len(result.rows) == 1, (
-            f"Expected 1 AAPL split, got {len(result.rows)}"
+            f"Expected 1 KXNA split, got {len(result.rows)}"
         )
 
-    def test_nvda_has_exactly_two_splits(self, initialized_provider):
-        """Verify NVDA has exactly two split events in the fixture data."""
+    def test_kxnb_has_exactly_two_splits(self, initialized_provider):
+        """Verify KXNB has exactly two split events in the fixture data."""
         result = initialized_provider.get_split_data(
-            main_identifier="NVDA.OQ",
+            main_identifier="KXNB.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
         assert len(result.rows) == 2, (
-            f"Expected 2 NVDA splits, got {len(result.rows)}"
+            f"Expected 2 KXNB splits, got {len(result.rows)}"
         )
 
 
@@ -985,13 +986,13 @@ class TestCrossDomainIntegration:
     def test_dividend_adjustment_changes_prices(self, initialized_provider):
         """Verify dividend+split adjusted prices differ from split-only adjusted.
 
-        For AAPL.OQ, which pays quarterly dividends, the dividend adjustment
+        For KXNA.OQ, which pays quarterly dividends, the dividend adjustment
         should cause the div+split adjusted prices to be lower than (or equal
         to) the split-only adjusted prices for dates before the most recent
         ex-dividend date.
         """
         result = initialized_provider.get_market_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
@@ -1008,7 +1009,7 @@ class TestCrossDomainIntegration:
 
         assert some_differ, (
             "Expected dividend+split adjusted prices to differ from split-only "
-            "adjusted for AAPL.OQ (which pays dividends)"
+            "adjusted for KXNA.OQ (which pays dividends)"
         )
 
     def test_dividend_adjusted_prices_not_greater_than_split_adjusted(
@@ -1021,7 +1022,7 @@ class TestCrossDomainIntegration:
         adjusted price should never exceed the split-only adjusted price.
         """
         result = initialized_provider.get_market_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
@@ -1033,7 +1034,7 @@ class TestCrossDomainIntegration:
             if split_close is not None and div_split_close is not None:
                 assert div_split_close <= split_close + tolerance, (
                     f"Div+split close ({div_split_close}) > split close "
-                    f"({split_close}) for AAPL.OQ on {key}"
+                    f"({split_close}) for KXNA.OQ on {key}"
                 )
 
     def test_all_tickers_present_in_cache(self, initialized_provider):
@@ -1079,7 +1080,7 @@ class TestEdgeCases:
             start_date=START_DATE,
             end_date=END_DATE,
             period="quarterly",
-            identifiers=("AAPL.OQ",),
+            identifiers=("KXNA.OQ",),
             columns=("m_open", "m_close"),
         )
 
@@ -1107,7 +1108,7 @@ class TestEdgeCases:
         provider.initialize(configuration=config)
 
         market = provider.get_market_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
@@ -1115,7 +1116,7 @@ class TestEdgeCases:
         assert len(market.rows) > 0
 
         fundamental = provider.get_fundamental_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             period="quarterly",
             start_date=START_DATE,
             end_date=END_DATE,
@@ -1124,7 +1125,7 @@ class TestEdgeCases:
         assert len(fundamental.rows) > 0
 
         dividend = provider.get_dividend_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )
@@ -1132,7 +1133,7 @@ class TestEdgeCases:
         assert len(dividend.rows) > 0
 
         split = provider.get_split_data(
-            main_identifier="AAPL.OQ",
+            main_identifier="KXNA.OQ",
             start_date=START_DATE,
             end_date=END_DATE,
         )

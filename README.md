@@ -29,6 +29,7 @@ The system can run either on your local Python (versions `3.12`, `3.13`, or `3.1
 ## Supported Data Providers
 * Financial Modeling Prep (free and discounted plans available through [our referral link](https://site.financialmodelingprep.com/pricing-plans?couponCode=xss2L2sI))
 * LSEG Workspace (API key required)
+* Sharadar (API key required)
 * Yahoo Finance (requires installing a separate extension package, and doesn't support most data types)
 
 
@@ -91,6 +92,8 @@ If your data provider requires an API key, you need to pass it as an environment
 * Value: API key for the Financial Modeling Prep data provider, as a string.
 * Name: `KNDC_API_KEY_LSEG`
 * Value: API key for the LSEG Workspace data provider, as a string.
+* Name: `KNDC_API_KEY_SHARADAR`
+* Value: API key for the Sharadar data provider, as a string.
 
 #### Running the Container
 1. On the first run, the container will create the `Config` and `Output` subdirectories in the mounted volume, as well as
@@ -106,7 +109,7 @@ The `__main__.py` entry script is customizable, so you can implement your own da
 handlers, and inject them from there.
 
 You can also create your own calculated feature functions by adding them to the `Config/custom_calculations.py` file,
-and adding their function name to the `Columns` sheet in the `Config/data_curator_parameters.xlsx` file.
+and adding their function name to the `Output_Columns` sheet in the `Config/data_curator_parameters.xlsx` file.
 As long as the names start with the `c_` prefix, the system will use them as any other feature.
 
 Check the [API Reference](https://kaxanuk-data-curator.readthedocs.io/en/stable/api_reference/index.html) to learn how to easily implement your own calculated features.
@@ -117,10 +120,12 @@ We believe in the need for a stable API, and have expended considerable effort i
 possible before the first public release. We plan to avoid any changes that severely break backwards compatibility
 before version 1.0, with one major exception: The Data Blocks functionality.
 
-Data Blocks will generalize the link between the data providers and the feature column prefixes, which will allow users
+Data Blocks generalize the link between the data providers and the feature column prefixes, which allows users
 to create their own data providers and feature columns for any type of data from any source without having to modify
-the core code of the Data Curator. This will open the door to calculated features that incorporate all kinds of data,
+the core code of the Data Curator. This opens the door to calculated features that incorporate all kinds of data,
 like economic indicators, alternative data, financial indices and benchmarks, etc.
 
-Once Data Blocks are implemented, we will rapidly make any necessary adjustments to the public API, and when we're
-happy with it, we will work on finalizing the version 1.0 release.
+Data Blocks were partially implemented in version 0.50.0, but they still lack the clock-chain, which will automatically
+handle the different time scales of each data provider (intraday, daily, monthly, quarterly, yearly, etc.), and will
+probably require big API changes. Once it's implemented, we will rapidly make any necessary adjustments to the public
+API, and when we're happy with it, we will work on finalizing the version 1.0 release.

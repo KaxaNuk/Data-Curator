@@ -659,7 +659,7 @@ In your project's ``Config/.env`` file, add:
 
 .. code-block:: ini
 
-   KNDC_APP_KEY_LSEG=your_app_key_here
+   KNDC_API_KEY_LSEG=your_app_key_here
 
 **Step 3 - Keep Workspace open**
 

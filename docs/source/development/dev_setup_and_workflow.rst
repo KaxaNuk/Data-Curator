@@ -7,29 +7,22 @@ Setting Up Your Development Environment
 
    ::
 
-       git clone https://github.com/<your-username>/data-curator.git
-       cd data-curator
-       git remote add upstream https://github.com/data-curator/data-curator.git
+       git clone https://github.com/<your-username>/Data-Curator.git
+       cd Data-Curator
+       git remote add upstream https://github.com/KaxaNuk/Data-Curator.git
        git fetch upstream
 
-2. **Install PDM and Development Dependencies**
+2. **(Optional) Create a Virtual Environment**
+   Although PDM manages environments automatically, if you prefer a venv or Conda, activate it before the next step.
+
+3. **Install PDM, Data Curator in Editable Mode, and Development Dependencies**
 
    ::
 
        pip install pdm
-       pdm install
        pdm run install_dev
 
-3. **(Optional) Create a Virtual Environment**
-   Although PDM manages environments automatically, if you prefer a venv or Conda, activate it before running ``pdm install``.
-
-4. **Install Data Curator in Editable Mode**
-
-   ::
-
-       pdm run install_dev
-
-5. **Install the AI scaffolding for your AI coding assistant**
+4. **Install the AI scaffolding for your AI coding assistant**
    You can check the available targets at https://github.com/microsoft/apm/blob/main/docs/src/content/docs/concepts/primitives-and-targets.md#target-catalogue
    The following example is for Claude:
 
@@ -38,13 +31,13 @@ Setting Up Your Development Environment
        apm config set target claude
        apm install
 
-6. **Verify the Test Suite**
+5. **Verify the Test Suite**
 
    ::
 
        pdm run test
 
-7. **Run the Linter**
+6. **Run the Linter**
 
    ::
 

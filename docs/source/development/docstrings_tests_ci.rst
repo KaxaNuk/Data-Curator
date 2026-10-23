@@ -7,8 +7,7 @@ Implementing Changes and NumPy-Style Docstrings
 -----------------------------------------------
 
 - **Code Style**
-  - Conform to lint rules (``ruff``, ``flake8``).
-  - Format code with ``black``.
+  - Conform to the ``ruff`` lint rules (``pdm run lint``).
 
 - **NumPy-Style Docstrings**
 
@@ -36,7 +35,7 @@ Adding Tests
 ------------
 
 - All calculation logic must include tests.
-- Follow Testing Guide patterns.
+- Follow the :ref:`testing_guide` patterns.
 
 Committing and Pushing
 ----------------------
@@ -46,9 +45,11 @@ Committing and Pushing
   - ``feat(calc): add rolling_average function``
   - ``fix(calc): correct behavior on missing values``
 
-- ::
+- Every pull request needs to be based on a GitHub issue, so name your branch after its issue number:
 
-      git push origin feature/rolling-average-fix
+  ::
+
+      git push origin issues/<issue-number>
 
 Opening a Pull Request
 ----------------------
@@ -64,10 +65,10 @@ Opening a Pull Request
 Continuous Integration
 ----------------------
 
-- CI includes:
+- CI runs on pushes and pull requests to ``main`` and ``dev``, on Python 3.12, 3.13 and 3.14:
 
-  1. ``pdm run lint``
-  2. ``pdm run test`` with coverage
+  1. ``ruff check``
+  2. ``pytest``
 
 - For a change to be accepted:
   - All linters must pass.

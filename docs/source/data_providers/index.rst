@@ -5,12 +5,13 @@ Data Providers
 
 This section contains the list of data providers integrated into the library. These providers enable access to stock market data, financial statements, historical prices, and other financial information.
 
-Each provider is documented with its technical details, including the methods available for interacting with their APIs and how to use them effectively within the library.
+Each provider is documented with its technical details, including the data it supports, how to set it up and configure its API key, and the tags it maps.
 
 What you’ll find here:
 
 - :ref:`lseg` – LSEG Workspace integration, supported fields and setup
 - :ref:`fmp` – Financial Modeling Prep integration, supported fields and setup
+- :ref:`sharadar` – Sharadar integration, supported fields and setup
 - :ref:`data_tag_homogenization` – standard naming conventions applied to unify external tags
 
 .. toctree::
@@ -19,4 +20,5 @@ What you’ll find here:
 
    financial_modeling_prep
    lseg_workspace
+   sharadar
    data_tag_homogenization

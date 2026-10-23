@@ -27,9 +27,9 @@ Tag Construction Rules
    - Avoid acronyms and abbreviations unless they are industry standards.
    - Examples:
 
-     - `fis_revenue` (not `fis_rev`)
+     - `fis_revenues` (not `fis_rev`)
 
-     - `fbs_shareholders_equity` (not `fbs_sq_eq`)
+     - `fbs_stockholder_equity` (not `fbs_sq_eq`)
 
 3. **Natural Word Order**
    Words appear in the order they would naturally be spoken: modifiers (adjectives) come before the main noun.
@@ -49,15 +49,15 @@ Tag Construction Rules
    If a concept can represent two opposing subconcepts depending on sign (e.g., “Income (Loss)”), only the primary subconcept is used.
    - Example:
 
-     - Use `fis_income` rather than `fis_income_loss`.
+     - Use `fis_net_income` rather than `fis_net_income_loss`.
 
 
 6. **Restricted Use of “net”**
    Use “net” only when the subtraction is unambiguous (i.e., net after subtracting a directly opposing concept).
 
    - Examples:
-     - `fis_net_proceeds` implies proceeds minus direct costs.
-     - `fis_net_cash_from_operating_activities` implies operating cash inflows minus operating cash outflows.
+     - `fcf_net_debt_issuance_proceeds` implies debt issuance proceeds minus debt repayments.
+     - `fcf_net_cash_from_operating_activities` implies operating cash inflows minus operating cash outflows.
 
    If “net” would be ambiguous, spell out the offset using `_after_` when practical.
 
@@ -78,7 +78,7 @@ Tag Construction Rules
 
    - Example:
      - Taxonomy concept “Interest Income (Expense), Operating”
-     - Tag: `fi_interest_income_operating` (rather than the shorter `fis_interest_income_expense`).
+     - Tag: `fis_interest_income_operating` (rather than the shorter `fis_interest_income_expense`).
 
 9. **Singular vs. Plural**
    Use the singular form for a specific subtype (e.g., `fis_interest_expense`).

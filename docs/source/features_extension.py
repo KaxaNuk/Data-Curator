@@ -94,8 +94,7 @@ Each function corresponds to a feature that can be used as an output column in y
 
 To use one of these features:
 
-- Reference its name (without the ``c_`` prefix) in the ``Output_Columns`` sheet.
-- The system will automatically match it to the Python function ``c_<name>``.
+- Reference its full name, including the ``c_`` prefix, in the ``Output_Columns`` sheet.
 
 All functions operate on `DataColumn` inputs and return iterable values compatible with our internal data.
 

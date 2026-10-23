@@ -43,6 +43,7 @@ What you’ll find here:
 - :ref:`reporting_and_triage` – how to report issues and suggest new features
 - :ref:`dev_setup_and_workflow` – environment setup and branching workflow
 - :ref:`docstrings_tests_ci` – standards for documentation, testing, and continuous integration
+- :ref:`testing_guide` – how to write and run the tests
 
 .. toctree::
    :maxdepth: 2
@@ -51,3 +52,4 @@ What you’ll find here:
    reporting_and_triage
    dev_setup_and_workflow
    docstrings_tests_ci
+   testing_guide
