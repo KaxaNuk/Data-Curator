@@ -21,11 +21,6 @@ import openpyxl.worksheet.worksheet
 import packaging.version
 
 from kaxanuk.data_curator.data_blocks.base_data_block import BaseDataBlock
-# @todo: remove these built-in data block imports once we drop the deprecated parameter and file format support:
-from kaxanuk.data_curator.data_blocks.dividends import DividendsDataBlock
-from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
-from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
-from kaxanuk.data_curator.data_blocks.splits import SplitsDataBlock
 from kaxanuk.data_curator.entities import Configuration
 from kaxanuk.data_curator.exceptions import (
     ConfigurationError,
@@ -56,27 +51,6 @@ class ExcelConfigurator(ConfiguratorInterface):
         'data_block',
         'data_provider',
     )
-    # @todo: remove all the following DEPRECATED_ constants once we drop the deprecated parameter and file formats
-    # the data blocks each deprecated General sheet data provider key supplied:
-    DEPRECATED_DATA_BLOCKS_BY_PROVIDER_KEY : typing.Final = {
-        'fundamental_data_provider': (
-            DividendsDataBlock,
-            FundamentalsDataBlock,
-            SplitsDataBlock,
-        ),
-        'market_data_provider': (
-            MarketDailyDataBlock,
-        ),
-    }
-    # the data blocks assumed when the entry script doesn't inject any, replicating the deprecated hardcoded behavior:
-    DEPRECATED_DEFAULT_DATA_BLOCKS : typing.Final = (
-        DividendsDataBlock,
-        FundamentalsDataBlock,
-        MarketDailyDataBlock,
-        SplitsDataBlock,
-    )
-    # the oldest parameters file format version still supported, through the deprecated General sheet provider keys:
-    DEPRECATED_PARAMETERS_FORMAT_VERSION : typing.Final = '0.47.0'
     NONE_DATA_PROVIDER = 'none'
     SHEET_KEY_VALUES : typing.Final = {
         'General': (
@@ -106,19 +80,53 @@ class ExcelConfigurator(ConfiguratorInterface):
         }
     )
 
+    # @todo: remove this deprecated method in the next version
+    def __new__(
+        cls,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> typing.Self:
+        """
+        Create the instance, after checking that it got the data_blocks parameter that outdated entry scripts lack.
+
+        Runs before __init__ binds its parameters, so data_blocks can stay required in the __init__ signature
+        while its absence gets reported with instructions for updating the entry script, instead of a TypeError.
+
+        Deprecated, will be removed in the next version, after which a missing data_blocks will raise the
+        standard TypeError.
+
+        Parameters
+        ----------
+        *args
+            The positional arguments of the constructor call, left for __init__ to handle
+        **kwargs
+            The keyword arguments of the constructor call, left for __init__ to handle
+
+        Returns
+        -------
+        The new, still uninitialized, instance
+        """
+        if 'data_blocks' not in kwargs:
+            msg = " ".join([
+                "No data_blocks were passed to ExcelConfigurator, as your entry script uses an outdated format.",
+                "Please update it by running: kaxanuk.data_curator update entry_script",
+            ])
+            logging.getLogger(__name__).critical(msg)
+            sys.exit()
+
+        return super().__new__(cls)
+
     def __init__(
         self,
         *,
         file_path: str,
+        data_blocks: list[type[BaseDataBlock]],
         data_providers: dict[
             str,
             DataProviderParameter,
         ],
         output_handlers: dict[str, OutputHandlerInterface],
         logger_format: str = "[%(levelname)s] %(message)s",
-        # @todo: make this parameter required, and move it right after file_path, once we drop the deprecated
-        # entry script support:
-        data_blocks: list[type[BaseDataBlock]] | None = None,
     ):
         """
         Initialize configuration, data providers and output handlers based on a configuration Excel file.
@@ -127,16 +135,15 @@ class ExcelConfigurator(ConfiguratorInterface):
         ----------
         file_path
             The path to the Excel configuration file
+        data_blocks
+            All the data block classes that the configuration file will choose from, each identified in the file
+            by its class name
         data_providers
             All the data provider options that the configuration file will choose from, along with their API keys if any
         output_handlers
             All the output handlers options that the configuration file will choose from
         logger_format
             The format for the logger messages. will be injected to logging.basicConfig()
-        data_blocks
-            All the data block classes that the configuration file will choose from, each identified in the file
-            by its class name. Defaults to all the built-in data blocks, which is deprecated behavior that will be
-            removed in the next version, when the parameter becomes required
         """
         # not using logging.basicConfig as we need to close it, without affecting any existing root logger
         logger = logging.getLogger(__name__)
@@ -149,24 +156,9 @@ class ExcelConfigurator(ConfiguratorInterface):
         logger.addHandler(handler)
 
         try:
-            # @todo: remove this deprecated fallback once the data_blocks parameter becomes required
-            if data_blocks is None:
-                msg = " ".join([
-                    "No data_blocks were injected into ExcelConfigurator, so all the built-in data blocks were",
-                    "assumed. This is deprecated and will become incompatible in the next version, so please",
-                    "update your entry script and parameters file by running:",
-                    "kaxanuk.data_curator update entry_script",
-                    "and",
-                    "kaxanuk.data_curator update excel",
-                ])
-                logger.warning(msg)
-                selected_data_blocks = list(self.DEPRECATED_DEFAULT_DATA_BLOCKS)
-            else:
-                selected_data_blocks = data_blocks
-
             invalid_data_block_descriptions = [
                 repr(data_block)
-                for data_block in selected_data_blocks
+                for data_block in data_blocks
                 if not isinstance(data_block, type)
                 or not issubclass(data_block, BaseDataBlock)
             ]
@@ -243,12 +235,11 @@ class ExcelConfigurator(ConfiguratorInterface):
             logger.setLevel(self._logger_level)
 
             current_parameters_format_version = str(sheet_key_values['General']['parameters_format_version'])
-            # @todo: compare against __parameters_format_version__ once we drop the deprecated file format support
             if (
                 len(current_parameters_format_version) < 1
                 or (
                     packaging.version.parse(current_parameters_format_version)
-                    < packaging.version.parse(self.DEPRECATED_PARAMETERS_FORMAT_VERSION)
+                    < packaging.version.parse(__parameters_format_version__)
                 )
             ):
                 msg = " ".join([
@@ -258,45 +249,14 @@ class ExcelConfigurator(ConfiguratorInterface):
 
                 raise ConfigurationHandlerError(msg)
 
-            # @todo: remove this deprecated file format handling once we only support the latest format
-            is_deprecated_parameters_format = (
-                packaging.version.parse(current_parameters_format_version)
-                < packaging.version.parse(__parameters_format_version__)
-            )
-            if is_deprecated_parameters_format:
-                msg = " ".join([
-                    "Your Excel configuration file and entry script are using deprecated parameters which will stop",
-                    "working in the next version. Please update them by running",
-                    "`kaxanuk.data_curator update excel`",
-                    "and",
-                    "`kaxanuk.data_curator update entry_script`",
-                ])
-                logger.warning(msg)
-
             data_blocks_by_name = {
                 data_block.__name__: data_block
-                for data_block in selected_data_blocks
+                for data_block in data_blocks
             }
-
-            # @todo: replace this whole block with the _extract_sheet_key_value_rows call of its else clause, once
-            # we drop the deprecated file format support
-            if is_deprecated_parameters_format:
-                file_provider_names_by_data_block_name = self._extract_deprecated_provider_names(
-                    workbook,
-                    data_blocks_by_name.keys(),
-                )
-            else:
-                file_provider_names_by_data_block_name = self._extract_sheet_key_value_rows(
-                    workbook,
-                    self.DATA_PROVIDERS_SHEET,
-                    self.DATA_PROVIDERS_SHEET_HEADERS,
-                )
-
-            # @todo: use file_provider_names_by_data_block_name directly once we drop the deprecated snake_case
-            # data provider names of the previous parameters file format
-            provider_names_by_data_block_name = self._resolve_deprecated_provider_names(
-                file_provider_names_by_data_block_name,
-                data_providers.keys(),
+            provider_names_by_data_block_name = self._extract_sheet_key_value_rows(
+                workbook,
+                self.DATA_PROVIDERS_SHEET,
+                self.DATA_PROVIDERS_SHEET_HEADERS,
             )
 
             unknown_data_block_names = [
@@ -439,46 +399,8 @@ class ExcelConfigurator(ConfiguratorInterface):
     def get_data_block_providers(self) -> dict[type[BaseDataBlock], DataProviderInterface]:
         return self._data_block_providers
 
-    # @todo: remove this deprecated method once we drop the deprecated entry script support
-    def get_fundamental_data_provider(self) -> DataProviderInterface | None:
-        """
-        Get the data provider assigned to the built-in fundamentals data block.
-
-        Deprecated, use get_data_block_providers instead.
-
-        Returns
-        -------
-        The data provider instance, or None if no provider was assigned to the fundamentals data block
-        """
-        msg = " ".join([
-            "The ExcelConfigurator.get_fundamental_data_provider method is deprecated and will be removed in the",
-            "next version. Please update your entry script by running: kaxanuk.data_curator update entry_script",
-        ])
-        logging.getLogger(__name__).warning(msg)
-
-        return self._data_block_providers.get(FundamentalsDataBlock)
-
     def get_logger_level(self) -> int:
         return self._logger_level
-
-    # @todo: remove this deprecated method once we drop the deprecated entry script support
-    def get_market_data_provider(self) -> DataProviderInterface | None:
-        """
-        Get the data provider assigned to the built-in market daily data block.
-
-        Deprecated, use get_data_block_providers instead.
-
-        Returns
-        -------
-        The data provider instance, or None if no provider was assigned to the market daily data block
-        """
-        msg = " ".join([
-            "The ExcelConfigurator.get_market_data_provider method is deprecated and will be removed in the",
-            "next version. Please update your entry script by running: kaxanuk.data_curator update entry_script",
-        ])
-        logging.getLogger(__name__).warning(msg)
-
-        return self._data_block_providers.get(MarketDailyDataBlock)
 
     def get_output_handler(self) -> OutputHandlerInterface:
         return self._output_handler
@@ -558,70 +480,6 @@ class ExcelConfigurator(ConfiguratorInterface):
         )
 
         return list(values)
-
-    # @todo: remove this deprecated method once we drop the deprecated file format support
-    @classmethod
-    def _extract_deprecated_provider_names(
-        cls,
-        workbook: openpyxl.workbook.workbook.Workbook,
-        data_block_names: typing.Collection[str],
-    ) -> dict[str, str]:
-        """
-        Extract the data provider of each data block from the deprecated General sheet data provider keys.
-
-        Each deprecated key supplied a fixed group of built-in data blocks, so its value gets assigned to each
-        one of those data blocks that is also available in data_block_names.
-
-        Parameters
-        ----------
-        workbook
-            The workbook to search
-        data_block_names
-            The names of the data blocks available to the configuration file
-
-        Returns
-        -------
-        The name of the data provider selected for each available data block name
-
-        Raises
-        ------
-        ConfigurationHandlerError
-        """
-        deprecated_key_values = cls._extract_workbook_key_values_by_schema(
-            workbook,
-            {
-                'General': tuple(cls.DEPRECATED_DATA_BLOCKS_BY_PROVIDER_KEY),
-            },
-        )
-        provider_names_by_data_block_name = {}
-        keys_without_value = []
-        for (provider_key, supplied_data_blocks) in cls.DEPRECATED_DATA_BLOCKS_BY_PROVIDER_KEY.items():
-            selected_data_block_names = [
-                data_block.__name__
-                for data_block in supplied_data_blocks
-                if data_block.__name__ in data_block_names
-            ]
-            if len(selected_data_block_names) < 1:
-                continue
-
-            provider_name = deprecated_key_values['General'][provider_key]
-            if provider_name is None:
-                keys_without_value.append(provider_key)
-
-                continue
-
-            for data_block_name in selected_data_block_names:
-                provider_names_by_data_block_name[data_block_name] = str(provider_name).strip()
-
-        if len(keys_without_value) > 0:
-            msg = " ".join([
-                "The following General sheet keys of the Configuration file have no value:",
-                ", ".join(keys_without_value),
-            ])
-
-            raise ConfigurationHandlerError(msg)
-
-        return provider_names_by_data_block_name
 
     @classmethod
     def _extract_sheet_key_value_rows(
@@ -1018,49 +876,3 @@ class ExcelConfigurator(ConfiguratorInterface):
             raise ConfigurationHandlerError(msg) from error
 
         return workbook
-
-    # @todo: remove this deprecated method once we drop the deprecated file format support
-    @classmethod
-    def _resolve_deprecated_provider_names(
-        cls,
-        provider_names_by_data_block_name: typing.Mapping[str, str],
-        data_provider_names: typing.Collection[str],
-    ) -> dict[str, str]:
-        """
-        Match each data provider name selected in the configuration file to the name of an injected data provider.
-
-        The previous parameters file format identified the data providers by their deprecated snake_case aliases
-        instead of their class names, so any name without an exact match in the injected data providers gets
-        matched against them by comparing their snake_case forms. Names that still don't match are left
-        untouched, so that they get reported as unavailable further down the line.
-
-        Parameters
-        ----------
-        provider_names_by_data_block_name
-            The name of the data provider selected in the configuration file for each data block name
-        data_provider_names
-            The names of the data providers injected into the configurator
-
-        Returns
-        -------
-        The name of the injected data provider matching each data block name's selection
-        """
-        injected_names_by_snake_case_name = {
-            cls._convert_class_name_to_extension_name(data_provider_name): data_provider_name
-            for data_provider_name in data_provider_names
-        }
-        resolved_provider_names_by_data_block_name = {}
-        for (data_block_name, provider_name) in provider_names_by_data_block_name.items():
-            snake_case_provider_name = cls._convert_class_name_to_extension_name(provider_name)
-            if (
-                provider_name in data_provider_names
-                or provider_name.lower() == cls.NONE_DATA_PROVIDER
-                or snake_case_provider_name not in injected_names_by_snake_case_name
-            ):
-                resolved_provider_names_by_data_block_name[data_block_name] = provider_name
-            else:
-                resolved_provider_names_by_data_block_name[data_block_name] = (
-                    injected_names_by_snake_case_name[snake_case_provider_name]
-                )
-
-        return resolved_provider_names_by_data_block_name
