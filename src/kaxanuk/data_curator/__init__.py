@@ -12,6 +12,7 @@ __all__ = [
     '__parameters_format_version__',
     '__version__',
     'cli',
+    'clock_sync_methods',
     'config_handlers',
     'data_blocks',
     'data_providers',
@@ -28,7 +29,10 @@ __all__ = [
 
 # add these definitions to our base namespace
 from kaxanuk.data_curator.data_curator import main
-from kaxanuk.data_curator.modules import debugger
+from kaxanuk.data_curator.modules import (
+    clock_sync_methods,
+    debugger,
+)
 from kaxanuk.data_curator.modules.data_column import DataColumn
 from kaxanuk.data_curator.modules.dotenv_loader import load_config_env
 from kaxanuk.data_curator.modules.extension_handler import (

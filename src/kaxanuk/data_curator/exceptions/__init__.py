@@ -122,6 +122,10 @@ class DataColumnParameterError(DataColumnError):
     pass
 
 
+class DataColumnSyncError(DataColumnError):
+    pass
+
+
 class DataCuratorErrorGroup(ExceptionGroup):
     pass
 
