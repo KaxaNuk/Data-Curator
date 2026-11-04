@@ -4,6 +4,14 @@ import pyarrow
 import pytest
 
 from kaxanuk.data_curator import DataColumn
+from kaxanuk.data_curator.exceptions import DataColumnSyncError
+
+from .fixtures import clocks
+
+
+@pytest.fixture
+def daily_master_clock():
+    return clocks.create_daily_master_clock()
 
 
 @pytest.fixture(scope="module")
@@ -163,14 +171,30 @@ def example_float_arithmetic_operations_with_nones_and_zeroes():
     }
 
 
+@pytest.fixture
+def hourly_reference_clock(daily_master_clock):
+    return clocks.create_hourly_reference_clock(daily_master_clock)
+
+
+@pytest.fixture
+def monthly_reference_clock(daily_master_clock):
+    return clocks.create_monthly_reference_clock(daily_master_clock)
+
+
+@pytest.fixture
+def other_daily_master_clock():
+    return clocks.create_daily_master_clock()
+
+
 # noinspection DuplicatedCode
 class TestDunderAbs:
+    # @todo: add tests once DataColumn implements __abs__
     ...
 
 
 # noinspection DuplicatedCode
 class TestDunderAdd:
-    def test_add_decimal_columns_with_nones(
+    def test_decimal_columns_with_nones(
         self,
         example_decimal_arithmetic_operations_with_nones_and_zeroes
     ):
@@ -191,7 +215,7 @@ class TestDunderAdd:
             equal_nulls=True
         )
 
-    def test_add_decimal_columns_with_excessive_decimals(self):
+    def test_decimal_columns_with_excessive_decimals(self):
         column1 = DataColumn.load(
             pyarrow.array(
                 [Decimal('43578457147')],
@@ -248,7 +272,7 @@ class TestDunderAdd:
             equal_nulls=True
         )
 
-    def test_add_decimal_and_float_columns(
+    def test_decimal_and_float_columns(
         self,
         example_decimal_arithmetic_operations_with_nones_and_zeroes,
         example_float_arithmetic_operations_with_nones_and_zeroes
@@ -270,7 +294,7 @@ class TestDunderAdd:
             equal_nulls=True
         )
 
-    def test_add_null_column(self):
+    def test_null_column(self):
         int_column = DataColumn.load([3, 2, 1])
         null_column = DataColumn(
             pyarrow.array(
@@ -284,14 +308,162 @@ class TestDunderAdd:
             result
         )
 
+    def test_null_column_on_reference_clock_and_column_on_master_clock_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        null_column = DataColumn(
+            pyarrow.nulls(2),
+            reference_clock_column=monthly_reference_clock,
+        )
+        column = DataColumn.load(
+            [1, 2, 3],
+            reference_clock_column=daily_master_clock,
+        )
+        result = null_column + column
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_null_column_on_other_master_clock(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column = DataColumn.load(
+            [1, 2, 3],
+            reference_clock_column=daily_master_clock,
+        )
+        null_column = DataColumn(
+            pyarrow.nulls(3),
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column + null_column
+
+    def test_null_column_without_clock_not_matching_master_length(
+        self,
+        daily_master_clock,
+    ):
+        column = DataColumn.load(
+            [1, 2, 3],
+            reference_clock_column=daily_master_clock,
+        )
+        null_column = DataColumn(
+            pyarrow.nulls(5)
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column + null_column
+
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 + column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 + column2
+        expected = pyarrow.array([14, 26])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 + column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 + column2
+        expected = pyarrow.array([14, 26, 28])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column + 2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 + column2
+
 
 # noinspection DuplicatedCode
 class TestDunderCeil:
+    # @todo: add tests once DataColumn implements __ceil__
     ...
 
 
 # noinspection DuplicatedCode
 class TestDunderFloor:
+    # @todo: add tests once DataColumn implements __floor__
     ...
 
 
@@ -320,7 +492,7 @@ class TestDunderFloordiv:
             equal_nulls=True,
         )
 
-    def test_floordiv_null_column(self):
+    def test_null_column(self):
         int_column = DataColumn.load([3, 2, 1])
         null_column = DataColumn(
             pyarrow.array(
@@ -349,10 +521,107 @@ class TestDunderFloordiv:
             approximate_floats=True,
         )
 
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 // column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 // column2
+        expected = pyarrow.array([2.0, 4.0])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 // column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 // column2
+        expected = pyarrow.array([2.0, 4.0, 3.0])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column // 2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 // column2
+
 
 # noinspection DuplicatedCode
 class TestDunderMod:
-    def test_modulo_decimal_columns_with_nones(
+    def test_decimal_column_modulo_scalar_array_with_nones(
             self,
             example_decimal_arithmetic_operations_with_nones_and_zeroes
     ):
@@ -376,7 +645,7 @@ class TestDunderMod:
             equal_nulls=True,
         )
 
-    def test_scalar_modulo_decimal_column_with_nones(
+    def test_decimal_column_modulo_scalar_with_nones(
             self,
             example_decimal_arithmetic_operations_with_nones_and_zeroes
     ):
@@ -388,6 +657,30 @@ class TestDunderMod:
         )
         scalar = 3
         result = column % scalar
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            approximate_floats=True,
+            equal_nulls=True,
+        )
+
+    def test_scalar_array_modulo_decimal_column_with_nones(
+        self,
+        example_decimal_arithmetic_operations_with_nones_and_zeroes
+    ):
+        column = DataColumn.load(
+            example_decimal_arithmetic_operations_with_nones_and_zeroes['column2']
+        )
+        expected = DataColumn.load(
+            example_decimal_arithmetic_operations_with_nones_and_zeroes['3modulocolumn2']
+        )
+        scalar = 3
+        length = len(column)
+        scalar_array = DataColumn.load(
+            [scalar] * length
+        )
+        result = scalar_array % column
 
         assert DataColumn.fully_equal(
             result,
@@ -411,10 +704,107 @@ class TestDunderMod:
             approximate_floats=True,
         )
 
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 % column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 % column2
+        expected = pyarrow.array([2.0, 1.0])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 % column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 % column2
+        expected = pyarrow.array([2.0, 1.0, 0.0])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column % 2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 % column2
+
 
 # noinspection DuplicatedCode
 class TestDunderMul:
-    def test_multiply_decimal_columns_with_nones(
+    def test_decimal_columns_with_nones(
             self,
             example_decimal_arithmetic_operations_with_nones_and_zeroes
     ):
@@ -435,7 +825,7 @@ class TestDunderMul:
             equal_nulls=True
         )
 
-    def test_multiply_decimal_columns_with_excessive_decimals(self):
+    def test_decimal_columns_with_excessive_decimals(self):
         column1 = DataColumn.load(
             pyarrow.array(
                 [Decimal('1.00000000000000000')],
@@ -492,7 +882,7 @@ class TestDunderMul:
             equal_nulls=True
         )
 
-    def test_data_column_multiply_decimal_and_float_columns(
+    def test_decimal_and_float_columns(
             self,
             example_decimal_arithmetic_operations_with_nones_and_zeroes,
             example_float_arithmetic_operations_with_nones_and_zeroes
@@ -515,7 +905,7 @@ class TestDunderMul:
             equal_nulls=True
         )
 
-    def test_data_column_multiply_by_null_column(self):
+    def test_null_column(self):
         int_column = DataColumn.load([3, 2, 1])
         null_column = DataColumn(
             pyarrow.array(
@@ -528,6 +918,103 @@ class TestDunderMul:
         assert DataColumn.is_null(
             result
         )
+
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 * column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 * column2
+        expected = pyarrow.array([40, 105])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 * column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 * column2
+        expected = pyarrow.array([40, 105, 147])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column * 2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 * column2
 
 
 # noinspection DuplicatedCode
@@ -549,7 +1036,7 @@ class TestDunderNeg:
             ),
         ]
     )
-    def test_column_negation(self, base_list, negated_list):
+    def test_numeric_columns_with_zero_and_none(self, base_list, negated_list):
         column = DataColumn.load(base_list)
         result = -column
         expected = DataColumn.load(negated_list)
@@ -560,10 +1047,35 @@ class TestDunderNeg:
             equal_nulls=True
         )
 
+    def test_column_on_reference_clock_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = -column
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_column_on_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = -column
+        expected = pyarrow.array([-10, -21])
+
+        assert result.reference_array.equals(expected)
+
 
 # noinspection DuplicatedCode
 class TestDunderPos:
-    def test_pos_not_implemented(self):
+    def test_not_implemented(self):
         column = DataColumn.load([1, 2, 3])
         with pytest.raises(NotImplementedError):
             return +column
@@ -571,6 +1083,7 @@ class TestDunderPos:
 
 # noinspection DuplicatedCode
 class TestDunderPow:
+    # @todo: add tests once DataColumn implements __pow__
     ...
 
 
@@ -606,7 +1119,7 @@ class TestDunderRadd:
             equal_nulls=True
         )
 
-    def test_add_decimal_columns_with_excessive_decimals(self):
+    def test_decimal_scalar_with_excessive_decimals(self):
         column1 = pyarrow.scalar(
             Decimal('43578457147'),
             type=pyarrow.decimal128(11, 0)
@@ -631,7 +1144,7 @@ class TestDunderRadd:
             equal_nulls=True
         )
 
-    def test_add_null(self):
+    def test_null_scalar(self):
         int_column = DataColumn.load([3, 2, 1])
         null_value = pyarrow.scalar(
             None,
@@ -643,10 +1156,35 @@ class TestDunderRadd:
             result
         )
 
+    def test_scalar_and_column_on_reference_clock_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 1 + column
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_scalar_and_column_on_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 1 + column
+        expected = pyarrow.array([11, 22])
+
+        assert result.reference_array.equals(expected)
+
 
 # noinspection DuplicatedCode
 class TestDunderRfloordiv:
-    def test_scalar_array_floordiv_decimal_column_with_nones(
+    def test_scalar_floordiv_decimal_column_with_nones(
         self,
         example_decimal_arithmetic_operations_with_nones_and_zeroes
     ):
@@ -665,7 +1203,7 @@ class TestDunderRfloordiv:
             equal_nulls=True,
         )
 
-    def test_floordiv_null_column(self):
+    def test_null_scalar(self):
         null_scalar = pyarrow.scalar(
             None,
             pyarrow.null()
@@ -692,34 +1230,35 @@ class TestDunderRfloordiv:
             approximate_floats=True,
         )
 
+    def test_scalar_and_column_on_reference_clock_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 42 // column
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_scalar_and_column_on_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 42 // column
+        expected = pyarrow.array([4.0, 2.0])
+
+        assert result.reference_array.equals(expected)
+
 
 # noinspection DuplicatedCode
 class TestDunderRmod:
-    def test_modulo_decimal_column_with_nones_reflected(
-        self,
-        example_decimal_arithmetic_operations_with_nones_and_zeroes
-    ):
-        column = DataColumn.load(
-            example_decimal_arithmetic_operations_with_nones_and_zeroes['column2']
-        )
-        expected = DataColumn.load(
-            example_decimal_arithmetic_operations_with_nones_and_zeroes['3modulocolumn2']
-        )
-        scalar = 3
-        length = len(column)
-        scalar_array = DataColumn.load(
-            [scalar] * length
-        )
-        result = scalar_array % column
-
-        assert DataColumn.fully_equal(
-            result,
-            expected,
-            approximate_floats=True,
-            equal_nulls=True,
-        )
-
-    def test_scalar_modulo_decimal_column_with_nones_reflected(
+    def test_scalar_modulo_decimal_column_with_nones(
         self,
         example_decimal_arithmetic_operations_with_nones_and_zeroes
     ):
@@ -754,6 +1293,31 @@ class TestDunderRmod:
             approximate_floats=True,
         )
 
+    def test_scalar_and_column_on_reference_clock_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 42 % column
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_scalar_and_column_on_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 42 % column
+        expected = pyarrow.array([2.0, 0.0])
+
+        assert result.reference_array.equals(expected)
+
 
 # noinspection DuplicatedCode
 class TestDunderRmul:
@@ -787,7 +1351,7 @@ class TestDunderRmul:
             equal_nulls=True
         )
 
-    def test_multiply_decimal_columns_with_excessive_decimals(self):
+    def test_decimal_scalar_with_excessive_decimals(self):
         column1 = pyarrow.scalar(
             Decimal('1.00000000000000000'),
             type=pyarrow.decimal128(33, 17)
@@ -812,7 +1376,7 @@ class TestDunderRmul:
             equal_nulls=True
         )
 
-    def test_multiply_null(self):
+    def test_null_scalar(self):
         int_column = DataColumn.load([3, 2, 1])
         null_value = pyarrow.scalar(
             None,
@@ -824,14 +1388,41 @@ class TestDunderRmul:
             result
         )
 
+    def test_scalar_and_column_on_reference_clock_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 2 * column
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_scalar_and_column_on_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 2 * column
+        expected = pyarrow.array([20, 42])
+
+        assert result.reference_array.equals(expected)
+
 
 # noinspection DuplicatedCode
 class TestDunderRound:
+    # @todo: add tests once DataColumn implements __round__
     ...
 
 
 # noinspection DuplicatedCode
 class TestDunderRpow:
+    # @todo: add tests once DataColumn implements __rpow__
     ...
 
 
@@ -868,7 +1459,7 @@ class TestDunderRsub:
             equal_nulls=True
         )
 
-    def test_subtract_decimal_columns_with_excessive_decimals(self):
+    def test_decimal_scalar_with_excessive_decimals(self):
         column1 = pyarrow.scalar(
             Decimal('43578457147'),
             type=pyarrow.decimal128(11, 0)
@@ -893,7 +1484,7 @@ class TestDunderRsub:
             equal_nulls=True
         )
 
-    def test_subtract_null(self):
+    def test_null_scalar(self):
         int_column = DataColumn.load([3, 2, 1])
         null_value = pyarrow.scalar(
             None,
@@ -904,6 +1495,31 @@ class TestDunderRsub:
         assert DataColumn.is_null(
             result
         )
+
+    def test_scalar_and_column_on_reference_clock_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 30 - column
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_scalar_and_column_on_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 30 - column
+        expected = pyarrow.array([20, 9])
+
+        assert result.reference_array.equals(expected)
 
 
 # noinspection DuplicatedCode
@@ -956,7 +1572,7 @@ class TestDunderRtruediv:
             expected,
         )
 
-    def test_divide_decimal_columns_with_excessive_decimals(self):
+    def test_decimal_scalar_with_excessive_decimals(self):
         column1 = pyarrow.scalar(
             Decimal('321199999.99999988079071044921875'),
             type=pyarrow.decimal128(35, 23)
@@ -981,7 +1597,7 @@ class TestDunderRtruediv:
             equal_nulls=True
         )
 
-    def test_divide_null(self):
+    def test_null_scalar(self):
         int_column = DataColumn.load([3, 2, 1])
         null_value = pyarrow.scalar(
             None,
@@ -1011,17 +1627,6 @@ class TestDunderRtruediv:
 
         assert pyarrow.types.is_floating(result.type)
 
-    def test_int_divided_by_int_returns_float(self):
-        column1 = DataColumn.load(
-            [6, 7, 8]
-        )
-        column2 = DataColumn.load(
-            [1, 2, 3]
-        )
-        result = column1 / column2
-
-        assert pyarrow.types.is_floating(result.type)
-
     def test_int_scalar_divided_by_int_column(self):
         column = DataColumn.load(
             [2, 4, 5]
@@ -1037,10 +1642,44 @@ class TestDunderRtruediv:
             approximate_floats=True,
         )
 
+    def test_scalar_and_column_on_reference_clock_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 42 / column
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_scalar_and_column_on_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = 42 / column
+        expected = pyarrow.array([4.2, 2.0])
+
+        assert result.reference_array.equals(expected)
+
+    def test_int_scalar_divided_by_float_column(self):
+        column = DataColumn.load(
+            [1.5, 6.0]
+        )
+        result = 3 / column
+        expected = pyarrow.array([2.0, 0.5])
+
+        assert result.reference_array.equals(expected)
+
 
 # noinspection DuplicatedCode
 class TestDunderSub:
-    def test_subtract_decimal_columns_with_nones(
+    def test_decimal_columns_with_nones(
         self,
         example_decimal_arithmetic_operations_with_nones_and_zeroes
     ):
@@ -1061,7 +1700,7 @@ class TestDunderSub:
             equal_nulls=True
         )
 
-    def test_subtract_decimal_columns_with_excessive_decimals(self):
+    def test_decimal_columns_with_excessive_decimals(self):
         column1 = DataColumn.load(
             pyarrow.array(
                 [Decimal('43578457147')],
@@ -1119,7 +1758,7 @@ class TestDunderSub:
             equal_nulls=True
         )
 
-    def test_data_column_subtraction_between_decimal_and_float_columns(
+    def test_decimal_and_float_columns(
         self,
         example_decimal_arithmetic_operations_with_nones_and_zeroes,
         example_float_arithmetic_operations_with_nones_and_zeroes
@@ -1142,7 +1781,7 @@ class TestDunderSub:
             equal_nulls=True
         )
 
-    def test_data_column_subtraction_with_null_column(self):
+    def test_null_column(self):
         int_column = DataColumn.load([3, 2, 1])
         null_column = DataColumn(
             pyarrow.array(
@@ -1156,10 +1795,107 @@ class TestDunderSub:
             result
         )
 
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 - column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 - column2
+        expected = pyarrow.array([6, 16])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 - column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 - column2
+        expected = pyarrow.array([6, 16, 14])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column - 2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 - column2
+
 
 # noinspection DuplicatedCode
 class TestDunderTruediv:
-    def test_divide_decimal_columns_with_nones_and_zeroes(
+    def test_decimal_columns_with_nones_and_zeroes(
         self,
         example_decimal_arithmetic_operations_with_nones_and_zeroes
     ):
@@ -1181,7 +1917,7 @@ class TestDunderTruediv:
             equal_nulls=True,
         )
 
-    def test_divide_decimal_columns_with_excessive_decimals(self):
+    def test_decimal_columns_with_excessive_decimals(self):
         column1 = DataColumn.load(
             pyarrow.array(
                 [Decimal('321199999.99999988079071044921875')],
@@ -1248,7 +1984,7 @@ class TestDunderTruediv:
 
         assert pyarrow.types.is_floating(result.type)
 
-    def test_data_column_division_between_decimal_and_float_columns(
+    def test_decimal_and_float_columns(
         self,
         example_decimal_arithmetic_operations_with_nones_and_zeroes,
         example_float_arithmetic_operations_with_nones_and_zeroes
@@ -1271,7 +2007,7 @@ class TestDunderTruediv:
             equal_nulls=True
         )
 
-    def test_data_column_divide_null_column(self):
+    def test_null_column(self):
         int_column = DataColumn.load([3, 2, 1])
         null_column = DataColumn(
             pyarrow.array(
@@ -1307,6 +2043,17 @@ class TestDunderTruediv:
 
         assert pyarrow.types.is_floating(result.type)
 
+    def test_int_divided_by_int_returns_float(self):
+        column1 = DataColumn.load(
+            [6, 7, 8]
+        )
+        column2 = DataColumn.load(
+            [1, 2, 3]
+        )
+        result = column1 / column2
+
+        assert pyarrow.types.is_floating(result.type)
+
     def test_int_column_divided_by_int_scalar(self):
         column = DataColumn.load(
             [2, 4, 6]
@@ -1337,7 +2084,105 @@ class TestDunderTruediv:
             approximate_floats=True,
         )
 
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 / column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 / column2
+        expected = pyarrow.array([2.5, 4.2])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 / column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 / column2
+        expected = pyarrow.array([2.5, 4.2, 3.0])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column / 2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [4, 5, 7],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 / column2
+
 
 # noinspection DuplicatedCode
 class TestDunderTrunc:
+    # @todo: add tests once DataColumn implements __trunc__
     ...

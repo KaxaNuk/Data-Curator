@@ -34,7 +34,9 @@ Folder Structure
 - Each test file is named after the module it tests, with the ``_test.py`` suffix, e.g. ``tests/unit/entities/configuration_test.py`` tests ``src/kaxanuk/data_curator/entities/configuration.py``.
 - A module's tests can be split into several files, each covering a specific type of test, inside a folder named after the module, e.g. ``arithmetic_test.py`` and ``comparison_test.py`` in ``tests/unit/modules/data_column/``.
 - Every folder inside ``tests`` holding Python files is a regular Python package, containing an ``__init__.py`` file even if it's empty.
-- Fixtures used by several tests can go in a ``fixtures`` subfolder of the folder holding those tests.
+- Fixtures used by several tests can go in a ``fixtures`` subfolder of the folder holding those tests, or of their closest common parent folder when the tests are in different folders.
+- Fixture modules hold plain objects, which each test file imports and wraps in its own pytest fixtures, as ruff flags imported pytest fixtures as unused (F401 and F811), and its autofix deletes them.
+- Avoid pytest fixtures in ``conftest.py`` files unless there's a good reason, as they hide where the fixtures are defined, e.g. the ``data_column_debugger`` fixture, which can be temporarily plugged into any test.
 
 ::
 
@@ -93,7 +95,7 @@ Test Helpers
 ------------
 
 - Use ``pytest.mark.parametrize`` to run the same test over several inputs, instead of repeating it.
-- Compare ``DataColumn`` objects with ``DataColumn.fully_equal``, passing ``approximate_floats=True`` for float results, and ``equal_nulls=True`` when nulls in the same positions should count as equal.
+- Compare ``DataColumn`` objects with ``DataColumn.fully_equal``, passing ``approximate_floats=True`` for float results, and ``equal_nulls=True`` when nulls in the same positions should count as equal. As it compares them at the master clock's scale, check the values at a reference clock's scale through ``reference_array`` instead.
 - To inspect columns while debugging a test, request the ``data_column_debugger`` fixture from ``tests/conftest.py``, and pass the columns as keyword arguments to its ``dump_data_columns_to_csv`` method, which writes them to a CSV file in the repository's ``.debug`` folder.
 - Use pytest's ``monkeypatch`` fixture for replacing objects, as the linter forbids ``unittest.mock``.
 - pytest runs with ``--strict-markers``, so any custom marker needs to be registered in ``pyproject.toml``.

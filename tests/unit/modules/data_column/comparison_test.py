@@ -1,6 +1,30 @@
 import pyarrow
+import pytest
 
 from kaxanuk.data_curator import DataColumn
+from kaxanuk.data_curator.exceptions import DataColumnSyncError
+
+from .fixtures import clocks
+
+
+@pytest.fixture
+def daily_master_clock():
+    return clocks.create_daily_master_clock()
+
+
+@pytest.fixture
+def hourly_reference_clock(daily_master_clock):
+    return clocks.create_hourly_reference_clock(daily_master_clock)
+
+
+@pytest.fixture
+def monthly_reference_clock(daily_master_clock):
+    return clocks.create_monthly_reference_clock(daily_master_clock)
+
+
+@pytest.fixture
+def other_daily_master_clock():
+    return clocks.create_daily_master_clock()
 
 
 class TestDunderEq:
@@ -40,7 +64,7 @@ class TestDunderEq:
             equal_nulls=True
         )
 
-    def test_equality_with_mixed_nulls(self):
+    def test_mixed_nulls(self):
         column1 = DataColumn.load(
             [1,     None,   None,      4]
         )
@@ -58,7 +82,7 @@ class TestDunderEq:
             equal_nulls=True
         )
 
-    def test_equality_with_scalar(self):
+    def test_against_scalar(self):
         column = DataColumn.load(
             [5, 10, 5, None]
         )
@@ -74,7 +98,7 @@ class TestDunderEq:
             equal_nulls=True
         )
 
-    def test_equality_with_null_column(self):
+    def test_against_null_column(self):
         int_column = DataColumn.load(
             [3, 2, 1]
         )
@@ -88,9 +112,106 @@ class TestDunderEq:
 
         assert DataColumn.is_null(result)
 
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 == column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 == column2
+        expected = pyarrow.array([True, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 == column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 == column2
+        expected = pyarrow.array([True, False, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column == 10
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 == column2  # noqa: B015  the comparison raises before returning
+
 
 class TestDunderHash:
-    def test_hashing_equal_integer_columns_with_nulls(self):
+    def test_equal_integer_columns_with_nulls(self):
         base_data = [1, 2, None, 3, 4]
         column1 = DataColumn.load(
             base_data
@@ -103,7 +224,7 @@ class TestDunderHash:
 
         assert result1 == result2
 
-    def test_hashing_different_integer_columns_with_nulls(self):
+    def test_different_integer_columns_with_nulls(self):
         data1 = [1, 2, None, 3, 4]
         data2 = [1, None, 2, 3, 4]
         column1 = DataColumn.load(
@@ -116,6 +237,20 @@ class TestDunderHash:
         result2 = hash(column2)
 
         assert result1 != result2
+
+    def test_column_on_clock_hashed_at_master_scale(
+        self,
+        hourly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [5, 2, 3, 4],
+            reference_clock_column=hourly_reference_clock,
+        )
+        master_scale_column = DataColumn.load(
+            [2, 3, 4]
+        )
+
+        assert hash(column) == hash(master_scale_column)
 
 
 class TestDunderGe:
@@ -167,6 +302,103 @@ class TestDunderGe:
 
         assert DataColumn.is_null(result)
 
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 >= column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 >= column2
+        expected = pyarrow.array([True, True])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 >= column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 >= column2
+        expected = pyarrow.array([True, True, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column >= 10
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 >= column2  # noqa: B015  the comparison raises before returning
+
 
 class TestDunderGt:
     def test_mixed_integer_columns_with_none(self):
@@ -216,6 +448,103 @@ class TestDunderGt:
         result = int_column > null_column
 
         assert DataColumn.is_null(result)
+
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 > column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 > column2
+        expected = pyarrow.array([False, True])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 > column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 > column2
+        expected = pyarrow.array([False, True, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column > 10
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 > column2  # noqa: B015  the comparison raises before returning
 
 
 class TestDunderLe:
@@ -267,6 +596,103 @@ class TestDunderLe:
 
         assert DataColumn.is_null(result)
 
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 <= column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 <= column2
+        expected = pyarrow.array([True, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 <= column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 <= column2
+        expected = pyarrow.array([True, False, True])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column <= 10
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 <= column2  # noqa: B015  the comparison raises before returning
+
 
 class TestDunderLt:
     def test_mixed_integer_columns_with_none(self):
@@ -317,6 +743,103 @@ class TestDunderLt:
 
         assert DataColumn.is_null(result)
 
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 < column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 < column2
+        expected = pyarrow.array([False, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 < column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 < column2
+        expected = pyarrow.array([False, False, True])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column < 10
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 < column2  # noqa: B015  the comparison raises before returning
+
 
 class TestDunderNe:
     def test_equal_integer_columns(self):
@@ -355,7 +878,7 @@ class TestDunderNe:
             equal_nulls=True
         )
 
-    def test_inequality_with_mixed_nulls(self):
+    def test_mixed_nulls(self):
         column1 = DataColumn.load(
             [1, None, None, 4]
         )
@@ -373,7 +896,7 @@ class TestDunderNe:
             equal_nulls=True
         )
 
-    def test_inequality_with_scalar(self):
+    def test_against_scalar(self):
         column = DataColumn.load(
             [5, 10, 5, None]
         )
@@ -389,7 +912,7 @@ class TestDunderNe:
             equal_nulls=True
         )
 
-    def test_inequality_with_null_column(self):
+    def test_against_null_column(self):
         int_column = DataColumn.load(
             [3, 2, 1]
         )
@@ -402,4 +925,101 @@ class TestDunderNe:
         result = int_column != null_column
 
         assert DataColumn.is_null(result)
+
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 != column2
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column1 != column2
+        expected = pyarrow.array([False, True])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 != column2
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column1 != column2
+        expected = pyarrow.array([False, True, True])
+
+        assert result.reference_array.equals(expected)
+
+    def test_column_on_reference_clock_and_scalar_keep_its_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column != 10
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        column1 = DataColumn.load(
+            [10, 21, 30],
+            reference_clock_column=daily_master_clock,
+        )
+        column2 = DataColumn.load(
+            [10, 5, 30],
+            reference_clock_column=other_daily_master_clock,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            column1 != column2  # noqa: B015  the comparison raises before returning
 

@@ -1751,6 +1751,9 @@ class DataColumn:
         """
         Compare two DataColumns element-wise.
 
+        Like the other DataColumn operations, columns sharing a reference clock get compared at its scale, and
+        otherwise at the master clock's scale.
+
         Parameters
         ----------
         column1
@@ -1868,6 +1871,9 @@ class DataColumn:
         """
         Check if two DataColumns are fully equal.
 
+        The columns always get compared at the master clock's scale, even when they share a reference clock, so they
+        are fully equal when their `array` values are.
+
         Parameters
         ----------
         column1
@@ -1893,14 +1899,14 @@ class DataColumn:
         bool
             Returns None if equal_nulls is False and there are Nones, True if both columns are equal, False otherwise.
         """
+        # The master clock's scale is the only one shared by any pair of columns, regardless of their reference clocks
         element_wise_equalities = cls.equal(
-            column1,
-            column2,
+            column1.to_master_scale(),
+            column2.to_master_scale(),
             approximate_floats=approximate_floats,
             equal_nulls=equal_nulls,
         )
 
-        # The equalities get checked at the scale they were compared at, instead of synced to the master clock
         return (
             pyarrow.compute.all(
                 element_wise_equalities.reference_array,
@@ -2531,40 +2537,58 @@ class DataColumn:
         """
         Return a null column if this column or the operand is a null column, or the operand is a null scalar.
 
-        The checks use the reference arrays, so they don't require syncing the columns to the master clock.
+        The null column follows the same clock rules as any other operation's result, so it's at the operation's
+        scale, and the operands get validated in the same way. The null checks use the reference arrays, so they
+        don't require syncing the columns to the master clock.
 
         Parameters
         ----------
         operand
+            The other operand of the operation
 
         Returns
         -------
-        The null column, at this column's scale for a null scalar operand, or None if there are no null operands
+        The null column at the operation's scale, or None if there are no null operands
+
+        Raises
+        ------
+        DataColumnSyncError
+            If the operands are synced to different master clocks, or if an operand with no clock doesn't match the
+            master clock's length
         """
-        if (
-            self.reference_array.type == pyarrow.null()
-        ):
-            return self
-        elif (
-            isinstance(operand, DataColumn)
-            and operand.reference_array.type == pyarrow.null()
-        ):
-            return operand
-        elif (
-            not isinstance(operand, DataColumn)
-            and (
-                operand is None
-                or getattr(operand, 'type', None) == pyarrow.null()
+        has_null_operand = (
+            pyarrow.types.is_null(self.reference_array.type)
+            or (
+                isinstance(operand, DataColumn)
+                and pyarrow.types.is_null(operand.reference_array.type)
             )
-        ):
-            return DataColumn(
-                pyarrow.nulls(
-                    len(self.reference_array)
-                ),
-                reference_clock_column=self.reference_clock_column,
+            or (
+                not isinstance(operand, DataColumn)
+                and (
+                    operand is None
+                    or getattr(operand, 'type', None) == pyarrow.null()
+                )
             )
-        else:
+        )
+
+        if not has_null_operand:
             return None
+
+        operation_reference_clock = self._calculate_operation_reference_clock(
+            self,
+            operand,
+        )
+
+        # Without any clocks, the operation's scale is this column's own
+        if operation_reference_clock is None:
+            row_count = len(self.reference_array)
+        else:
+            row_count = len(operation_reference_clock.reference_array)
+
+        return DataColumn(
+            pyarrow.nulls(row_count),
+            reference_clock_column=operation_reference_clock,
+        )
 
     @staticmethod
     def _validate_clock_array(

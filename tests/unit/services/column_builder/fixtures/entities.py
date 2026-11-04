@@ -1,5 +1,5 @@
 """
-These fixtures are for tests in this directory
+Example entities and calculation functions for the ColumnBuilder tests.
 """
 
 

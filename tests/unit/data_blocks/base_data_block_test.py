@@ -7,19 +7,17 @@ from kaxanuk.data_curator.exceptions import (
     DataBlockIncorrectMappingTypeError,
 )
 from .fixtures import entities
-from ..services.data_provider_toolkit.fixtures import (
-    entity_tables,
-)
+from ..fixtures import entity_tables
 
 class TestPrivateCalculateOrderedEntityRelationMap:
-    def test_calculate_ordered_entity_relations(self):
+    def test_example_entity(self):
         result = BaseDataBlock._calculate_ordered_entity_relation_map(
             entities.ExampleEntity
         )
 
         assert result == entities.EXAMPLE_ENTITY_RELATIONS_LINEAR_SORT
 
-    def test_calculate_ordered_entity_relations_nested(self):
+    def test_example_nested_entity(self):
         result = BaseDataBlock._calculate_ordered_entity_relation_map(
             entities.ExampleNestedEntity
         )
@@ -27,8 +25,8 @@ class TestPrivateCalculateOrderedEntityRelationMap:
         assert result == entities.EXAMPLE_NESTED_ENTITY_RELATIONS_LINEAR_SORT
 
 
-class TestSplitConsolidatedTableIntoEntityTables:
-    def test_split_consolidated_table_into_entity_tables(self):
+class TestPrivateSplitConsolidatedTableIntoEntityTables:
+    def test_existing_entities(self):
         result = BaseDataBlock._split_consolidated_table_into_entity_tables(
             entity_tables.CONSOLIDATED_TABLE,
             {
@@ -55,7 +53,7 @@ class TestSplitConsolidatedTableIntoEntityTables:
             )
         )
 
-    def test_split_table_inexistent_entity_fails(self):
+    def test_inexistent_entity_fails(self):
         with pytest.raises(DataBlockIncorrectMappingTypeError):
             BaseDataBlock._split_consolidated_table_into_entity_tables(
                 entity_tables.INEXISTENT_ENTITY_KEYS_TABLE,
@@ -67,7 +65,7 @@ class TestSplitConsolidatedTableIntoEntityTables:
                 }
             )
 
-    def test_split_table_inexistent_entity_field_fails(self):
+    def test_inexistent_entity_field_fails(self):
         with pytest.raises(DataBlockIncorrectMappingTypeError):
             BaseDataBlock._split_consolidated_table_into_entity_tables(
                 entity_tables.INEXISTENT_ENTITY_FIELD_KEYS_TABLE,
@@ -79,7 +77,7 @@ class TestSplitConsolidatedTableIntoEntityTables:
                 }
             )
 
-    def test_split_table_non_entity_field_key_fails(self):
+    def test_non_entity_field_key_fails(self):
         with pytest.raises(DataBlockIncorrectMappingTypeError):
             BaseDataBlock._split_consolidated_table_into_entity_tables(
                 entity_tables.NON_ENTITY_FIELD_KEYS_TABLE,

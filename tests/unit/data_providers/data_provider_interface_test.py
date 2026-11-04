@@ -3,8 +3,8 @@ import datetime
 from kaxanuk.data_curator.data_providers import DataProviderInterface
 
 
-class TestPrivateBuildUrlWithTickerPathAndQueryParams:
-    def test_build_simple_url(self):
+class TestPrivateBuildUrlWithIdentifierPathAndQueryParams:
+    def test_simple_url(self):
         endpoint_url = 'https://my.site'
         ticker = 'AAPL'
         query_params = {
@@ -22,7 +22,7 @@ class TestPrivateBuildUrlWithTickerPathAndQueryParams:
 
 
 class TestPrivateFindFirstDateBeforeStartDate:
-    def test_find_in_date_strings_ascending(self):
+    def test_date_strings_ascending(self):
         rows = [
             '2020-01-01',
             '2020-04-01',
@@ -38,7 +38,7 @@ class TestPrivateFindFirstDateBeforeStartDate:
 
         assert actual == expected
 
-    def test_find_in_date_strings_descending(self):
+    def test_date_strings_descending(self):
         rows = [
             '2023-04-10',
             '2023-01-09',
@@ -58,7 +58,7 @@ class TestPrivateFindFirstDateBeforeStartDate:
 
         assert actual == expected
 
-    def test_find_in_datetime_dates_ascending(self):
+    def test_datetime_dates_ascending(self):
         rows = [
             datetime.date.fromisoformat('2020-01-01'),
             datetime.date.fromisoformat('2020-04-01'),
@@ -75,7 +75,7 @@ class TestPrivateFindFirstDateBeforeStartDate:
         assert actual == expected
 
 
-    def test_find_in_datetime_dates_descending(self):
+    def test_datetime_dates_descending(self):
         rows = [
             datetime.date.fromisoformat('2023-04-10'),
             datetime.date.fromisoformat('2023-01-09'),
@@ -96,8 +96,8 @@ class TestPrivateFindFirstDateBeforeStartDate:
         assert actual == expected
 
 
-class TestPrivateFindUnorderedDatesInDescendingDates:
-    def test_find_unordered_date_strings_ascending(self):
+class TestPrivateFindUnorderedDates:
+    def test_date_strings_ascending(self):
         rows = [
             None,
             '2020-01-01',
@@ -120,7 +120,7 @@ class TestPrivateFindUnorderedDatesInDescendingDates:
 
         assert actual == expected
 
-    def test_find_unordered_date_strings_descending(self):
+    def test_date_strings_descending(self):
         rows = [
             '2023-04-10',
             '2023-01-09',
@@ -146,7 +146,7 @@ class TestPrivateFindUnorderedDatesInDescendingDates:
 
         assert actual == expected
 
-    def test_find_unordered_datetime_dates_ascending(self):
+    def test_datetime_dates_ascending(self):
         rows = [
             datetime.date.fromisoformat('2020-01-01'),
             datetime.date.fromisoformat('2020-04-01'),
@@ -168,7 +168,7 @@ class TestPrivateFindUnorderedDatesInDescendingDates:
 
         assert actual == expected
 
-    def test_find_unordered_datetime_dates_descending(self):
+    def test_datetime_dates_descending(self):
         rows = [
             datetime.date.fromisoformat('2023-04-10'),
             datetime.date.fromisoformat('2023-01-09'),

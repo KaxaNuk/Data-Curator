@@ -15,7 +15,7 @@ class TestDunderPostInit:
             'c_test',
         ]
     )
-    def test_post_init_built_in_prefix_column(self, column):
+    def test_built_in_prefix_column(self, column):
         configuration = Configuration(
             start_date=datetime.date(2024, 1, 1),
             end_date=datetime.date(2024, 12, 31),
@@ -33,7 +33,7 @@ class TestDunderPostInit:
             'x2_metric_5d',
         ]
     )
-    def test_post_init_custom_prefix_column(self, column):
+    def test_custom_prefix_column(self, column):
         configuration = Configuration(
             start_date=datetime.date(2024, 1, 1),
             end_date=datetime.date(2024, 12, 31),
@@ -55,7 +55,7 @@ class TestDunderPostInit:
             'm_close price',
         ]
     )
-    def test_post_init_incorrectly_formatted_column(self, column):
+    def test_incorrectly_formatted_column(self, column):
         with pytest.raises(ConfigurationError):
             Configuration(
                 start_date=datetime.date(2024, 1, 1),

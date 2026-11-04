@@ -2,7 +2,27 @@ import pyarrow
 import pytest
 
 from kaxanuk.data_curator import DataColumn
-from kaxanuk.data_curator.exceptions import DataColumnParameterError
+from kaxanuk.data_curator.exceptions import (
+    DataColumnParameterError,
+    DataColumnSyncError,
+)
+
+from .fixtures import clocks
+
+
+@pytest.fixture
+def daily_master_clock():
+    return clocks.create_daily_master_clock()
+
+
+@pytest.fixture
+def monthly_reference_clock(daily_master_clock):
+    return clocks.create_monthly_reference_clock(daily_master_clock)
+
+
+@pytest.fixture
+def other_daily_master_clock():
+    return clocks.create_daily_master_clock()
 
 
 class TestBooleanAnd:
@@ -110,6 +130,102 @@ class TestBooleanAnd:
     def test_no_columns(self):
         with pytest.raises(DataColumnParameterError):
             DataColumn.boolean_and()
+
+    def test_only_scalars(self):
+        with pytest.raises(DataColumnParameterError):
+            DataColumn.boolean_and(
+                True,
+                False,
+            )
+
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        result = DataColumn.boolean_and(
+            DataColumn.load(
+                [True, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+            DataColumn.load(
+                [True, True],
+                reference_clock_column=monthly_reference_clock,
+            ),
+        )
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        result = DataColumn.boolean_and(
+            DataColumn.load(
+                [True, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+            DataColumn.load(
+                [True, True],
+                reference_clock_column=monthly_reference_clock,
+            ),
+        )
+        expected = pyarrow.array([True, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        result = DataColumn.boolean_and(
+            DataColumn.load(
+                [True, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+            DataColumn.load(
+                [True, True, False],
+                reference_clock_column=daily_master_clock,
+            ),
+        )
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        result = DataColumn.boolean_and(
+            DataColumn.load(
+                [True, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+            DataColumn.load(
+                [True, True, False],
+                reference_clock_column=daily_master_clock,
+            ),
+        )
+        expected = pyarrow.array([True, False, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        with pytest.raises(DataColumnSyncError):
+            DataColumn.boolean_and(
+                DataColumn.load(
+                    [True, False, True],
+                    reference_clock_column=daily_master_clock,
+                ),
+                DataColumn.load(
+                    [True, True, False],
+                    reference_clock_column=other_daily_master_clock,
+                ),
+            )
 
     def test_column_against_bool_disallowing_null_comparisons(self):
         column = DataColumn.load(
@@ -301,6 +417,102 @@ class TestBooleanOr:
     def test_no_columns(self):
         with pytest.raises(DataColumnParameterError):
             DataColumn.boolean_or()
+
+    def test_only_scalars(self):
+        with pytest.raises(DataColumnParameterError):
+            DataColumn.boolean_or(
+                True,
+                False,
+            )
+
+    def test_columns_on_same_reference_clock_keep_it(
+        self,
+        monthly_reference_clock,
+    ):
+        result = DataColumn.boolean_or(
+            DataColumn.load(
+                [True, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+            DataColumn.load(
+                [False, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+        )
+
+        assert result.reference_clock_column is monthly_reference_clock
+
+    def test_columns_on_same_reference_clock_at_its_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        result = DataColumn.boolean_or(
+            DataColumn.load(
+                [True, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+            DataColumn.load(
+                [False, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+        )
+        expected = pyarrow.array([True, False])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_clocks_move_to_master_clock(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        result = DataColumn.boolean_or(
+            DataColumn.load(
+                [True, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+            DataColumn.load(
+                [False, False, True],
+                reference_clock_column=daily_master_clock,
+            ),
+        )
+
+        assert result.reference_clock_column is daily_master_clock
+
+    def test_columns_on_different_clocks_at_master_scale(
+        self,
+        daily_master_clock,
+        monthly_reference_clock,
+    ):
+        result = DataColumn.boolean_or(
+            DataColumn.load(
+                [True, False],
+                reference_clock_column=monthly_reference_clock,
+            ),
+            DataColumn.load(
+                [False, False, True],
+                reference_clock_column=daily_master_clock,
+            ),
+        )
+        expected = pyarrow.array([True, False, True])
+
+        assert result.reference_array.equals(expected)
+
+    def test_columns_on_different_master_clocks(
+        self,
+        daily_master_clock,
+        other_daily_master_clock,
+    ):
+        with pytest.raises(DataColumnSyncError):
+            DataColumn.boolean_or(
+                DataColumn.load(
+                    [True, False, True],
+                    reference_clock_column=daily_master_clock,
+                ),
+                DataColumn.load(
+                    [True, True, False],
+                    reference_clock_column=other_daily_master_clock,
+                ),
+            )
 
     def test_column_against_bool_disallowing_null_comparisons(self):
         column = DataColumn.load(

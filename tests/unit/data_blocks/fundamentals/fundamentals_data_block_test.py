@@ -8,8 +8,8 @@ from .fixtures import (
 )
 
 
-class TestFindConsolidatedTableIrregularFilingRows:
-    def test_find_consolidated_table_irregular_filing_rows(self):
+class TestPrivateFindIrregularFilingRows:
+    def test_irregular_filings(self):
         table = irregular_filings.IRREGULAR_FILINGS_TABLE
         result = FundamentalsDataBlock._find_irregular_filing_rows(
             consolidated_table=table,
@@ -20,7 +20,7 @@ class TestFindConsolidatedTableIrregularFilingRows:
 
         assert result.equals(expected)
 
-    def test_find_consolidated_table_irregular_filing_rows_with_none(self):
+    def test_irregular_filings_with_none(self):
         table = irregular_filings.IRREGULAR_FILINGS_WITH_NONE_TABLE
         result = FundamentalsDataBlock._find_irregular_filing_rows(
             consolidated_table=table,
@@ -33,7 +33,7 @@ class TestFindConsolidatedTableIrregularFilingRows:
 
 
 class TestPrivateCalculateArrayPosteriorDuplicatesMask:
-    def test_calculate_array_posterior_duplicates_mask(self):
+    def test_with_duplicates(self):
         dates_with_dupes = pyarrow.array([
             datetime.date(2023, 1, 1),
             datetime.date(2023, 1, 2),
@@ -46,7 +46,7 @@ class TestPrivateCalculateArrayPosteriorDuplicatesMask:
 
         assert result.equals(expected)
 
-    def test_calculate_array_posterior_duplicates_mask_no_duplicates(self):
+    def test_no_duplicates(self):
         dates_no_dupes = pyarrow.array([
             datetime.date(2023, 1, 1),
             datetime.date(2023, 1, 2),

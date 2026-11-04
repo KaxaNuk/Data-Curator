@@ -64,7 +64,7 @@ class _DroppedConnectionResponse(io.BytesIO):
 
 
 class TestFetchPages:
-    def test_fetch_pages_returns_every_row_once_where_a_page_boundary_splits_a_date(self, monkeypatch) -> None:
+    def test_returns_every_row_once_where_a_page_boundary_splits_a_date(self, monkeypatch) -> None:
         """Three rows share every date, so a page of seven rows ends inside a date on most pages."""
         records = [
             {'ticker': ticker, 'date': f'2024-03-{day:02d}'}
@@ -139,7 +139,7 @@ class TestPrivateCalculateSplitFractions:
             (1e-05, (1e-05, 1.0)),      # too small for any fraction: kept as published rather than as 0/1
         ],
     )
-    def test_calculate_split_fractions_recovers_the_fraction_behind_a_ratio(self, ratio, expected) -> None:
+    def test_recovers_the_fraction_behind_a_ratio(self, ratio, expected) -> None:
         result = _calculate_split_fractions(DataColumn.load([ratio]))
 
         assert result == [expected]
@@ -218,7 +218,7 @@ class TestPrivateRequestTable:
             ('stocks', '2022-01-01'),
         ],
     )
-    def test_request_table_start_date(self, monkeypatch, table, expected_start_date) -> None:
+    def test_start_date_by_table(self, monkeypatch, table, expected_start_date) -> None:
         requested = {}
 
         def record_request(**request):

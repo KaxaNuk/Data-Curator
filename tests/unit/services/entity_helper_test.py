@@ -33,7 +33,7 @@ class TestDetectFieldTypeErrors:
             None
         ]
     )
-    def test_detect_complex_types_correct(self, nullable_str):
+    def test_complex_types_correct(self, nullable_str):
         instance = ComplexFields(
             nullable_str_field=nullable_str,
             dict_field={12: 'ok'},
@@ -43,7 +43,7 @@ class TestDetectFieldTypeErrors:
         assert len(module.detect_field_type_errors(instance)) == 0
 
     # noinspection PyTypeChecker
-    def test_detect_complex_types_incorrect(self):
+    def test_complex_types_incorrect(self):
         instance = ComplexFields(
             nullable_str_field=15,
             dict_field=None,    # currently doesn't check complex non-nullable types
@@ -52,7 +52,7 @@ class TestDetectFieldTypeErrors:
 
         assert len(module.detect_field_type_errors(instance)) == 2
 
-    def test_detect_simple_types_correct(self):
+    def test_simple_types_correct(self):
         instance = SimpleFields(
             int_field=12,
             str_field='some string',
@@ -64,7 +64,7 @@ class TestDetectFieldTypeErrors:
         assert len(module.detect_field_type_errors(instance)) == 0
 
     # noinspection PyTypeChecker
-    def test_detect_simple_types_incorrect(self):
+    def test_simple_types_incorrect(self):
         instance = SimpleFields(
             int_field="some string",
             str_field=34.5,
@@ -77,7 +77,7 @@ class TestDetectFieldTypeErrors:
 
 
 class TestPrivateConvertToType:
-    def test_convert_to_date(self):
+    def test_date(self):
         assert (
             module._convert_to_type(
                 'test_field',
@@ -87,7 +87,7 @@ class TestPrivateConvertToType:
             == datetime.date(2014, 1, 4)
         )
 
-    def test_convert_to_date_exception(self):
+    def test_date_exception(self):
         with pytest.raises(EntityFieldTypeError):
             module._convert_to_type(
                 'test_field',
@@ -102,7 +102,7 @@ class TestPrivateConvertToType:
             ('15', Decimal('15')),
         ]
     )
-    def test_convert_to_decimal(self, value, expected):
+    def test_decimal(self, value, expected):
         assert (
             module._convert_to_type(
                 'test_field',
@@ -120,7 +120,7 @@ class TestPrivateConvertToType:
             (None, None),
         ]
     )
-    def test_convert_to_decimal_exception(self, value, expected):
+    def test_decimal_exception(self, value, expected):
         with pytest.raises(EntityFieldTypeError):
             module._convert_to_type(
                 'test_field',
@@ -128,7 +128,7 @@ class TestPrivateConvertToType:
                 Decimal
             )
 
-    def test_convert_to_int(self):
+    def test_int(self):
         assert (
             module._convert_to_type(
                 'test_field',
@@ -138,7 +138,7 @@ class TestPrivateConvertToType:
             == 1
         )
 
-    def test_convert_to_int_exception(self):
+    def test_int_exception(self):
         with pytest.raises(EntityFieldTypeError):
             module._convert_to_type(
                 'test_field',
@@ -146,7 +146,7 @@ class TestPrivateConvertToType:
                 int
             )
 
-    def test_convert_to_float(self):
+    def test_float(self):
         assert (
             module._convert_to_type(
                 'test_field',
@@ -156,7 +156,7 @@ class TestPrivateConvertToType:
             == 3.14
         )
 
-    def test_convert_to_float_exception(self):
+    def test_float_exception(self):
         with pytest.raises(EntityFieldTypeError):
             module._convert_to_type(
                 'test_field',
@@ -164,7 +164,7 @@ class TestPrivateConvertToType:
                 float
             )
 
-    def test_convert_to_str(self):
+    def test_str(self):
         assert (
             module._convert_to_type(
                 'test_field',
@@ -174,7 +174,7 @@ class TestPrivateConvertToType:
             == "10"
         )
 
-    def test_convert_to_unknown_type(self):
+    def test_unknown_type(self):
         with pytest.raises(NotImplementedError):
             module._convert_to_type(
                 'test_field',
@@ -182,7 +182,7 @@ class TestPrivateConvertToType:
                 MainIdentifier
             )
 
-    def test_convert_to_union_type_non_null(self):
+    def test_union_type_non_null(self):
         assert (
             module._convert_to_type(
                 'test_field',
@@ -192,7 +192,7 @@ class TestPrivateConvertToType:
             == "some value"
         )
 
-    def test_convert_to_union_type_non_null_exception(self):
+    def test_union_type_non_null_exception(self):
         with pytest.raises(EntityFieldTypeError):
             module._convert_to_type(
                 'test_field',
@@ -200,7 +200,7 @@ class TestPrivateConvertToType:
                 int | None
             )
 
-    def test_convert_to_union_type_null(self):
+    def test_union_type_null(self):
         assert (
             module._convert_to_type(
                 'test_field',
@@ -210,7 +210,7 @@ class TestPrivateConvertToType:
             is None
         )
 
-    def test_convert_date_to_itself(self):
+    def test_date_to_itself(self):
         assert (
             module._convert_to_type(
                 'test_field',

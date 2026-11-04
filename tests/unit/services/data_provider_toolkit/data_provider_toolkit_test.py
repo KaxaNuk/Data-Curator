@@ -12,10 +12,8 @@ from kaxanuk.data_curator.exceptions import (
 )
 from kaxanuk.data_curator.services.data_provider_toolkit import DataProviderToolkit
 
-from .fixtures import (
-    endpoint_maps,
-    entity_tables,
-)
+from .fixtures import endpoint_maps
+from ...fixtures import entity_tables
 
 
 @pytest.fixture
@@ -97,7 +95,7 @@ def reverse_pyarrow_array(array: pyarrow.Array):
 
 
 class TestTestCheckIfTablePreservesRowOrder:
-    def test_check_if_table_preserves_row_order_1(self):
+    def test_nondeterministic_subset1(self):
         test1 = check_if_table_preserves_row_order(
             entity_tables.COMPOUND_KEY_MERGED_TABLE,
             entity_tables.COMPOUND_KEY_NONDETERMINISTIC_SUBSET1_TABLE,
@@ -105,7 +103,7 @@ class TestTestCheckIfTablePreservesRowOrder:
 
         assert test1
 
-    def test_check_if_table_preserves_row_order_2(self):
+    def test_nondeterministic_subset2(self):
         test2 = check_if_table_preserves_row_order(
             entity_tables.COMPOUND_KEY_MERGED_TABLE,
             entity_tables.COMPOUND_KEY_NONDETERMINISTIC_SUBSET2_TABLE,
@@ -115,7 +113,7 @@ class TestTestCheckIfTablePreservesRowOrder:
 
 
 class TestTestReversePyarrowArray:
-    def test_reverse_pyarrow_array(self):
+    def test_int_array(self):
         array = pyarrow.array([3, 1, 5, 7])
         expected = pyarrow.array([7, 5, 1, 3])
         result = reverse_pyarrow_array(
@@ -126,7 +124,7 @@ class TestTestReversePyarrowArray:
 
 
 class TestConsolidateProcessedEndpointTables:
-    def test_consolidate_processed_endpoint_tables(self):
+    def test_consistent_tables(self):
         result = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=entity_tables.ENDPOINT_TABLES_CONSISTENT,
             table_merge_fields=[entity_tables.MiniFundamentalRow.filing_date]
@@ -135,7 +133,7 @@ class TestConsolidateProcessedEndpointTables:
 
         assert result.equals(expected)
 
-    def test_consolidate_processed_endpoint_tables_reversed(self):
+    def test_consistent_tables_reversed(self):
         result = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=entity_tables.ENDPOINT_TABLES_CONSISTENT_REVERSED,
             table_merge_fields=[entity_tables.MiniFundamentalRow.filing_date],
@@ -145,7 +143,7 @@ class TestConsolidateProcessedEndpointTables:
 
         assert result.equals(expected)
 
-    def test_consolidate_processed_endpoint_tables_single(self):
+    def test_single_table(self):
         result = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=entity_tables.ENDPOINT_TABLES_SINGLE,
             table_merge_fields=[entity_tables.MiniFundamentalRow.filing_date]
@@ -156,14 +154,14 @@ class TestConsolidateProcessedEndpointTables:
 
         assert result.equals(expected)
 
-    def test_consolidate_processed_endpoint_tables_inconsistent_tables(self):
+    def test_inconsistent_tables(self):
         with pytest.raises(DataProviderMultiEndpointCommonDataDiscrepancyError):
             DataProviderToolkit.consolidate_processed_endpoint_tables(
                 processed_endpoint_tables=entity_tables.ENDPOINT_TABLES_INCONSISTENT,
                 table_merge_fields=[entity_tables.MiniFundamentalRow.filing_date]
             )
 
-    def test_consolidate_processed_endpoint_tables_inconsistent_tables_with_none(self):
+    def test_inconsistent_tables_with_none(self):
         with pytest.raises(DataProviderMultiEndpointCommonDataDiscrepancyError):
             DataProviderToolkit.consolidate_processed_endpoint_tables(
                 processed_endpoint_tables=entity_tables.ENDPOINT_TABLES_INCONSISTENT_WITH_NONE,
@@ -172,7 +170,7 @@ class TestConsolidateProcessedEndpointTables:
 
 
 class TestFindCommonTableMissingRowsMask:
-    def test_find_common_table_missing_rows_mask(self):
+    def test_subset_missing_some_rows(self):
         common_rows_table = pyarrow.table({
             'date': pyarrow.array([
                 datetime.date.fromisoformat('2021-01-01'),
@@ -201,7 +199,7 @@ class TestFindCommonTableMissingRowsMask:
 
         assert result.equals(expected)
 
-    def test_find_common_table_missing_rows_mask_empty_subset(self):
+    def test_empty_subset(self):
         commmon_rows_table = pyarrow.table({
             'date': pyarrow.array([
                 datetime.date.fromisoformat('2021-01-02'),  # from common (index 1)
@@ -223,7 +221,7 @@ class TestFindCommonTableMissingRowsMask:
 
         assert result.equals(expected)
 
-    def test_find_common_table_missing_rows_mask_empty_common(self):
+    def test_empty_common(self):
         commmon_rows_table = pyarrow.table({
             'date': pyarrow.array([]),
             'value': pyarrow.array([]),
@@ -246,7 +244,7 @@ class TestFindCommonTableMissingRowsMask:
 
 
 class TestPrivateCalculateEndpointColumnRemaps:
-    def test_calculate_endpoint_column_remaps(self):
+    def test_mixed_preprocessor_tags(self):
         result = DataProviderToolkit._calculate_endpoint_column_remaps(
             endpoint_maps.ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS
         )
@@ -256,7 +254,7 @@ class TestPrivateCalculateEndpointColumnRemaps:
 
 
 class TestPrivateCalculateEndpointFieldPreprocessors:
-    def test_calculate_endpoint_field_preprocessors(self):
+    def test_mixed_preprocessor_tags(self):
         result = DataProviderToolkit._calculate_endpoint_field_preprocessors(
             endpoint_maps.ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS
         )
@@ -266,7 +264,7 @@ class TestPrivateCalculateEndpointFieldPreprocessors:
 
 
 class TestPrivateDropTableRowsByPrimaryKey:
-    def test_drop_table_rows_by_single_primary_key(self):
+    def test_single_primary_key(self):
         table = pyarrow.table({
             'primary_key': [1, 2, 3, 4],
             'other_column': [1, 2, 3, 4]
@@ -285,7 +283,7 @@ class TestPrivateDropTableRowsByPrimaryKey:
 
         assert result.equals(expected)
 
-    def test_drop_table_rows_by_multiple_primary_keys_with_none(self):
+    def test_multiple_primary_keys_with_none(self):
         table = pyarrow.table({
             'primary_key1': [
                 datetime.date.fromisoformat('2021-01-03'),  # to drop
@@ -324,7 +322,7 @@ class TestPrivateDropTableRowsByPrimaryKey:
 
         assert result.equals(expected)
 
-    def test_drop_table_rows_by_primary_key_returns_empty_table_without_columns_unchanged(self):
+    def test_returns_empty_table_without_columns_unchanged(self):
         empty_table = pyarrow.table({})
         primary_keys_table = pyarrow.table({
             'primary_key': [1, 3],
@@ -336,7 +334,7 @@ class TestPrivateDropTableRowsByPrimaryKey:
 
         assert result.equals(empty_table)
 
-    def test_drop_table_rows_by_primary_keys_fails_on_missing_key_column(self):
+    def test_fails_on_missing_key_column(self):
         table = pyarrow.table({
             'primary_key': [1, 2, 3, 4],
             'other_column': [1, 2, 3, 4]
@@ -353,7 +351,7 @@ class TestPrivateDropTableRowsByPrimaryKey:
 
 
 class TestPrivateCreateTableFromJsonString:
-    def test_create_table_from_json_string(self):
+    def test_market_daily_json(self):
         base_dir = pathlib.Path(__file__).parent
         relative_path = f'{base_dir}/fixtures/market_daily.json'
         json = pathlib.Path(relative_path).read_text()
@@ -377,8 +375,8 @@ class TestPrivateCreateTableFromJsonString:
         assert result.equals(expected)
 
 
-class TestPrivateMergeArraySubsetsPreservingOrder:
-    def test_merge_single_column_keys(self):
+class TestPrivateMergePrimaryKeySubsetsPreservingOrder:
+    def test_single_column_keys(self):
         result = DataProviderToolkit._merge_primary_key_subsets_preserving_order([
             pyarrow.table({
                 'date':
@@ -399,7 +397,7 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
 
         assert result.equals(expected)
 
-    def test_merge_single_column_keys_descending(self):
+    def test_single_column_keys_descending(self):
         result = DataProviderToolkit._merge_primary_key_subsets_preserving_order(
             [
                 pyarrow.table({
@@ -423,7 +421,7 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
 
         assert result.equals(expected)
 
-    def test_merge_compound_column_keys(self):
+    def test_compound_column_keys(self):
         result = DataProviderToolkit._merge_primary_key_subsets_preserving_order([
             entity_tables.COMPOUND_KEY_SUBSET1_TABLE,
             entity_tables.COMPOUND_KEY_SUBSET2_TABLE,
@@ -433,7 +431,7 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
 
         assert result.equals(expected)
 
-    def test_merge_single_subset(self):
+    def test_single_subset(self):
         result = DataProviderToolkit._merge_primary_key_subsets_preserving_order([
             entity_tables.COMPOUND_KEY_SUBSET1_TABLE
         ])
@@ -441,7 +439,7 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
 
         assert result.equals(expected)
 
-    def test_merge_single_column_inconsistent_order_fails(self):
+    def test_single_column_inconsistent_order_fails(self):
         with pytest.raises(DataProviderMultiEndpointCommonDataOrderError):
             DataProviderToolkit._merge_primary_key_subsets_preserving_order([
                 pyarrow.table({
@@ -458,7 +456,7 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
                 }),
             ])
 
-    def test_merge_key_tables_with_different_column_names_fails(self):
+    def test_key_tables_with_different_column_names_fails(self):
         with pytest.raises(DataProviderToolkitRuntimeError):
             DataProviderToolkit._merge_primary_key_subsets_preserving_order([
                 pyarrow.table({
@@ -471,7 +469,7 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
                 })
             ])
 
-    def test_merge_key_tables_with_different_column_numbers_fails(self):
+    def test_key_tables_with_different_column_numbers_fails(self):
         with pytest.raises(DataProviderToolkitRuntimeError):
             DataProviderToolkit._merge_primary_key_subsets_preserving_order([
                 pyarrow.table({
@@ -481,14 +479,14 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
                 entity_tables.COMPOUND_KEY_SUBSET1_TABLE,
             ])
 
-    def test_merge_key_tables_with_duplicate_rows_fails(self):
+    def test_key_tables_with_duplicate_rows_fails(self):
         with pytest.raises(DataProviderToolkitRuntimeError):
             DataProviderToolkit._merge_primary_key_subsets_preserving_order([
                 entity_tables.COMPOUND_KEY_MERGED_TABLE,
                 entity_tables.COMPOUND_KEY_MERGED_TABLE_DUPLICATE_ROWS
             ])
 
-    def test_merge_nondeterministic_order_subsets_preserves_subset_order(self):
+    def test_nondeterministic_order_subsets_preserves_subset_order(self):
         result = DataProviderToolkit._merge_primary_key_subsets_preserving_order([
             entity_tables.COMPOUND_KEY_NONDETERMINISTIC_SUBSET1_TABLE,
             entity_tables.COMPOUND_KEY_NONDETERMINISTIC_SUBSET2_TABLE,
@@ -507,7 +505,7 @@ class TestPrivateMergeArraySubsetsPreservingOrder:
 
 
 class TestPrivateProcessRemappedEndpointTables:
-    def test_process_remapped_endpoint_tables(self):
+    def test_mixed_preprocessor_tags(self):
         result = DataProviderToolkit._process_remapped_endpoint_tables(
             endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_PREPROCESSORS,
             endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD,
@@ -526,7 +524,7 @@ class TestPrivateProcessRemappedEndpointTables:
 
 
 class TestPrivateRemapEndpointTableColumns:
-    def test_remap_endpoint_table_columns(self):
+    def test_mixed_preprocessor_tags(self):
         result = DataProviderToolkit._remap_endpoint_table_columns(
             endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS,
             endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_TAG,
@@ -543,7 +541,7 @@ class TestPrivateRemapEndpointTableColumns:
             )
         )
 
-    def test_remap_endpoint_table_columns_with_extended_fields(self):
+    def test_mixed_preprocessor_tags_with_extended_fields(self):
         result = DataProviderToolkit._remap_endpoint_table_columns(
             endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS,
             endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_TAG,

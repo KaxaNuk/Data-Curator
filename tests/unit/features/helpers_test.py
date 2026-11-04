@@ -180,23 +180,28 @@ def example_infinite_operations():
         ])
     }
 
-def test_replace_infinite_with_none_test(example_infinite_operations):
-    column = example_infinite_operations["column"]
-    expected_result = example_infinite_operations["expected_result"]
-    assert DataColumn.fully_equal(
-        helpers.replace_infinite_with_none(column),
-        expected_result,
-        equal_nulls=True
-    )
 
-def test_replace_infinite_with_none_all_finite():
-    finite_values = [1, 2, 3, 4]
-    column = DataColumn.load(finite_values)
-    result = helpers.replace_infinite_with_none(column)
-    assert DataColumn.fully_equal(
-        result,
-        column,
-    )
+class TestReplaceInfiniteWithNone:
+    def test_with_infinite_values(
+        self,
+        example_infinite_operations,
+    ):
+        column = example_infinite_operations["column"]
+        expected_result = example_infinite_operations["expected_result"]
+        assert DataColumn.fully_equal(
+            helpers.replace_infinite_with_none(column),
+            expected_result,
+            equal_nulls=True
+        )
+
+    def test_all_finite(self):
+        finite_values = [1, 2, 3, 4]
+        column = DataColumn.load(finite_values)
+        result = helpers.replace_infinite_with_none(column)
+        assert DataColumn.fully_equal(
+            result,
+            column,
+        )
 
 
 class TestIndexedRollingWindowOperation:
@@ -247,7 +252,7 @@ class TestIndexedRollingWindowOperation:
             )
 
     # noinspection PyTypeChecker
-    def test_incorrect_param_window_lngth(self, example_rolling_window_operations):
+    def test_incorrect_param_window_length(self, example_rolling_window_operations):
         with pytest.raises(CalculationHelperError):
             helpers.indexed_rolling_window_operation(
                 key_column=example_rolling_window_operations['key_column'],
@@ -275,33 +280,49 @@ class TestIndexedRollingWindowOperation:
             )
 
 
-@pytest.mark.parametrize(("column", "days", "expected_msg"), [
-    # Case: 'column' is not a DataColumn
-    ("not_a_DataColumn", 5, "features.helpers.annualized_volatility() column parameter must be a DataColumn object"),
-    # Cases: 'days' is not a positive integer
-    (DataColumn.load([Decimal('1'), Decimal('2'), Decimal('3')]), 0,
-     "features.helpers.annualized_volatility() days parameter must be a positive integer"),
-    (DataColumn.load([Decimal('1'), Decimal('2'), Decimal('3')]), -1,
-     "features.helpers.annualized_volatility() days parameter must be a positive integer"),
-    (DataColumn.load([Decimal('1'), Decimal('2'), Decimal('3')]), "5",
-     "features.helpers.annualized_volatility() days parameter must be a positive integer")
-])
-def test_annualized_volatility_invalid_parameters(column, days, expected_msg):
-    with pytest.raises(CalculationHelperError) as exc_info:
-        helpers.annualized_volatility(column=column, days=days)
-    assert expected_msg in str(exc_info.value)
+class TestAnnualizedVolatility:
+    @pytest.mark.parametrize(("column", "days", "expected_msg"), [
+        # Case: 'column' is not a DataColumn
+        (
+            "not_a_DataColumn",
+            5,
+            "features.helpers.annualized_volatility() column parameter must be a DataColumn object",
+        ),
+        # Cases: 'days' is not a positive integer
+        (DataColumn.load([Decimal('1'), Decimal('2'), Decimal('3')]), 0,
+         "features.helpers.annualized_volatility() days parameter must be a positive integer"),
+        (DataColumn.load([Decimal('1'), Decimal('2'), Decimal('3')]), -1,
+         "features.helpers.annualized_volatility() days parameter must be a positive integer"),
+        (DataColumn.load([Decimal('1'), Decimal('2'), Decimal('3')]), "5",
+         "features.helpers.annualized_volatility() days parameter must be a positive integer")
+    ])
+    def test_invalid_parameters(
+        self,
+        column,
+        days,
+        expected_msg,
+    ):
+        with pytest.raises(CalculationHelperError) as exc_info:
+            helpers.annualized_volatility(column=column, days=days)
+        assert expected_msg in str(exc_info.value)
 
 
-# @todo: don't check for hardcode error message texts
-@pytest.mark.parametrize(("column", "days", "expected_msg"), [
-    # Case: 'column' is not a DataColumn
-    ("not_a_DataColumn", 10, "column parameter must be a DataColumn object"),
-    # Case: 'days' is not an integer (e.g., a string)
-    (DataColumn.load([1, 2, 3, 4]), "10", "days parameter must be a positive integer"),
-    # Case: 'days' is not positive (zero)
-    (DataColumn.load([1, 2, 3, 4]), 0, "days parameter must be a positive integer"),
-])
-def test_exponential_moving_average_invalid_parameters(column, days, expected_msg):
-    with pytest.raises(CalculationHelperError) as exc_info:
-        helpers.exponential_moving_average(column=column, days=days)
-    assert expected_msg in str(exc_info.value)
+class TestExponentialMovingAverage:
+    # @todo: don't check for hardcode error message texts
+    @pytest.mark.parametrize(("column", "days", "expected_msg"), [
+        # Case: 'column' is not a DataColumn
+        ("not_a_DataColumn", 10, "column parameter must be a DataColumn object"),
+        # Case: 'days' is not an integer (e.g., a string)
+        (DataColumn.load([1, 2, 3, 4]), "10", "days parameter must be a positive integer"),
+        # Case: 'days' is not positive (zero)
+        (DataColumn.load([1, 2, 3, 4]), 0, "days parameter must be a positive integer"),
+    ])
+    def test_invalid_parameters(
+        self,
+        column,
+        days,
+        expected_msg,
+    ):
+        with pytest.raises(CalculationHelperError) as exc_info:
+            helpers.exponential_moving_average(column=column, days=days)
+        assert expected_msg in str(exc_info.value)

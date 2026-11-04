@@ -36,8 +36,10 @@ from kaxanuk.data_curator.services.column_builder import (
     CompletedColumns,
     DataRows,
 )
-from . import fixture_entities      # @todo: do we really need them in a different file?
-from .fixtures import calculations
+from .fixtures import (
+    calculations,
+    entities,
+)
 # note: data_column_debugger is defined in tests/conftest.py
 
 
@@ -325,24 +327,24 @@ def example_expanded_split_data():
 @pytest.fixture(scope="module")
 def example_entities_with_subentities():
     return {
-        '1': fixture_entities.ExampleEntity(
+        '1': entities.ExampleEntity(
             field_int=10,
             field_str='lol',
             field_date=datetime.date(2020, 1, 1),
             field_decimal=decimal.Decimal('1.23'),
-            field_subentity=fixture_entities.ExampleSubEntity(
+            field_subentity=entities.ExampleSubEntity(
                 subfield_int=11,
                 subfield_str='string 1',
                 subfield_date=datetime.date(2020, 1, 2),
                 subfield_decimal=decimal.Decimal('1.231'),
             ),
         ),
-        '2': fixture_entities.ExampleEntity(
+        '2': entities.ExampleEntity(
             field_int=20,
             field_str='hi',
             field_date=datetime.date(2020, 2, 1),
             field_decimal=decimal.Decimal('2.23'),
-            field_subentity=fixture_entities.ExampleSubEntity(
+            field_subentity=entities.ExampleSubEntity(
                 subfield_int=21,
                 subfield_str='string 2',
                 subfield_date=datetime.date(2020, 2, 2),
@@ -503,7 +505,7 @@ def example_expand_dated_factors_dividend_data():
 
 
 class TestPrivateExpandDatedFactors:
-    def test_expand_dated_factors_full(self, example_expand_dated_factors_dividend_data):
+    def test_full(self, example_expand_dated_factors_dividend_data):
         result = ColumnBuilder._expand_dated_factors(
             iter(example_expand_dated_factors_dividend_data['expected_result_full'].keys()),
             DIVIDEND_DATE_FIELD_NAMES,
@@ -513,7 +515,7 @@ class TestPrivateExpandDatedFactors:
 
         assert result == example_expand_dated_factors_dividend_data['expected_result_full']
 
-    def test_expand_dated_factors_no_data_rows(self):
+    def test_no_data_rows(self):
         data_rows:DataRows = {}
         expected_result = {
             '2022-07-07': None,
@@ -529,7 +531,7 @@ class TestPrivateExpandDatedFactors:
 
         assert result == expected_result
 
-    def test_expand_dated_factors_more_dates_than_data_rows(self, example_expand_dated_factors_dividend_data):
+    def test_more_dates_than_data_rows(self, example_expand_dated_factors_dividend_data):
         results_with_extra_dates = {
             **example_expand_dated_factors_dividend_data['expected_result_full'],
             '2020-11-01': {},   # before all dates
@@ -552,7 +554,7 @@ class TestPrivateExpandDatedFactors:
 
         assert result == expected_result
 
-    def test_expand_dated_factors_with_none_date_fields(self, example_expand_dated_factors_dividend_data):
+    def test_with_none_date_fields(self, example_expand_dated_factors_dividend_data):
         result = ColumnBuilder._expand_dated_factors(
             iter(example_expand_dated_factors_dividend_data['expected_result_with_nones'].keys()),
             DIVIDEND_DATE_FIELD_NAMES,
@@ -564,7 +566,7 @@ class TestPrivateExpandDatedFactors:
 
 
 class TestPrivateGenerateColumn:
-    def test_generate_column_with_empty_rows(self):
+    def test_empty_rows(self):
         data_entity_rows = {'1': None}
         field = 'test_field'
         subfield = 'test_subfield'
@@ -581,7 +583,7 @@ class TestPrivateGenerateColumn:
             equal_nulls=True
         )
 
-    def test_generate_column_with_full_rows(
+    def test_full_rows(
         self,
         example_entities_with_subentities
     ):
@@ -605,20 +607,20 @@ class TestPrivateGenerateColumn:
 
 
 class TestPrivateGetCalculationFunction:
-    def test_get_calculation_function_existing(self):
+    def test_existing(self):
         result = ColumnBuilder._get_calculation_function(
             'example_sum_function_1',
-            [fixture_entities]
+            [entities]
         )
-        expected_result = fixture_entities.example_sum_function_1
+        expected_result = entities.example_sum_function_1
 
         assert result is expected_result
 
-    def test_get_calculation_function_missing(self):
+    def test_missing(self):
         with pytest.raises(ColumnBuilderCustomFunctionNotFoundError):
             ColumnBuilder._get_calculation_function(
                 'example_nonexistent_function',
-                [fixture_entities]
+                [entities]
             )
 
 
@@ -767,8 +769,8 @@ class TestPrivateGetFieldFromRow:
 
 
 class TestPrivateGetFunctionParams:
-    def test_get_function_params_correct(self):
-        result = ColumnBuilder._get_function_params(fixture_entities.example_sum_function_1)
+    def test_callable(self):
+        result = ColumnBuilder._get_function_params(entities.example_sum_function_1)
         expected_result = [
             'a',
             'b',
@@ -776,13 +778,13 @@ class TestPrivateGetFunctionParams:
 
         assert result == expected_result
 
-    def test_get_function_params_not_callable(self):
+    def test_not_callable(self):
         with pytest.raises(TypeError):
             ColumnBuilder._get_function_params(42)  # type: ignore
 
 
 class TestPrivateInfillData:
-    def test_infill_data_rows_with_dates_starting_after(self):
+    def test_data_rows_with_dates_starting_after(self):
         data_rows = {
             '2021-04-03': ExampleSubEntity1(
                 1,
@@ -818,7 +820,7 @@ class TestPrivateInfillData:
             == expected_result
         )
 
-    def test_infill_data_rows_with_dates_starting_before(self):
+    def test_data_rows_with_dates_starting_before(self):
         data_rows = {
             '2021-04-03': ExampleSubEntity1(
                 1,
@@ -852,7 +854,7 @@ class TestPrivateInfillData:
             == expected_result
         )
 
-    def test_infill_data_rows_with_first_date_after_all_rows(self):
+    def test_data_rows_with_first_date_after_all_rows(self):
         data_rows = {
             '2021-04-03': ExampleSubEntity1(
                 1,
@@ -884,7 +886,7 @@ class TestPrivateInfillData:
             == expected_result
         )
 
-    def test_infill_data_rows_with_first_date_on_first_row(self):
+    def test_data_rows_with_first_date_on_first_row(self):
         data_rows = {
             '2021-04-03': ExampleSubEntity1(
                 1,
@@ -912,7 +914,7 @@ class TestPrivateInfillData:
             == expected_result
         )
 
-    def test_infill_data_rows_with_several_rows_between_dates(self):
+    def test_data_rows_with_several_rows_between_dates(self):
         data_rows = {
             '2021-04-03': ExampleSubEntity1(
                 1,
@@ -944,7 +946,7 @@ class TestPrivateInfillData:
             == expected_result
         )
 
-    def test_infill_data_rows_without_dates(self):
+    def test_data_rows_without_dates(self):
         dates = iter({})
         data_rows = {
             '2021-04-03': ExampleSubEntity1(
@@ -966,7 +968,7 @@ class TestPrivateInfillData:
                 data_rows
             )
 
-    def test_infill_dates_without_data_rows(self):
+    def test_dates_without_data_rows(self):
         expected_result = {
             '2021-04-04': None,
             '2021-04-09': None,
@@ -1391,7 +1393,7 @@ class TestPrivateGetEntityPropertyNames:
         assert (
             'field_str'
             in ColumnBuilder._get_entity_property_names(
-                fixture_entities.ExampleEntity
+                entities.ExampleEntity
             )
         )
 
@@ -1399,6 +1401,6 @@ class TestPrivateGetEntityPropertyNames:
         assert (
             'nonexistent_field'
             not in ColumnBuilder._get_entity_property_names(
-                fixture_entities.ExampleEntity
+                entities.ExampleEntity
             )
         )

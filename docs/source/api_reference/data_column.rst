@@ -102,8 +102,8 @@ Equality Utilities
 
 To compare full columns for equality:
 
-- `equal(...)` — element-wise
-- `fully_equal(...)` — total match (returns `True`, `False` or `None`)
+- `equal(...)` — element-wise, at the shared reference clock's scale if there is one, otherwise at the master clock's
+- `fully_equal(...)` — total match at the master clock's scale (returns `True`, `False` or `None`)
 
 .. code-block:: python
 

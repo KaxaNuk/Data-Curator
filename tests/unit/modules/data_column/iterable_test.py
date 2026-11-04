@@ -5,6 +5,23 @@ import pytest
 
 from kaxanuk.data_curator import DataColumn
 
+from .fixtures import clocks
+
+
+@pytest.fixture
+def daily_master_clock():
+    return clocks.create_daily_master_clock()
+
+
+@pytest.fixture
+def hourly_reference_clock(daily_master_clock):
+    return clocks.create_hourly_reference_clock(daily_master_clock)
+
+
+@pytest.fixture
+def monthly_reference_clock(daily_master_clock):
+    return clocks.create_monthly_reference_clock(daily_master_clock)
+
 
 @pytest.fixture
 def sample_list_data():
@@ -13,101 +30,182 @@ def sample_list_data():
     return data
 
 
-def test_arrow_array_default_type():
-    actual_result = DataColumn(pyarrow.array([1, 2, 3])).__arrow_array__()
-    expected_result = pyarrow.array([1, 2, 3])
+class TestDunderArrowArray:
+    def test_default_type(self):
+        actual_result = DataColumn(pyarrow.array([1, 2, 3])).__arrow_array__()
+        expected_result = pyarrow.array([1, 2, 3])
 
-    assert (
-        pyarrow.compute.all(
-            pyarrow.compute.equal(actual_result, expected_result)
+        assert (
+            pyarrow.compute.all(
+                pyarrow.compute.equal(actual_result, expected_result)
+            )
+            .as_py()
         )
-        .as_py()
-    )
 
+    def test_specific_type(self):
+        actual_result = DataColumn(pyarrow.array([1, 2, 3])).__arrow_array__(type=pyarrow.float64())
+        expected_result = pyarrow.array([1, 2, 3], type=pyarrow.float64())
 
-def test_arrow_array_specific_type():
-    actual_result = DataColumn(pyarrow.array([1, 2, 3])).__arrow_array__(type=pyarrow.float64())
-    expected_result = pyarrow.array([1, 2, 3], type=pyarrow.float64())
-
-    assert (
-        pyarrow.compute.all(
-            pyarrow.compute.equal(actual_result, expected_result)
+        assert (
+            pyarrow.compute.all(
+                pyarrow.compute.equal(actual_result, expected_result)
+            )
+            .as_py()
         )
-        .as_py()
-    )
+
+    def test_column_on_reference_clock_at_master_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column.__arrow_array__()
+        expected = pyarrow.array([10, 21, 21])
+
+        assert result.equals(expected)
 
 
-def test_get_item_slice_start(sample_list_data):
-    column = DataColumn.load(sample_list_data)
-    result = column[1:]
-    expected = DataColumn.load(sample_list_data[1:])
+class TestDunderGetitem:
+    def test_slice_start(
+        self,
+        sample_list_data,
+    ):
+        column = DataColumn.load(sample_list_data)
+        result = column[1:]
+        expected = DataColumn.load(sample_list_data[1:])
 
-    assert DataColumn.fully_equal(
-        result,
-        expected,
-        equal_nulls=True
-    )
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            equal_nulls=True
+        )
+
+    def test_slice_stop(
+        self,
+        sample_list_data,
+    ):
+        column = DataColumn.load(sample_list_data)
+        result = column[:3]
+        expected = DataColumn.load(sample_list_data[:3])
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            equal_nulls=True
+        )
+
+    def test_slice_step(
+        self,
+        sample_list_data,
+    ):
+        column = DataColumn.load(sample_list_data)
+        result = column[::2]
+        expected = DataColumn.load(sample_list_data[::2])
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            equal_nulls=True
+        )
+
+    def test_int_parameter(
+        self,
+        sample_list_data,
+    ):
+        column = DataColumn.load(sample_list_data)
+        result = column[4]
+        expected = DataColumn.load([sample_list_data[4]])
+
+        assert DataColumn.fully_equal(
+            result,
+            expected,
+            equal_nulls=True
+        )
+
+    def test_slice_of_column_on_reference_clock_at_master_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column[1:3]
+        expected = pyarrow.array([21, 21])
+
+        assert result.reference_array.equals(expected)
+
+    def test_slice_of_column_on_clock_without_clock(
+        self,
+        daily_master_clock,
+    ):
+        column = DataColumn.load(
+            [1, 2, 3],
+            reference_clock_column=daily_master_clock,
+        )
+        result = column[0:2]
+
+        assert result.reference_clock_column is None
+
+    def test_int_parameter_on_reference_clock_at_master_scale(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
+        result = column[2]
+        expected = pyarrow.array([21])
+
+        assert result.reference_array.equals(expected)
 
 
-def test_get_item_slice_stop(sample_list_data):
-    column = DataColumn.load(sample_list_data)
-    result = column[:3]
-    expected = DataColumn.load(sample_list_data[:3])
+class TestDunderLen:
+    def test_empty_pyarrow_array(self):
+        array = pyarrow.array([])
+        dc = DataColumn(array)
 
-    assert DataColumn.fully_equal(
-        result,
-        expected,
-        equal_nulls=True
-    )
+        assert len(dc) == 0
 
+    def test_null_array(self):
+        array = pyarrow.array([None, None], type=pyarrow.null())
+        dc = DataColumn(array)
 
-def test_get_item_slice_step(sample_list_data):
-    column = DataColumn.load(sample_list_data)
-    result = column[::2]
-    expected = DataColumn.load(sample_list_data[::2])
+        assert len(dc) == 2
 
-    assert DataColumn.fully_equal(
-        result,
-        expected,
-        equal_nulls=True
-    )
+    def test_float_array_with_nan(self):
+        array = pyarrow.array([1.1, 2.2, float('nan')])
+        dc = DataColumn(array)
 
+        assert len(dc) == 3
 
-def test_get_item_int_parameter(sample_list_data):
-    column = DataColumn.load(sample_list_data)
-    result = column[4]
-    expected = DataColumn.load([sample_list_data[4]])
+    def test_decimal_array_with_none(self):
+        array = pyarrow.array([Decimal('1.1'), Decimal('2.2'), None])
+        dc = DataColumn(array)
 
-    assert DataColumn.fully_equal(
-        result,
-        expected,
-        equal_nulls=True
-    )
+        assert len(dc) == 3
 
+    def test_column_on_downscaling_clock(
+        self,
+        hourly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [5, 2, 3, 4],
+            reference_clock_column=hourly_reference_clock,
+        )
 
-def test_len_with_empty_pyarrow_array():
-    array = pyarrow.array([])
-    dc = DataColumn(array)
+        assert len(column) == 3
 
-    assert len(dc) == 0
+    def test_column_on_upscaling_clock(
+        self,
+        monthly_reference_clock,
+    ):
+        column = DataColumn.load(
+            [10, 21],
+            reference_clock_column=monthly_reference_clock,
+        )
 
-
-def test_len_with_null_array():
-    array = pyarrow.array([None, None], type=pyarrow.null())
-    dc = DataColumn(array)
-
-    assert len(dc) == 2
-
-
-def test_len_with_float_array_with_nan():
-    array = pyarrow.array([1.1, 2.2, float('nan')])
-    dc = DataColumn(array)
-
-    assert len(dc) == 3
-
-
-def test_len_with_decimal_array_with_none():
-    array = pyarrow.array([Decimal('1.1'), Decimal('2.2'), None])
-    dc = DataColumn(array)
-
-    assert len(dc) == 3
+        assert len(column) == 3
