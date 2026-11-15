@@ -42,6 +42,8 @@ type CalculationModules = list[types.ModuleType]
 type ColumnIdentifier = str
 # Type for the container of the columns that have been completely calculated
 type CompletedColumns = dict[ColumnIdentifier, DataColumn | Configuration]
+# Type for the data entities, keyed by the data block each one belongs to
+type DataBlockEntities = dict[type[BaseDataBlock], BaseDataEntity]
 # Type for the built rows of each data block, keyed by each of the block's prefixes
 type DataBlockRowsByPrefix = dict[str, DataRows | ExpandedDatedFactors]
 # Type for the indexed data rows we'll use to build some columns
@@ -96,7 +98,7 @@ class ColumnBuilder:
     """
     Class for building the columns we need, based on the data entities provided.
 
-    Initiate it with the data entities, and then run process_columns().
+    Initiate it with the data entities, keyed by the data block each one belongs to, and then run process_columns().
     """
 
     # the prefix identifying calculated columns, whose values come from calculation functions:
@@ -106,11 +108,6 @@ class ColumnBuilder:
     DEFAULT_MASTER_CLOCK_DATA_BLOCK: typing.ClassVar[type[BaseDataBlock]] = MarketDailyDataBlock
     # the names of the columns that are provided directly, without a prefix or dependencies:
     FIXED_COLUMN_NAMES: typing.ClassVar[tuple[ColumnIdentifier, ...]] = ('configuration',)
-    # @todo replace once entities expose their rows through a uniform accessor:
-    # candidate attribute names holding a data entity's row dict, tried in order
-    ROW_FIELD_NAMES: typing.ClassVar[tuple[str, ...]] = (
-        'rows',
-    )
 
     _calculated_columns: typing.ClassVar[CalculatedColumnsByName] = {}
     _calculation_modules: typing.ClassVar[CalculationModules] = []
@@ -124,20 +121,24 @@ class ColumnBuilder:
     def __init__(
         self,
         *,
-        data_entities: list[BaseDataEntity],
+        data_block_entities: DataBlockEntities,
     ):
         if not self._data_blocks:
             msg = "ColumnBuilder used before its data blocks were initialized"
 
             raise ColumnBuilderUninitializedError(msg)
 
-        # Resolve each entity to its data block and rows, and locate the master clock rows that all the
-        # other blocks' rows will be synced against.
+        self._validate_data_block_entities(
+            data_block_entities,
+            self._data_blocks,
+        )
+
+        # Get each data block's entity rows, and locate the master clock rows that all the other blocks' rows will be
+        # synced against. The entities come keyed by their data blocks, as several blocks can share a main entity.
         entity_rows_by_block = {}
         master_clock_rows = None
-        for entity in data_entities:
-            data_block = self._get_data_block_for_entity(entity, self._data_blocks)
-            entity_rows = self._get_entity_rows(entity, self.ROW_FIELD_NAMES)
+        for (data_block, entity) in data_block_entities.items():
+            entity_rows = self._get_entity_rows(entity, data_block.rows_field)
             entity_rows_by_block[data_block] = entity_rows
             if data_block is self._master_clock_data_block:
                 master_clock_rows = entity_rows
@@ -251,6 +252,11 @@ class ColumnBuilder:
         resolved_data_blocks = cls._resolve_data_blocks(
             data_blocks,
             cls._get_built_in_data_blocks(),
+        )
+        # A data block with the calculated columns' prefix would take over all of them
+        cls._validate_reserved_prefixes(
+            resolved_data_blocks.data_blocks,
+            (cls.CALCULATED_COLUMN_PREFIX,),
         )
         cls._data_blocks = resolved_data_blocks.data_blocks
         cls._master_clock_data_block = cls._resolve_master_clock_data_block(
@@ -510,12 +516,17 @@ class ColumnBuilder:
         """
         column_extractors = {}
         for data_block in data_blocks:
+            # The data block's entities holding the fields can be extensions of the entities declaring them
             dated_factor_entity = (
-                data_block.dated_factor_date_fields[0].__objclass__
+                data_block.get_field_entity(
+                    data_block.dated_factor_date_fields[0]
+                )
                 if len(data_block.dated_factor_date_fields) > 0
                 else None
             )
-            main_row_entity = data_block.clock_sync_field.__objclass__
+            main_row_entity = data_block.get_field_entity(
+                data_block.clock_sync_field
+            )
             for (prefix, entity) in data_block.prefix_entity_map.items():
                 if entity is dated_factor_entity:
                     column_extractors[prefix] = ColumnExtractor(
@@ -769,37 +780,6 @@ class ColumnBuilder:
         )
 
     @staticmethod
-    def _get_data_block_for_entity(
-        entity: BaseDataEntity,
-        data_blocks: list[type[BaseDataBlock]],
-    ) -> type[BaseDataBlock]:
-        """
-        Return the data block whose main entity matches the given entity instance.
-
-        Parameters
-        ----------
-        entity
-            The data entity instance whose owning data block we want to find
-        data_blocks
-            The data blocks to search, each identified by its main entity
-
-        Returns
-        -------
-        The data block whose main_entity matches the type of `entity`
-
-        Raises
-        ------
-        InjectedDependencyError
-        """
-        for data_block in data_blocks:
-            if isinstance(entity, data_block.main_entity):
-                return data_block
-
-        msg = f"No data block found for entity of type {type(entity).__name__}"
-
-        raise InjectedDependencyError(msg)
-
-    @staticmethod
     def _get_entity_property_names(entity_class: type) -> frozenset[str]:
         """
         Return the names of all the properties of an entity class.
@@ -823,33 +803,23 @@ class ColumnBuilder:
     @staticmethod
     def _get_entity_rows(
         entity: BaseDataEntity,
-        row_field_names: tuple[str, ...],
+        rows_field: EntityField,
     ) -> DataRows:
         """
-        Return the row dict of a data entity, looked up through the candidate row field names.
+        Return the row dict of a data block's main entity, held by the data block's rows field.
 
         Parameters
         ----------
         entity
-            The data entity whose rows we want to extract
-        row_field_names
-            The candidate attribute names holding the entity's row dict, tried in order
+            The data block's main entity whose rows we want to extract
+        rows_field
+            The data block's main entity field holding the rows
 
         Returns
         -------
         The entity's row dict
-
-        Raises
-        ------
-        InjectedDependencyError
         """
-        for row_field_name in row_field_names:
-            if hasattr(entity, row_field_name):
-                return getattr(entity, row_field_name)
-
-        msg = f"No known row field found on entity of type {type(entity).__name__}"
-
-        raise InjectedDependencyError(msg)
+        return getattr(entity, rows_field.__name__)
 
     @staticmethod
     def _get_field_from_row(
@@ -941,9 +911,9 @@ class ColumnBuilder:
         InjectedDependencyError
         """
         clock_sync_field = master_clock_data_block.clock_sync_field
-        clock_sync_entity = clock_sync_field.__objclass__
+        clock_sync_entity = master_clock_data_block.get_field_entity(clock_sync_field)
         for (prefix, entity) in master_clock_data_block.prefix_entity_map.items():
-            if issubclass(entity, clock_sync_entity):
+            if entity is clock_sync_entity:
                 return f'{prefix}_{clock_sync_field.__name__}'
 
         msg = " ".join([
@@ -960,6 +930,8 @@ class ColumnBuilder:
     ) -> str:
         """
         Return the name of the field on `parent_entity` that holds the `subentity`.
+
+        The field can be typed either with the subentity, or with an entity the subentity extends.
 
         Parameters
         ----------
@@ -981,7 +953,13 @@ class ColumnBuilder:
                 typing.get_args(field_type)
                 or (field_type,)
             )
-            if subentity in field_types:
+            if any(
+                (
+                    isinstance(candidate_type, type)
+                    and issubclass(subentity, candidate_type)
+                )
+                for candidate_type in field_types
+            ):
                 return field_name
 
         msg = " ".join([
@@ -1205,7 +1183,7 @@ class ColumnBuilder:
         InjectedDependencyError
         """
         blocks_by_passed_prefix = cls._map_prefixes_to_data_blocks(passed_data_blocks)
-        # the passed blocks go first, so they win the entity lookups against any built-in block they subclass:
+        # the passed blocks go first, followed by the built-in blocks none of them shadows:
         resolved_data_blocks = list(passed_data_blocks)
         shadowers_by_built_in_block = {}
 
@@ -1322,3 +1300,82 @@ class ColumnBuilder:
         return list(
             networkx.topological_sort(dependency_graph)
         )
+
+    @staticmethod
+    def _validate_data_block_entities(
+        data_block_entities: DataBlockEntities,
+        data_blocks: list[type[BaseDataBlock]],
+    ) -> None:
+        """
+        Validate that each data entity is keyed by one of the run's data blocks, and is an instance of its main entity.
+
+        Parameters
+        ----------
+        data_block_entities
+            The data entities, keyed by the data block each one belongs to
+        data_blocks
+            The data blocks the run uses
+
+        Raises
+        ------
+        InjectedDependencyError
+        """
+        unknown_data_block_names = [
+            data_block.__name__
+            for data_block in data_block_entities
+            if data_block not in data_blocks
+        ]
+        if len(unknown_data_block_names) > 0:
+            msg = " ".join([
+                "The following data blocks passed to ColumnBuilder aren't among its initialized data blocks:",
+                ", ".join(unknown_data_block_names),
+            ])
+
+            raise InjectedDependencyError(msg)
+
+        mismatched_entity_descriptions = [
+            f"{data_block.__name__}: {type(entity).__name__}"
+            for (data_block, entity) in data_block_entities.items()
+            if not isinstance(entity, data_block.main_entity)
+        ]
+        if len(mismatched_entity_descriptions) > 0:
+            msg = " ".join([
+                "The following data entities passed to ColumnBuilder aren't instances of",
+                "their data block's main entity:",
+                ", ".join(mismatched_entity_descriptions),
+            ])
+
+            raise InjectedDependencyError(msg)
+
+    @staticmethod
+    def _validate_reserved_prefixes(
+        data_blocks: list[type[BaseDataBlock]],
+        reserved_prefixes: tuple[str, ...],
+    ) -> None:
+        """
+        Validate that none of the data blocks declares a prefix that ColumnBuilder reserves for other columns.
+
+        Parameters
+        ----------
+        data_blocks
+            The data blocks the run uses
+        reserved_prefixes
+            The prefixes that no data block can declare, like the calculated columns' one
+
+        Raises
+        ------
+        InjectedDependencyError
+        """
+        reserved_prefix_descriptions = [
+            f"{data_block.__name__}: '{prefix}'"
+            for data_block in data_blocks
+            for prefix in data_block.prefix_entity_map
+            if prefix in reserved_prefixes
+        ]
+        if len(reserved_prefix_descriptions) > 0:
+            msg = " ".join([
+                "The following data blocks declare prefixes reserved by ColumnBuilder:",
+                ", ".join(reserved_prefix_descriptions),
+            ])
+
+            raise InjectedDependencyError(msg)

@@ -38,13 +38,13 @@ def quarterly_reference_clock(daily_master_clock):
         clock_master=daily_master_clock,
         clock_periods_per_row=3,
         clock_reference_period=ReferencePeriods.MONTH,
-        clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+        clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
     )
 
 
 class CountingUpscaleMethod:
     """
-    Upscale method counting how many times it gets called, while matching the rows like the infill method.
+    Upscale method counting how many times it gets called, while matching the rows like `infill_from_timestamp`.
     """
 
     def __init__(self):
@@ -57,7 +57,7 @@ class CountingUpscaleMethod:
     ):
         self.call_count += 1
 
-        return clock_sync_methods.UpscaleMethods.infill(
+        return clock_sync_methods.UpscaleMethods.infill_from_timestamp(
             master_clock_column,
             reference_clock_column,
         )
@@ -133,7 +133,7 @@ class TestArray:
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.MONTH,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
         )
         column = DataColumn.load(
             [10],
@@ -278,7 +278,7 @@ class TestClockChainParameters:
             'clock_master': daily_master_clock,
             'clock_periods_per_row': 1,
             'clock_reference_period': ReferencePeriods.MONTH,
-            'clock_upscale_method': clock_sync_methods.UpscaleMethods.infill,
+            'clock_upscale_method': clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             'consolidation_method': clock_sync_methods.ConsolidationMethods.last,
         }
         clock = DataColumn.load(
@@ -880,16 +880,16 @@ class TestUpscaleMethod:
             clock_master=True,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
         )
 
-        assert clock.upscale_method is clock_sync_methods.UpscaleMethods.infill
+        assert clock.upscale_method is clock_sync_methods.UpscaleMethods.infill_from_timestamp
 
     def test_upscaling_reference_clock(
         self,
         monthly_reference_clock,
     ):
-        assert monthly_reference_clock.upscale_method is clock_sync_methods.UpscaleMethods.infill
+        assert monthly_reference_clock.upscale_method is clock_sync_methods.UpscaleMethods.infill_from_timestamp
 
     def test_column_on_upscaling_clock(
         self,
@@ -900,7 +900,7 @@ class TestUpscaleMethod:
             reference_clock_column=monthly_reference_clock,
         )
 
-        assert column.upscale_method is clock_sync_methods.UpscaleMethods.infill
+        assert column.upscale_method is clock_sync_methods.UpscaleMethods.infill_from_timestamp
 
     def test_column_on_downscaling_clock(
         self,

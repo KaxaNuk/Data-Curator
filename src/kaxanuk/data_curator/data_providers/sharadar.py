@@ -49,6 +49,7 @@ from kaxanuk.data_curator.data_blocks.splits import SplitsDataBlock
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
 from kaxanuk.data_curator.entities import (
     BaseDataEntity,
+    ClockSpec,
     Configuration,
     DividendData,
     DividendDataRow,
@@ -68,6 +69,7 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderAuthorizationError,
     DataProviderFatalError,
     DataProviderMissingKeyError,
+    DataProviderMultiEndpointNullColumnsError,
     DataProviderParsingError,
     DataProviderRateLimitError,
     DataProviderServerError,
@@ -76,7 +78,10 @@ from kaxanuk.data_curator.exceptions import (
     IdentifierNotFoundError,
     InjectedDependencyError,
 )
-from kaxanuk.data_curator.modules.data_column import DataColumn
+from kaxanuk.data_curator.modules.data_column import (
+    DataColumn,
+    ReferencePeriods,
+)
 from kaxanuk.data_curator.services.data_provider_toolkit import (
     DataBlockEndpointTagMap,
     DataProviderFieldPreprocessors,
@@ -999,6 +1004,22 @@ class Sharadar(
         'annual': 'ARY',
         'quarterly': 'ARQ',
     }
+    # the clock spec of the data blocks with daily rows: the market data and the dividend and split events
+    _daily_clock_spec: typing.Final[ClockSpec] = ClockSpec(
+        reference_period=ReferencePeriods.DAY,
+        periods_per_row=1,
+    )
+    # the clock spec of the fundamental data rows, for each configuration period
+    _fundamental_period_clock_specs: typing.Final[dict[str, ClockSpec]] = {
+        'annual': ClockSpec(
+            reference_period=ReferencePeriods.YEAR,
+            periods_per_row=1,
+        ),
+        'quarterly': ClockSpec(
+            reference_period=ReferencePeriods.MONTH,
+            periods_per_row=3,
+        ),
+    }
 
     _dividend_data_endpoint_map: typing.Final[EndpointFieldMap] = {
         Endpoints.ACTIONS_DIVIDEND: {
@@ -1387,6 +1408,7 @@ class Sharadar(
             processed_endpoint_tables=processed_endpoint_tables,
             table_merge_fields=[],
             predominant_order_descending=False,
+            data_block=MarketDailyDataBlock,
         )
 
         return MarketDailyDataBlock.assemble_entities_from_consolidated_table(
@@ -1394,6 +1416,7 @@ class Sharadar(
             common_field_data={
                 MarketData: {
                     MarketData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    MarketData.clock_spec: self._daily_clock_spec,
                 }
             }
         )
@@ -1419,6 +1442,7 @@ class Sharadar(
         """
         empty_fundamental_data = FundamentalData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
+            clock_spec=self._fundamental_period_clock_specs[self._configuration.period],
             rows={}
         )
         metadata = self._ticker_metadata.get(main_identifier)
@@ -1463,11 +1487,37 @@ class Sharadar(
 
             return empty_fundamental_data
 
-        consolidated_fundamental_table = DataProviderToolkit.consolidate_processed_endpoint_tables(
-            processed_endpoint_tables=processed_endpoint_tables,
-            table_merge_fields=[],
-            predominant_order_descending=False,
-        )
+        try:
+            consolidated_fundamental_table = DataProviderToolkit.consolidate_processed_endpoint_tables(
+                processed_endpoint_tables=processed_endpoint_tables,
+                table_merge_fields=[],
+                predominant_order_descending=False,
+                data_block=FundamentalsDataBlock,
+            )
+        except DataProviderMultiEndpointNullColumnsError as error:
+            endpoint_tag_reports = []
+            for (endpoint_name, entity_column_names) in error.null_type_columns.items():
+                null_column_endpoint = self.Endpoints(endpoint_name)
+                provider_tags = [
+                    DataProviderToolkit.get_provider_tag_for_entity_column(
+                        data_block=FundamentalsDataBlock,
+                        endpoint=null_column_endpoint,
+                        endpoint_field_map=self._fundamental_data_endpoint_map,
+                        entity_column_name=entity_column_name,
+                    )
+                    for entity_column_name in entity_column_names
+                ]
+                endpoint_tag_reports.append(
+                    f"{null_column_endpoint.value}: {', '.join(provider_tags)}"
+                )
+            msg = "\n".join([
+                f"{main_identifier} fundamental data endpoints returned all-null columns,",
+                "omitting its fundamental data. Affected tags per endpoint: ",
+                *endpoint_tag_reports
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            return empty_fundamental_data
 
         warning_output_columns_map = {
             FundamentalsDataBlock.get_field_qualified_name(
@@ -1554,15 +1604,69 @@ class Sharadar(
                 pyarrow.compute.invert(repeated_fiscal_period_rows_mask)
             )
 
+        # the quarterly rows of half-yearly filers span 6 months, holding only their balance sheet and share counts,
+        # so a company that changed its reporting frequency only keeps the rows of its latest one, as its entity has
+        # a single clock spec
+        configured_period = self._configuration.period
+        superseded_frequency_rows_mask = (
+            FundamentalsDataBlock.find_consolidated_table_superseded_frequency_rows(
+                consolidated_fundamental_table
+            )
+            if configured_period == 'quarterly'
+            else None
+        )
+        if superseded_frequency_rows_mask is not None:
+            superseded_frequency_rows_table = (
+                consolidated_fundamental_table
+                .select(warning_output_columns_map.keys())
+                .filter(superseded_frequency_rows_mask)
+            )
+            discrepancy_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=superseded_frequency_rows_table,
+                output_column_renames=warning_output_columns_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} changed its reporting frequency, so its quarterly rows span different periods.",
+                "Omitting fundamental data for the periods before its latest frequency, of the following filings:",
+                discrepancy_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            consolidated_fundamental_table = consolidated_fundamental_table.filter(
+                pyarrow.compute.invert(superseded_frequency_rows_mask)
+            )
+
         if consolidated_fundamental_table.num_rows == 0:
 
             return empty_fundamental_data
+
+        row_span_months = (
+            FundamentalsDataBlock.find_consolidated_table_row_span_months(
+                consolidated_fundamental_table
+            )
+            if configured_period == 'quarterly'
+            else None
+        )
+        if row_span_months is None:
+            fundamental_clock_spec = self._fundamental_period_clock_specs[configured_period]
+        else:
+            fundamental_clock_spec = ClockSpec(
+                reference_period=ReferencePeriods.MONTH,
+                periods_per_row=row_span_months,
+            )
+        if fundamental_clock_spec != self._fundamental_period_clock_specs[configured_period]:
+            msg = " ".join([
+                f"{main_identifier} doesn't report its fundamental data quarterly,",
+                f"so its quarterly rows span {row_span_months} months each",
+            ])
+            logging.getLogger(__name__).warning(msg)
 
         return FundamentalsDataBlock.assemble_entities_from_consolidated_table(
             consolidated_table=consolidated_fundamental_table,
             common_field_data={
                 FundamentalData: {
                     FundamentalData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    FundamentalData.clock_spec: fundamental_clock_spec,
                 }
             }
         )
@@ -1585,6 +1689,7 @@ class Sharadar(
         """
         empty_dividend_data = DividendData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
+            clock_spec=self._daily_clock_spec,
             rows={}
         )
         endpoint = self.Endpoints.ACTIONS_DIVIDEND
@@ -1611,6 +1716,7 @@ class Sharadar(
             processed_endpoint_tables=processed_endpoint_tables,
             table_merge_fields=[],
             predominant_order_descending=False,
+            data_block=DividendsDataBlock,
         )
 
         ex_dividend_date_column_name = DividendsDataBlock.get_field_qualified_name(
@@ -1651,6 +1757,7 @@ class Sharadar(
             common_field_data={
                 DividendData: {
                     DividendData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    DividendData.clock_spec: self._daily_clock_spec,
                 }
             }
         )
@@ -1673,6 +1780,7 @@ class Sharadar(
         """
         empty_split_data = SplitData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
+            clock_spec=self._daily_clock_spec,
             rows={}
         )
         endpoint = self.Endpoints.ACTIONS_SPLIT
@@ -1699,6 +1807,7 @@ class Sharadar(
             processed_endpoint_tables=processed_endpoint_tables,
             table_merge_fields=[],
             predominant_order_descending=False,
+            data_block=SplitsDataBlock,
         )
 
         return SplitsDataBlock.assemble_entities_from_consolidated_table(
@@ -1706,6 +1815,7 @@ class Sharadar(
             common_field_data={
                 SplitData: {
                     SplitData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    SplitData.clock_spec: self._daily_clock_spec,
                 }
             }
         )
@@ -2461,7 +2571,8 @@ class Sharadar(
         Concatenate the pages of a query, reconciling the types each one inferred.
 
         A column all null in one page infers null there and a real type elsewhere, and a column may be missing
-        from a page altogether.
+        from a page altogether. A column all null in every page gets the string type, as otherwise its type would
+        depend on whether any identifier sharing the batch has its values.
 
         Parameters
         ----------
@@ -2481,4 +2592,16 @@ class Sharadar(
 
             return pyarrow.table({})
 
-        return pyarrow.concat_tables(filled_pages, promote_options='permissive')
+        concatenated_table = pyarrow.concat_tables(filled_pages, promote_options='permissive')
+        # the toolkit can't consolidate null type columns, while a string one converts to any entity field type
+        # when all its values are null
+        typed_schema = pyarrow.schema([
+            (
+                field.with_type(pyarrow.string())
+                if pyarrow.types.is_null(field.type)
+                else field
+            )
+            for field in concatenated_table.schema
+        ])
+
+        return concatenated_table.cast(typed_schema)

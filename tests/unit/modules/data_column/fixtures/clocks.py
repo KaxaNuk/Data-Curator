@@ -49,5 +49,5 @@ def create_monthly_reference_clock(master_clock: DataColumn) -> DataColumn:
         clock_master=master_clock,
         clock_periods_per_row=1,
         clock_reference_period=ReferencePeriods.MONTH,
-        clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+        clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
     )

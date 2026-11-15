@@ -31,6 +31,7 @@ from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
 from kaxanuk.data_curator.data_blocks.splits import SplitsDataBlock
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
 from kaxanuk.data_curator.entities import (
+    ClockSpec,
     Configuration,
     DividendData,
     DividendDataRow,
@@ -62,6 +63,7 @@ from kaxanuk.data_curator.exceptions import (
     DataProviderTooManyTickersError,
     IdentifierNotFoundError,
 )
+from kaxanuk.data_curator.modules.data_column import ReferencePeriods
 from kaxanuk.data_curator.services.data_provider_toolkit import (
     DataBlockEndpointTagMap,
     DataProviderFieldPreprocessors,
@@ -264,6 +266,23 @@ class LsegWorkspace(DataProviderInterface):
         STOCK_DIVIDEND = "stock_dividend"
 
         STOCK_SPLIT = "stock_split"
+
+    # the clock spec of the data blocks with daily rows: the market data and the dividend and split events
+    _daily_clock_spec: typing.Final[ClockSpec] = ClockSpec(
+        reference_period=ReferencePeriods.DAY,
+        periods_per_row=1,
+    )
+    # the clock spec of the fundamental data rows, for each configuration period
+    _fundamental_period_clock_specs: typing.Final[dict[str, ClockSpec]] = {
+        'annual': ClockSpec(
+            reference_period=ReferencePeriods.YEAR,
+            periods_per_row=1,
+        ),
+        'quarterly': ClockSpec(
+            reference_period=ReferencePeriods.MONTH,
+            periods_per_row=3,
+        ),
+    }
 
     _market_data_endpoint_map: typing.Final[EndpointFieldMap] = {
         Endpoints.MARKET_DATA_DAILY_UNADJUSTED: {
@@ -3400,7 +3419,8 @@ class LsegWorkspace(DataProviderInterface):
         consolidated_market_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=processed_endpoint_tables,
             table_merge_fields=[MarketDailyDataBlock.clock_sync_field],
-            predominant_order_descending=True
+            predominant_order_descending=True,
+            data_block=MarketDailyDataBlock,
         )
         consolidated_market_data = consolidated_market_data_descending[::-1]
         market_data = MarketDailyDataBlock.assemble_entities_from_consolidated_table(
@@ -3408,6 +3428,7 @@ class LsegWorkspace(DataProviderInterface):
             common_field_data={
                 MarketData: {
                     MarketData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    MarketData.clock_spec: self._daily_clock_spec,
                 }
             }
         )
@@ -3457,6 +3478,7 @@ class LsegWorkspace(DataProviderInterface):
         # Create empty fundamental data for cases with no data
         empty_fundamental_data = FundamentalData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
+            clock_spec=self._fundamental_period_clock_specs[period],
             rows={}
         )
 
@@ -3486,7 +3508,8 @@ class LsegWorkspace(DataProviderInterface):
                     FundamentalsDataBlock.clock_sync_field,
                     FundamentalDataRow.period_end_date,
                 ],
-                predominant_order_descending=True
+                predominant_order_descending=True,
+                data_block=FundamentalsDataBlock,
             )
         except DataProviderMultiEndpointCommonDataOrderError:
             logger.error(
@@ -3521,7 +3544,8 @@ class LsegWorkspace(DataProviderInterface):
                     FundamentalsDataBlock.clock_sync_field,
                     FundamentalDataRow.period_end_date,
                 ],
-                predominant_order_descending=True
+                predominant_order_descending=True,
+                data_block=FundamentalsDataBlock,
             )
 
         # Reverse to ascending order
@@ -3541,6 +3565,7 @@ class LsegWorkspace(DataProviderInterface):
             common_field_data={
                 FundamentalData: {
                     FundamentalData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    FundamentalData.clock_spec: self._fundamental_period_clock_specs[period],
                 }
             }
         )
@@ -3587,6 +3612,7 @@ class LsegWorkspace(DataProviderInterface):
         # Create empty dividend data for cases with no data
         empty_dividend_data = DividendData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
+            clock_spec=self._daily_clock_spec,
             rows={}
         )
 
@@ -3612,7 +3638,8 @@ class LsegWorkspace(DataProviderInterface):
         consolidated_dividend_table_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=processed_endpoint_tables,
             table_merge_fields=[DividendsDataBlock.clock_sync_field],
-            predominant_order_descending=True
+            predominant_order_descending=True,
+            data_block=DividendsDataBlock,
         )
 
         # Reverse to ascending order
@@ -3624,6 +3651,7 @@ class LsegWorkspace(DataProviderInterface):
             common_field_data={
                 DividendData: {
                     DividendData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    DividendData.clock_spec: self._daily_clock_spec,
                 }
             }
         )
@@ -3670,6 +3698,7 @@ class LsegWorkspace(DataProviderInterface):
         # Create empty split data for cases with no data
         empty_split_data = SplitData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
+            clock_spec=self._daily_clock_spec,
             rows={}
         )
 
@@ -3695,7 +3724,8 @@ class LsegWorkspace(DataProviderInterface):
         consolidated_split_table_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=processed_endpoint_tables,
             table_merge_fields=[SplitsDataBlock.clock_sync_field],
-            predominant_order_descending=True
+            predominant_order_descending=True,
+            data_block=SplitsDataBlock,
         )
 
         # Reverse to ascending order
@@ -3707,6 +3737,7 @@ class LsegWorkspace(DataProviderInterface):
             common_field_data={
                 SplitData: {
                     SplitData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    SplitData.clock_spec: self._daily_clock_spec,
                 }
             }
         )

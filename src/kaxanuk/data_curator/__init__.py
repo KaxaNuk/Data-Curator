@@ -7,6 +7,7 @@ __package_title__ = 'KaxaNuk Data Curator'
 # this defines the public API; just don't use `import *`, mmkay?
 __all__ = [
     'DataColumn',
+    'ReferencePeriods',
     '__package_name__',
     '__package_title__',
     '__parameters_format_version__',
@@ -33,7 +34,10 @@ from kaxanuk.data_curator.modules import (
     clock_sync_methods,
     debugger,
 )
-from kaxanuk.data_curator.modules.data_column import DataColumn
+from kaxanuk.data_curator.modules.data_column import (
+    DataColumn,
+    ReferencePeriods,
+)
 from kaxanuk.data_curator.modules.dotenv_loader import load_config_env
 from kaxanuk.data_curator.modules.extension_handler import (
     load_data_provider_extension

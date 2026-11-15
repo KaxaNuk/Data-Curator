@@ -10,7 +10,9 @@ import typing
 from kaxanuk.data_curator.data_blocks.base_data_block import (
     BaseDataBlock,
     ConsolidatedFieldsTable,
+    ConsolidationMethodMap,
     FieldValueToEntityMap,
+    PrefixEntityMap,
 )
 from .split_data import SplitData
 from .split_data_row import SplitDataRow
@@ -20,10 +22,19 @@ from kaxanuk.data_curator.exceptions import (
     EntityProcessingError,
     EntityValueError,
 )
+from kaxanuk.data_curator.modules.clock_sync_methods import (
+    ConsolidationMethods,
+    DownscaleMethods,
+    UpscaleMethods,
+)
 
 
 class SplitsDataBlock(BaseDataBlock):
+    clock_downscale_method = DownscaleMethods.calendar_periods
+    clock_spec_field = SplitData.clock_spec
     clock_sync_field = SplitDataRow.split_date
+    # each split only appears on its own date:
+    clock_upscale_method = UpscaleMethods.exact_match
     dated_factor_date_fields = (
         SplitDataRow.split_date,
     )
@@ -31,12 +42,20 @@ class SplitsDataBlock(BaseDataBlock):
         SplitDataRow.numerator,
         SplitDataRow.denominator,
     )
+    # every field is listed, so any new field needs its own method:
+    # (several splits in the same period compound)
+    downscale_consolidation_methods: typing.ClassVar[ConsolidationMethodMap] = {
+        SplitDataRow.split_date: ConsolidationMethods.last,
+        SplitDataRow.numerator: ConsolidationMethods.product,
+        SplitDataRow.denominator: ConsolidationMethods.product,
+    }
     # groups by identifier type; only one identifier type per configuration is supported:
     grouping_identifier_field = SplitData.main_identifier
     main_entity = SplitData
-    prefix_entity_map: typing.Final = {
+    prefix_entity_map: typing.ClassVar[PrefixEntityMap] = {
         's': SplitDataRow,
     }
+    rows_field = SplitData.rows
 
     @classmethod
     def assemble_entities_from_consolidated_table(
@@ -74,7 +93,11 @@ class SplitsDataBlock(BaseDataBlock):
 
             data_entity = SplitData(
                 main_identifier=common_split_fields[SplitData.main_identifier],
-                rows=split_rows,
+                clock_spec=common_split_fields[SplitData.clock_spec],
+                rows=typing.cast(
+                    dict[str, SplitDataRow],
+                    split_rows,
+                ),
             )
         except (
             DataBlockEmptyError,

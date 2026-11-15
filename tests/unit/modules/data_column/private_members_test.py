@@ -499,7 +499,7 @@ class TestPrivateCalculateSyncIndices:
     ):
         result = DataColumn._calculate_sync_indices(
             clock_downscale_method=None,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             master_clock_column=daily_master_clock,
             reference_clock_column=monthly_reference_clock,
             sync_direction=DataColumn.SyncDirections.UPSCALE,
@@ -552,7 +552,7 @@ class TestPrivateCalculateSyncIndices:
         with pytest.raises(DataColumnSyncError):
             DataColumn._calculate_sync_indices(
                 clock_downscale_method=None,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 master_clock_column=daily_master_clock,
                 reference_clock_column=hourly_reference_clock,
                 sync_direction=DataColumn.SyncDirections.DOWNSCALE,
@@ -1172,7 +1172,7 @@ class TestPrivateValidateClockParameters:
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.MONTH,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             consolidation_method=clock_sync_methods.ConsolidationMethods.last,
             reference_clock_column=None,
         )
@@ -1287,7 +1287,7 @@ class TestPrivateValidateClockParameters:
                 clock_master=daily_master_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.MONTH,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=None,
                 reference_clock_column=daily_master_clock,
             )
@@ -1307,7 +1307,7 @@ class TestPrivateValidateClockParameters:
                 clock_master=monthly_reference_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.YEAR,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=None,
                 reference_clock_column=None,
             )
@@ -1329,7 +1329,7 @@ class TestPrivateValidateClockParameters:
                 clock_master=non_clock_column,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.MONTH,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=None,
                 reference_clock_column=None,
             )
@@ -1425,7 +1425,7 @@ class TestPrivateValidateClockParameters:
                 clock_master=daily_master_clock,
                 clock_periods_per_row=clock_periods_per_row,
                 clock_reference_period=clock_reference_period,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=None,
                 reference_clock_column=None,
             )
@@ -1465,7 +1465,7 @@ class TestPrivateValidateClockParameters:
         ),
         [
             (clock_sync_methods.DownscaleMethods.calendar_periods, None),
-            (None, clock_sync_methods.UpscaleMethods.infill),
+            (None, clock_sync_methods.UpscaleMethods.infill_from_timestamp),
         ]
     )
     def test_non_clock_with_clock_sync_method(
@@ -1554,7 +1554,7 @@ class TestPrivateValidateSyncMethods:
     def test_upscale_with_only_upscale_method(self):
         result = DataColumn._validate_sync_methods(
             clock_downscale_method=None,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             consolidation_method=None,
             sync_direction=DataColumn.SyncDirections.UPSCALE,
         )
@@ -1584,7 +1584,7 @@ class TestPrivateValidateSyncMethods:
         with pytest.raises(DataColumnParameterError):
             DataColumn._validate_sync_methods(
                 clock_downscale_method=None,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=clock_sync_methods.ConsolidationMethods.last,
                 sync_direction=DataColumn.SyncDirections.DOWNSCALE,
             )
@@ -1593,7 +1593,7 @@ class TestPrivateValidateSyncMethods:
         with pytest.raises(DataColumnParameterError):
             DataColumn._validate_sync_methods(
                 clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=None,
                 sync_direction=DataColumn.SyncDirections.DOWNSCALE,
             )

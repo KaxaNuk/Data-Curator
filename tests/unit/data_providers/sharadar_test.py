@@ -2,6 +2,7 @@ import datetime
 import email.message
 import io
 import json
+import logging
 import random
 import urllib.error
 
@@ -143,6 +144,86 @@ class TestPrivateCalculateSplitFractions:
         result = _calculate_split_fractions(DataColumn.load([ratio]))
 
         assert result == [expected]
+
+
+class TestPrivateConcatenatePages:
+    def test_column_null_on_every_page(self) -> None:
+        """BHP's ARY filings carry no diluted share count at all, on any page."""
+        page_tables = [
+            pyarrow.table({
+                'ticker': ['BHP'],
+                'shareswadil': pyarrow.array([None]),
+            }),
+            pyarrow.table({
+                'ticker': ['BHP'],
+                'shareswadil': pyarrow.array([None]),
+            }),
+        ]
+
+        result = Sharadar._concatenate_pages(page_tables)
+
+        assert result.schema.field('shareswadil').type == pyarrow.string()
+
+    def test_column_null_on_one_page(self) -> None:
+        page_tables = [
+            pyarrow.table({
+                'ticker': ['KXA'],
+                'value': pyarrow.array([None]),
+            }),
+            pyarrow.table({
+                'ticker': ['KXB'],
+                'value': [0.27],
+            }),
+        ]
+
+        result = Sharadar._concatenate_pages(page_tables)
+
+        assert result.schema.field('value').type == pyarrow.float64()
+
+
+@pytest.fixture
+def all_null_column_provider(monkeypatch) -> Sharadar:
+    """
+    Create a provider whose fundamentals rows have a mapped column of the null type, which the toolkit rejects.
+
+    Like BHP's ARY filings, which carry no diluted share count at all, before the page concatenation types them.
+    """
+    rows = pyarrow.table({
+        'date': ['2024-03-01'],
+        'reportperiod': ['2023-12-31'],
+        'fiscalperiod': ['2023-FY'],
+        'revenue': ['1000'],
+        'shareswadil': pyarrow.array([None]),
+    })
+    provider = Sharadar(api_key='test-api-key')
+    provider._configuration = CONFIGURATION
+    provider._ticker_metadata = {
+        'KXNB': {
+            'category': 'Domestic Common Stock',
+            'currency': 'USD',
+            'tables': {'fundamentals'},
+        },
+    }
+    monkeypatch.setattr(provider, '_get_endpoint_rows', lambda *_arguments, **_options: rows)
+
+    return provider
+
+
+class TestPrivateGetFundamentalData:
+    def test_column_without_any_value(self, all_null_column_provider) -> None:
+        result = all_null_column_provider._get_fundamental_data('KXNB')
+
+        assert result.rows == {}
+
+    def test_column_without_any_value_is_logged(self, all_null_column_provider, caplog) -> None:
+        with caplog.at_level(logging.ERROR):
+            all_null_column_provider._get_fundamental_data('KXNB')
+
+        assert any(
+            'shareswadil' in record.getMessage()
+            for record in caplog.records
+            if record.levelno == logging.ERROR
+        )
 
 
 class TestPrivateFindMissingIncomeStatementRows:

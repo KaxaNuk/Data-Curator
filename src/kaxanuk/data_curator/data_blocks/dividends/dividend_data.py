@@ -2,6 +2,7 @@ import dataclasses
 
 from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
 from .dividend_data_row import DividendDataRow
+from kaxanuk.data_curator.entities.clock_spec import ClockSpec
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.exceptions import (
     EntityTypeError,
@@ -16,6 +17,7 @@ from kaxanuk.data_curator.services import (
 @dataclasses.dataclass(frozen=True, slots=True)
 class DividendData(BaseDataEntity):
     main_identifier: MainIdentifier
+    clock_spec: ClockSpec
     rows: dict[str, DividendDataRow]
 
     def __post_init__(self):

@@ -32,7 +32,6 @@ from kaxanuk.data_curator.entities import (
     MarketData,
     SplitData,
 )
-from kaxanuk.data_curator.services.data_provider_toolkit import DataProviderToolkit
 from .fixtures import sharadar_client_mock
 
 
@@ -42,27 +41,6 @@ FUND_IDENTIFIER = 'KXNF'
 PERIOD = 'quarterly'
 START_DATE = datetime.date(2022, 1, 1)
 END_DATE = datetime.date(2025, 12, 31)
-
-
-@pytest.fixture(scope='module', autouse=True)
-def clear_toolkit_memoization() -> None:
-    """
-    Clear the toolkit's memoized column remaps around this module.
-
-    The toolkit memoizes each data block's remaps for the whole process, which holds for a run, where a single
-    provider feeds each data block, but not for a test session, where other providers' tests run first.
-    """
-    memoized_remaps = (
-        DataProviderToolkit._data_block_endpoint_column_remaps,
-        DataProviderToolkit._data_block_endpoint_field_preprocessors,
-    )
-    for cache in memoized_remaps:
-        cache.clear()
-
-    yield
-
-    for cache in memoized_remaps:
-        cache.clear()
 
 
 @pytest.fixture(scope='module')

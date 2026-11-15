@@ -1,6 +1,12 @@
 import dataclasses
+import datetime
+import decimal
 
-from kaxanuk.data_curator.entities import BaseDataEntity
+from kaxanuk.data_curator.entities import (
+    BaseDataEntity,
+    ClockSpec,
+)
+from ...fixtures import entity_tables
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -22,9 +28,21 @@ class ExampleSubentity2(BaseDataEntity):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ExampleExtendedSubentity2(ExampleSubentity2):
+    description: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ExampleSubentity3(BaseDataEntity):
     id: int
     name: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleBlockEntity(BaseDataEntity):
+    clock_spec: ClockSpec
+    rows: dict[str, ExampleSubentity2]
+    subentity: ExampleSubentity3
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -48,6 +66,59 @@ class ExampleNestedEntity(BaseDataEntity):
     id: int
     name: str
     entity: ExampleEntity
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleDatedRow(BaseDataEntity):
+    date: datetime.date
+    value: decimal.Decimal | None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleExtendedDatedRow(ExampleDatedRow):
+    extra: int | None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleOtherExtendedDatedRow(ExampleDatedRow):
+    other: str | None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleDatedRows(BaseDataEntity):
+    clock_spec: ClockSpec
+    rows: dict[str, ExampleDatedRow]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleNullableClockSpecDatedRows(BaseDataEntity):
+    clock_spec: ClockSpec | None
+    rows: dict[str, ExampleDatedRow]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleLabeledRow(BaseDataEntity):
+    date: datetime.date
+    label: str
+    value: decimal.Decimal | None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleLabeledRows(BaseDataEntity):
+    clock_spec: ClockSpec
+    rows: dict[str, ExampleLabeledRow]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleExtendedDatedRows(BaseDataEntity):
+    clock_spec: ClockSpec
+    rows: dict[str, ExampleExtendedDatedRow]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExampleMiniFundamentalRows(BaseDataEntity):
+    clock_spec: ClockSpec
+    rows: dict[str, entity_tables.MiniFundamentalRow | None]
 
 
 EXAMPLE_ENTITY_RELATIONS_LINEAR_SORT = {

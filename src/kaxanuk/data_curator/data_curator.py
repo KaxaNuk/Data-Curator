@@ -233,14 +233,15 @@ def main(
                 main_identifier
             )
             try:
-                full_data_entities: list[BaseDataEntity] = [
-                    data_provider.get_data_block_data(
+                # keyed by their data blocks, as several data blocks can share the same main entity
+                data_block_entities: dict[type[BaseDataBlock], BaseDataEntity] = {
+                    data_block: data_provider.get_data_block_data(
                         main_identifier=main_identifier,
                         data_block=data_block,
                         configuration=configuration,
                     )
                     for (data_block, data_provider) in data_block_providers.items()
-                ]
+                }
             except IdentifierNotFoundError as error:
                 msg = "\n  ".join([
                     f"{main_identifier} skipping output as it presented the following error during data retrieval:",
@@ -280,7 +281,7 @@ def main(
                 continue
 
             column_builder = ColumnBuilder(
-                data_entities=full_data_entities,
+                data_block_entities=data_block_entities,
             )
             output_columns = column_builder.process_columns(configuration.columns)
 

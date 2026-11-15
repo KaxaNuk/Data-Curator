@@ -189,6 +189,81 @@ class TestMin:
         assert result.equals(expected)
 
 
+class TestNull:
+    def test_null_of_reference_array_type_for_each_master_row(
+        self,
+        master_row_indices,
+        reference_array,
+    ):
+        result = clock_sync_methods.ConsolidationMethods.null(
+            reference_array,
+            master_row_indices,
+            3,
+        )
+        expected = pyarrow.nulls(
+            3,
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_null_array(
+        self,
+        master_row_indices,
+    ):
+        result = clock_sync_methods.ConsolidationMethods.null(
+            pyarrow.nulls(6),
+            master_row_indices,
+            3,
+        )
+        expected = pyarrow.nulls(3)
+
+        assert result.equals(expected)
+
+
+class TestProduct:
+    def test_product_of_each_master_row(
+        self,
+        master_row_indices,
+        reference_array,
+    ):
+        result = clock_sync_methods.ConsolidationMethods.product(
+            reference_array,
+            master_row_indices,
+            3,
+        )
+        expected = pyarrow.array([10, None, 3])
+
+        assert result.equals(expected)
+
+    def test_float_ratios(self):
+        # A 2:1 split followed by a 3:1 split in the same period amounts to a 6:1 split
+        result = clock_sync_methods.ConsolidationMethods.product(
+            pyarrow.array([2.0, 3.0]),
+            pyarrow.array(
+                [0, 0],
+                type=pyarrow.int64(),
+            ),
+            1,
+        )
+        expected = pyarrow.array([6.0])
+
+        assert result.equals(expected)
+
+    def test_null_array(
+        self,
+        master_row_indices,
+    ):
+        result = clock_sync_methods.ConsolidationMethods.product(
+            pyarrow.nulls(6),
+            master_row_indices,
+            3,
+        )
+        expected = pyarrow.nulls(3)
+
+        assert result.equals(expected)
+
+
 class TestSum:
     def test_sum_of_each_master_row(
         self,
@@ -230,6 +305,7 @@ class TestPrivateAggregate:
             ('max', [5, None, 3]),
             ('mean', [3.5, None, 3.0]),
             ('min', [2, None, 3]),
+            ('product', [10, None, 3]),
             ('sum', [7, None, 3]),
         ]
     )

@@ -1,10 +1,14 @@
 import dataclasses
 import datetime
 import decimal
+import typing
 
 import pytest
 
-from kaxanuk.data_curator import DataColumn
+from kaxanuk.data_curator import (
+    DataColumn,
+    clock_sync_methods,
+)
 from kaxanuk.data_curator.data_blocks.dividends import (
     DividendsDataBlock,
 )
@@ -18,6 +22,7 @@ from kaxanuk.data_curator.data_blocks.splits import (
     SplitsDataBlock,
 )
 from kaxanuk.data_curator.entities import (
+    Configuration,
     DividendDataRow,
     FundamentalDataRow,
     FundamentalDataRowBalanceSheet,
@@ -30,6 +35,7 @@ from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCustomFunctionNotFoundError,
     ColumnBuilderNoDatesToInfillError,
     ColumnBuilderUnavailableEntityFieldError,
+    InjectedDependencyError,
 )
 from kaxanuk.data_curator.services.column_builder import (
     ColumnBuilder,
@@ -38,6 +44,8 @@ from kaxanuk.data_curator.services.column_builder import (
 )
 from .fixtures import (
     calculations,
+    data_block_entities,
+    data_blocks,
     entities,
 )
 # note: data_column_debugger is defined in tests/conftest.py
@@ -504,6 +512,80 @@ def example_expand_dated_factors_dividend_data():
     }
 
 
+class TestInitializeDataBlocks:
+    def test_data_block_claiming_calculated_column_prefix(self):
+        # A data block with the calculated columns' prefix would take over all of them
+        class CalculatedPrefixDataBlock(MarketDailyDataBlock):
+            prefix_entity_map: typing.ClassVar = {
+                'c': MarketDataDailyRow,
+            }
+
+        with pytest.raises(InjectedDependencyError):
+            ColumnBuilder.initialize_data_blocks(
+                calculation_modules=[],
+                configuration=Configuration(
+                    start_date=datetime.date(2024, 1, 1),
+                    end_date=datetime.date(2024, 2, 1),
+                    period='annual',
+                    identifiers=('TEST',),
+                    columns=('m_close',),
+                ),
+                data_blocks=[CalculatedPrefixDataBlock],
+            )
+
+
+class TestPrivateCalculateColumnExtractors:
+    def test_main_row_entity(self):
+        result = ColumnBuilder._calculate_column_extractors([MarketDailyDataBlock])
+
+        assert result['m'].subentity_field_name is None
+
+    def test_subentity(self):
+        result = ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock])
+
+        assert result['fbs'].subentity_field_name == 'balance_sheet'
+
+    def test_dated_factor_entity(self):
+        result = ColumnBuilder._calculate_column_extractors([DividendsDataBlock])
+        expected = frozenset({
+            'declaration_date_dividend',
+            'declaration_date_dividend_split_adjusted',
+            'ex_dividend_date_dividend',
+            'ex_dividend_date_dividend_split_adjusted',
+            'record_date_dividend',
+            'record_date_dividend_split_adjusted',
+            'payment_date_dividend',
+            'payment_date_dividend_split_adjusted',
+        })
+
+        assert result['d'].valid_column_names == expected
+
+    def test_extended_main_row_entity(self):
+        result = ColumnBuilder._calculate_column_extractors([data_blocks.ExtendedMarketDailyDataBlock])
+
+        assert result['m'].subentity_field_name is None
+
+    def test_extended_subentity(self):
+        result = ColumnBuilder._calculate_column_extractors([data_blocks.ExtendedFundamentalsDataBlock])
+
+        assert result['fbs'].subentity_field_name == 'balance_sheet'
+
+    def test_extended_dated_factor_entity(self):
+        result = ColumnBuilder._calculate_column_extractors([data_blocks.ExtendedDividendsDataBlock])
+        expected = frozenset({
+            'declaration_date_dividend',
+            'declaration_date_dividend_split_adjusted',
+            'ex_dividend_date_dividend',
+            'ex_dividend_date_dividend_split_adjusted',
+            'record_date_dividend',
+            'record_date_dividend_split_adjusted',
+            'payment_date_dividend',
+            'payment_date_dividend_split_adjusted',
+        })
+
+        assert result['d'].valid_column_names == expected
+
+
 class TestPrivateExpandDatedFactors:
     def test_full(self, example_expand_dated_factors_dividend_data):
         result = ColumnBuilder._expand_dated_factors(
@@ -781,6 +863,70 @@ class TestPrivateGetFunctionParams:
     def test_not_callable(self):
         with pytest.raises(TypeError):
             ColumnBuilder._get_function_params(42)  # type: ignore
+
+
+class TestPrivateGetMasterClockColumn:
+    def test_built_in_data_block(self):
+        result = ColumnBuilder._get_master_clock_column(MarketDailyDataBlock)
+
+        assert result == 'm_date'
+
+    def test_extended_main_row_entity(self):
+        result = ColumnBuilder._get_master_clock_column(data_blocks.ExtendedMarketDailyDataBlock)
+
+        assert result == 'm_date'
+
+    def test_clock_sync_entity_after_other_prefixes(self):
+        class ReorderedFundamentalsDataBlock(FundamentalsDataBlock):
+            prefix_entity_map: typing.ClassVar = {
+                'fbs': FundamentalDataRowBalanceSheet,
+                'fcf': FundamentalDataRowCashFlow,
+                'fis': FundamentalDataRowIncomeStatement,
+                'f': FundamentalDataRow,
+            }
+
+        result = ColumnBuilder._get_master_clock_column(ReorderedFundamentalsDataBlock)
+
+        assert result == 'f_filing_date'
+
+    def test_clock_sync_entity_without_prefix(self):
+        # The rows still hold the clock sync field's entity, but only their balance sheets get a prefix
+        class BalanceSheetFundamentalsDataBlock(FundamentalsDataBlock):
+            downscale_consolidation_methods: typing.ClassVar = {
+                FundamentalDataRowBalanceSheet: clock_sync_methods.ConsolidationMethods.last,
+            }
+            prefix_entity_map: typing.ClassVar = {
+                'fbs': FundamentalDataRowBalanceSheet,
+            }
+
+        with pytest.raises(InjectedDependencyError):
+            ColumnBuilder._get_master_clock_column(BalanceSheetFundamentalsDataBlock)
+
+
+class TestPrivateGetSubentityFieldName:
+    def test_subentity(self):
+        result = ColumnBuilder._get_subentity_field_name(
+            FundamentalDataRow,
+            FundamentalDataRowBalanceSheet,
+        )
+
+        assert result == 'balance_sheet'
+
+    def test_extended_subentity(self):
+        # The field is typed with the entity the subentity extends
+        result = ColumnBuilder._get_subentity_field_name(
+            FundamentalDataRow,
+            data_blocks.ExtendedBalanceSheet,
+        )
+
+        assert result == 'balance_sheet'
+
+    def test_entity_without_field_holding_subentity(self):
+        with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
+            ColumnBuilder._get_subentity_field_name(
+                FundamentalDataRow,
+                MarketDataDailyRow,
+            )
 
 
 class TestPrivateInfillData:
@@ -1404,3 +1550,81 @@ class TestPrivateGetEntityPropertyNames:
                 entities.ExampleEntity
             )
         )
+
+
+class TestPrivateGetEntityRows:
+    def test_rows_held_by_rows_field(self):
+        result = ColumnBuilder._get_entity_rows(
+            data_block_entities.MARKET_DATA,
+            MarketDailyDataBlock.rows_field,
+        )
+
+        assert result is data_block_entities.MARKET_DATA.rows
+
+
+class TestPrivateValidateDataBlockEntities:
+    def test_entities_of_their_data_blocks(self):
+        result = ColumnBuilder._validate_data_block_entities(
+            {
+                MarketDailyDataBlock: data_block_entities.MARKET_DATA,
+                data_blocks.AlternativeMarketDailyDataBlock: data_block_entities.ALTERNATIVE_MARKET_DATA,
+            },
+            [
+                MarketDailyDataBlock,
+                data_blocks.AlternativeMarketDailyDataBlock,
+                DividendsDataBlock,
+            ],
+        )
+
+        assert result is None
+
+    def test_data_block_outside_data_blocks(self):
+        with pytest.raises(InjectedDependencyError):
+            ColumnBuilder._validate_data_block_entities(
+                {
+                    MarketDailyDataBlock: data_block_entities.MARKET_DATA,
+                    data_blocks.AlternativeMarketDailyDataBlock: data_block_entities.ALTERNATIVE_MARKET_DATA,
+                },
+                [
+                    MarketDailyDataBlock,
+                ],
+            )
+
+    def test_entity_of_another_main_entity(self):
+        with pytest.raises(InjectedDependencyError):
+            ColumnBuilder._validate_data_block_entities(
+                {
+                    DividendsDataBlock: data_block_entities.MARKET_DATA,
+                },
+                [
+                    DividendsDataBlock,
+                ],
+            )
+
+
+class TestPrivateValidateReservedPrefixes:
+    def test_data_blocks_without_reserved_prefixes(self):
+        result = ColumnBuilder._validate_reserved_prefixes(
+            [
+                MarketDailyDataBlock,
+                FundamentalsDataBlock,
+            ],
+            ('c',),
+        )
+
+        assert result is None
+
+    def test_data_block_claiming_reserved_prefix(self):
+        class CalculatedPrefixDataBlock(MarketDailyDataBlock):
+            prefix_entity_map: typing.ClassVar = {
+                'c': MarketDataDailyRow,
+            }
+
+        with pytest.raises(InjectedDependencyError):
+            ColumnBuilder._validate_reserved_prefixes(
+                [
+                    MarketDailyDataBlock,
+                    CalculatedPrefixDataBlock,
+                ],
+                ('c',),
+            )

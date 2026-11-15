@@ -120,7 +120,7 @@ class TestDunderInit:
             clock_master=True,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             consolidation_method=clock_sync_methods.ConsolidationMethods.last,
         )
 
@@ -179,7 +179,7 @@ class TestDunderInit:
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.MONTH,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
         )
 
         assert column.master_clock_column is daily_master_clock
@@ -242,7 +242,7 @@ class TestDunderInit:
             clock_master=master_clock,
             clock_periods_per_row=reference_periods_per_row,
             clock_reference_period=reference_period,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             consolidation_method=clock_sync_methods.ConsolidationMethods.last,
         )
 
@@ -293,7 +293,7 @@ class TestDunderInit:
                 clock_master=master_clock,
                 clock_periods_per_row=reference_periods_per_row,
                 clock_reference_period=reference_period,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=clock_sync_methods.ConsolidationMethods.last,
             )
 
@@ -424,7 +424,7 @@ class TestDunderInit:
                 clock_master=daily_master_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.MONTH,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 reference_clock_column=daily_master_clock,
             )
 
@@ -442,7 +442,7 @@ class TestDunderInit:
                 clock_master=monthly_reference_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.YEAR,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             )
 
     def test_clock_master_pointing_to_non_clock_column(
@@ -461,7 +461,7 @@ class TestDunderInit:
                 clock_master=non_clock_column,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.MONTH,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             )
 
     def test_reference_clock_column_pointing_to_non_clock_column(
@@ -533,7 +533,7 @@ class TestDunderInit:
             DataColumn(
                 monthly_dates_array,
                 clock_master=daily_master_clock,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 **clock_periods,
             )
 
@@ -565,7 +565,7 @@ class TestDunderInit:
         'clock_sync_method',
         [
             {'clock_downscale_method': clock_sync_methods.DownscaleMethods.calendar_periods},
-            {'clock_upscale_method': clock_sync_methods.UpscaleMethods.infill},
+            {'clock_upscale_method': clock_sync_methods.UpscaleMethods.infill_from_timestamp},
         ]
     )
     def test_non_clock_with_clock_sync_method(
@@ -663,7 +663,7 @@ class TestDunderInit:
                 clock_master=daily_master_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.MONTH,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             )
 
     def test_master_clock_with_null_timestamp(self):
@@ -739,7 +739,7 @@ class TestDunderInit:
                 clock_master=daily_master_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.HOUR,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=clock_sync_methods.ConsolidationMethods.last,
             )
 
@@ -755,7 +755,7 @@ class TestDunderInit:
                 clock_master=daily_master_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.HOUR,
-                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill,
+                clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             )
 
 

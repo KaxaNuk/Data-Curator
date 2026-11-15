@@ -11,6 +11,7 @@ from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
 from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
 from kaxanuk.data_curator.data_blocks.splits import SplitsDataBlock
 from kaxanuk.data_curator.entities import (
+    ClockSpec,
     Configuration,
     DividendData,
     DividendDataRow,
@@ -38,6 +39,7 @@ from kaxanuk.data_curator.exceptions import (
     IdentifierNotFoundError,
 )
 from kaxanuk.data_curator.data_providers.data_provider_interface import DataProviderInterface
+from kaxanuk.data_curator.modules.data_column import ReferencePeriods
 from kaxanuk.data_curator.services.data_provider_toolkit import (
     DataBlockEndpointTagMap,
     DataProviderFieldPreprocessors,
@@ -317,6 +319,23 @@ class FinancialModelingPrep(
         'quarterly': 'quarter'
     }
 
+    # the clock spec of the data blocks with daily rows: the market data and the dividend and split events
+    _daily_clock_spec: typing.Final[ClockSpec] = ClockSpec(
+        reference_period=ReferencePeriods.DAY,
+        periods_per_row=1,
+    )
+    # the clock spec of the fundamental data rows, for each configuration period
+    _fundamental_period_clock_specs: typing.Final[dict[str, ClockSpec]] = {
+        'annual': ClockSpec(
+            reference_period=ReferencePeriods.YEAR,
+            periods_per_row=1,
+        ),
+        'quarterly': ClockSpec(
+            reference_period=ReferencePeriods.MONTH,
+            periods_per_row=3,
+        ),
+    }
+
     def __init__(
         self,
         *,
@@ -418,6 +437,7 @@ class FinancialModelingPrep(
 
         empty_dividend_data = DividendData(
             main_identifier=MainIdentifier(main_identifier),
+            clock_spec=self._daily_clock_spec,
             rows={}
         )
         try:
@@ -437,7 +457,8 @@ class FinancialModelingPrep(
             consolidated_dividend_table_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
                 processed_endpoint_tables=processed_endpoint_tables,
                 table_merge_fields=[],
-                predominant_order_descending=True
+                predominant_order_descending=True,
+                data_block=DividendsDataBlock,
             )
         except DataProviderToolkitRuntimeError:
             # reraise as problem is with data provider logic
@@ -497,6 +518,7 @@ class FinancialModelingPrep(
             common_field_data={
                 DividendData: {
                     DividendData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    DividendData.clock_spec: self._daily_clock_spec,
                 }
             }
         )
@@ -610,6 +632,7 @@ class FinancialModelingPrep(
 
         empty_fundamental_data = FundamentalData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
+            clock_spec=self._fundamental_period_clock_specs[period],
             rows={}
         )
         try:
@@ -637,7 +660,8 @@ class FinancialModelingPrep(
                     FundamentalsDataBlock.clock_sync_field,
                     FundamentalDataRow.period_end_date,
                 ],
-                predominant_order_descending=True
+                predominant_order_descending=True,
+                data_block=FundamentalsDataBlock,
             )
         except DataProviderMultiEndpointDuplicateKeysError as error:
             key_rename_map = {
@@ -727,7 +751,8 @@ class FinancialModelingPrep(
                     FundamentalsDataBlock.clock_sync_field,
                     FundamentalDataRow.period_end_date,
                 ],
-                predominant_order_descending=True
+                predominant_order_descending=True,
+                data_block=FundamentalsDataBlock,
             )
 
         consolidated_fundamental_table = consolidated_fundamental_table_descending[::-1]
@@ -748,6 +773,8 @@ class FinancialModelingPrep(
 
         # @todo handle duplicate statement filings in data provider dataset
         # @todo filter rows where filing date is before period end date
+        # @todo handle placeholder filing dates, which equal the period end date and have a midnight accepted date,
+        #   making the rows available before their actual filing, like for most non-US listings
 
         # catch empty income statement rows
         income_statement_table = processed_endpoint_tables[self.Endpoints.INCOME_STATEMENT]
@@ -830,11 +857,64 @@ class FinancialModelingPrep(
         if regularized_fundamental_table.num_rows == 0:
             return empty_fundamental_data
 
+        # the quarterly rows of half-yearly reporters span 6 months, so a company that changed its reporting
+        # frequency only keeps the rows of its latest one, as its entity has a single clock spec
+        superseded_frequency_rows_mask = (
+            FundamentalsDataBlock.find_consolidated_table_superseded_frequency_rows(
+                regularized_fundamental_table
+            )
+            if period == 'quarterly'
+            else None
+        )
+        if superseded_frequency_rows_mask is not None:
+            superseded_frequency_rows_table = (
+                regularized_fundamental_table
+                .select(warning_output_columns_map.keys())
+                .filter(superseded_frequency_rows_mask)
+            )
+            discrepancy_output_table = DataProviderToolkit.format_consolidated_discrepancy_table_for_output(
+                discrepancy_table=superseded_frequency_rows_table,
+                output_column_renames=warning_output_columns_map
+            )
+            msg = "\n".join([
+                f"{main_identifier} changed its reporting frequency, so its quarterly rows span different periods.",
+                "Omitting fundamental data for the periods before its latest frequency, of the following filings:",
+                discrepancy_output_table
+            ])
+            logging.getLogger(__name__).error(msg)
+
+            latest_frequency_rows_mask = pyarrow.compute.invert(superseded_frequency_rows_mask)
+            latest_frequency_fundamental_table = regularized_fundamental_table.filter(latest_frequency_rows_mask)
+        else:
+            latest_frequency_fundamental_table = regularized_fundamental_table
+
+        row_span_months = (
+            FundamentalsDataBlock.find_consolidated_table_row_span_months(
+                latest_frequency_fundamental_table
+            )
+            if period == 'quarterly'
+            else None
+        )
+        if row_span_months is None:
+            fundamental_clock_spec = self._fundamental_period_clock_specs[period]
+        else:
+            fundamental_clock_spec = ClockSpec(
+                reference_period=ReferencePeriods.MONTH,
+                periods_per_row=row_span_months,
+            )
+        if fundamental_clock_spec != self._fundamental_period_clock_specs[period]:
+            msg = " ".join([
+                f"{main_identifier} doesn't report its fundamental data quarterly,",
+                f"so its quarterly rows span {row_span_months} months each",
+            ])
+            logging.getLogger(__name__).warning(msg)
+
         fundamental_data = FundamentalsDataBlock.assemble_entities_from_consolidated_table(
-            consolidated_table=regularized_fundamental_table,
+            consolidated_table=latest_frequency_fundamental_table,
             common_field_data={
                 FundamentalData: {
                     FundamentalData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    FundamentalData.clock_spec: fundamental_clock_spec,
                 }
             }
         )
@@ -925,7 +1005,8 @@ class FinancialModelingPrep(
         consolidated_market_data_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
             processed_endpoint_tables=processed_endpoint_tables,
             table_merge_fields=[MarketDailyDataBlock.clock_sync_field],
-            predominant_order_descending=True
+            predominant_order_descending=True,
+            data_block=MarketDailyDataBlock,
         )
         consolidated_market_data = consolidated_market_data_descending[::-1]
         market_data = MarketDailyDataBlock.assemble_entities_from_consolidated_table(
@@ -933,6 +1014,7 @@ class FinancialModelingPrep(
             common_field_data={
                 MarketData: {
                     MarketData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    MarketData.clock_spec: self._daily_clock_spec,
                 }
             }
         )
@@ -1010,6 +1092,7 @@ class FinancialModelingPrep(
 
         empty_split_data = SplitData(
                 main_identifier=MainIdentifier(main_identifier),
+                clock_spec=self._daily_clock_spec,
                 rows={}
             )
         try:
@@ -1029,7 +1112,8 @@ class FinancialModelingPrep(
             consolidated_split_table_descending = DataProviderToolkit.consolidate_processed_endpoint_tables(
                 processed_endpoint_tables=processed_endpoint_tables,
                 table_merge_fields=[],
-                predominant_order_descending=True
+                predominant_order_descending=True,
+                data_block=SplitsDataBlock,
             )
         except DataProviderToolkitRuntimeError:
             # reraise as problem is with data provider logic
@@ -1043,6 +1127,7 @@ class FinancialModelingPrep(
             common_field_data={
                 SplitData: {
                     SplitData.main_identifier: MarketInstrumentIdentifier(main_identifier),
+                    SplitData.clock_spec: self._daily_clock_spec,
                 }
             }
         )

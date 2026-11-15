@@ -165,8 +165,9 @@ The minimal steps are:
       import datetime
       import decimal
 
+      from kaxanuk.data_curator import clock_sync_methods
       from kaxanuk.data_curator.data_blocks.base_data_block import BaseDataBlock
-      from kaxanuk.data_curator.entities import BaseDataEntity, MainIdentifier
+      from kaxanuk.data_curator.entities import BaseDataEntity, ClockSpec, MainIdentifier
 
       @dataclasses.dataclass(frozen=True, slots=True)
       class MyMarketDataRow(BaseDataEntity):
@@ -177,23 +178,64 @@ The minimal steps are:
       @dataclasses.dataclass(frozen=True, slots=True)
       class MyMarketData(BaseDataEntity):
           main_identifier: MainIdentifier
+          clock_spec: ClockSpec                # the time scale of the rows
           rows: dict[str, MyMarketDataRow]     # keyed by their 'YYYY-MM-DD' date
 
-2. Declare the data block, mapping each column prefix to its entity:
+2. Declare the data block, mapping each column prefix to its entity, and choosing how its rows get synced to the master clock's:
 
    .. code-block:: python
 
       class MyMarketDailyDataBlock(BaseDataBlock):
+          clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+          clock_spec_field = MyMarketData.clock_spec
           clock_sync_field = MyMarketDataRow.date
+          clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_period_end
+          downscale_consolidation_methods = {
+              MyMarketDataRow: clock_sync_methods.ConsolidationMethods.last,
+          }
           grouping_identifier_field = MyMarketData.main_identifier
           main_entity = MyMarketData
           prefix_entity_map = {
               'm': MyMarketDataRow,
           }
+          rows_field = MyMarketData.rows
 
-3. Return its ``main_entity`` from your provider's ``get_data_block_data``, add it to its ``get_data_block_endpoint_tag_map``, and pass it as a ``data_block_providers`` key to ``main``.
+   - ``rows_field`` and ``clock_spec_field`` are the main entity's fields holding the rows and their ``ClockSpec``, which has to be typed as ``ClockSpec``, without allowing ``None``.
+
+   - ``clock_upscale_method`` syncs the rows when they span at least as long as the master clock's: ``infill_from_period_end`` for data only known once its period ends, like this block's daily bars, ``infill_from_timestamp`` for data known from its timestamp onward, like financial statements, or ``exact_match`` for events, like dividends.
+   - ``clock_downscale_method`` syncs the rows when they span less time than the master clock's, consolidating the rows belonging to each master clock row with ``downscale_consolidation_methods``.
+   - Each ``downscale_consolidation_methods`` key is either an entity, setting the method of all its fields and those of its extensions, or a field, overriding its entity's method. Every field needs a method, or defining the class raises a ``TypeError``.
+   - The ``prefix_entity_map`` prefixes can't contain underscores, as column names get split at their first one, and the shortest prefix has to start all the other ones (e.g., ``f``, ``fbs`` and ``fcf``). The ``c`` prefix is reserved for calculated columns.
+
+3. Return its ``main_entity`` from your provider's ``get_data_block_data``, add it to its ``get_data_block_endpoint_tag_map``, and pass it as a ``data_block_providers`` key to ``main``. The provider sets the rows' time scale in the entity's ``clock_spec``, e.g. ``ClockSpec(reference_period=ReferencePeriods.DAY, periods_per_row=1)`` for daily rows, with ``ReferencePeriods`` imported from ``kaxanuk.data_curator``.
 
 A data block shadows any built-in one sharing its prefixes, so this one replaces ``MarketDailyDataBlock`` for the whole run, while one with new prefixes (e.g., ``alt``) adds its columns alongside the built-in ones.
+
+To add fields to a built-in data block instead, subclass it and map the prefix of the entity you're extending to its extension:
+
+.. code-block:: python
+
+   import dataclasses
+   import decimal
+   import typing
+
+   from kaxanuk.data_curator import clock_sync_methods
+   from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock, MarketDataDailyRow
+
+   @dataclasses.dataclass(frozen=True, slots=True)
+   class ExtendedMarketDataDailyRow(MarketDataDailyRow):
+       short_interest: decimal.Decimal | None
+
+   class ExtendedMarketDailyDataBlock(MarketDailyDataBlock):
+       downscale_consolidation_methods: typing.ClassVar = {
+           **MarketDailyDataBlock.downscale_consolidation_methods,
+           ExtendedMarketDataDailyRow.short_interest: clock_sync_methods.ConsolidationMethods.last,
+       }
+       prefix_entity_map: typing.ClassVar = {
+           'm': ExtendedMarketDataDailyRow,
+       }
+
+The extension then replaces the extended entity everywhere in the data block, so its rows keep the inherited columns (e.g., ``m_close``) and the main entity stays the same. The data provider toolkit also names the inherited fields' columns after the extension, as long as its methods receive the data block. Here the new field needs its own downscale consolidation method, as ``MarketDailyDataBlock`` lists one for each field, while an extension of an entity with a key of its own (e.g., ``FundamentalDataRowBalanceSheet``) gets the entity's method for its new fields.
 
 Troubleshooting & Tips
 ~~~~~~~~~~~~~~~~~~~~~~

@@ -5,6 +5,8 @@ import pathlib
 import pyarrow
 import pytest
 
+from kaxanuk.data_curator.data_blocks.fundamentals import FundamentalsDataBlock
+from kaxanuk.data_curator.entities import FundamentalDataRow
 from kaxanuk.data_curator.exceptions import (
     DataProviderMultiEndpointCommonDataDiscrepancyError,
     DataProviderMultiEndpointCommonDataOrderError,
@@ -168,6 +170,17 @@ class TestConsolidateProcessedEndpointTables:
                 table_merge_fields=[entity_tables.MiniFundamentalRow.filing_date]
             )
 
+    def test_merge_field_inherited_by_extended_entity(self):
+        # The merge field is declared by the entity that the data block's extension replaces
+        result = DataProviderToolkit.consolidate_processed_endpoint_tables(
+            processed_endpoint_tables=endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PROCESSED,
+            table_merge_fields=[FundamentalDataRow.period_end_date],
+            data_block=endpoint_maps.ExtendedFundamentalsDataBlock,
+        )
+        expected = endpoint_maps.EXAMPLE_EXTENDED_CONSOLIDATED_TABLE
+
+        assert result.equals(expected)
+
 
 class TestFindCommonTableMissingRowsMask:
     def test_subset_missing_some_rows(self):
@@ -243,12 +256,56 @@ class TestFindCommonTableMissingRowsMask:
         assert result is None
 
 
+class TestProcessEndpointTables:
+    def test_extended_entity_of_data_block(self):
+        result = DataProviderToolkit.process_endpoint_tables(
+            data_block=endpoint_maps.ExtendedFundamentalsDataBlock,
+            endpoint_field_map=endpoint_maps.EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS,
+            endpoint_tables=endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_TAG,
+        )
+        expected = endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PROCESSED
+
+        assert result == expected
+
+    def test_data_block_processed_again_with_another_endpoint_field_map(self):
+        # Declared inside the test, so no other test can have processed tables for it before
+        class FreshFundamentalsDataBlock(endpoint_maps.ExtendedFundamentalsDataBlock):
+            """
+            Data block that only this test processes tables for.
+            """
+
+        DataProviderToolkit.process_endpoint_tables(
+            data_block=FreshFundamentalsDataBlock,
+            endpoint_field_map=endpoint_maps.ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS,
+            endpoint_tables=endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_TAG,
+        )
+        result = DataProviderToolkit.process_endpoint_tables(
+            data_block=FreshFundamentalsDataBlock,
+            endpoint_field_map=endpoint_maps.EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS,
+            endpoint_tables=endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_TAG,
+        )
+        expected = endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PROCESSED
+
+        assert result == expected
+
+
 class TestPrivateCalculateEndpointColumnRemaps:
     def test_mixed_preprocessor_tags(self):
         result = DataProviderToolkit._calculate_endpoint_column_remaps(
+            FundamentalsDataBlock,
             endpoint_maps.ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS
         )
         expected = endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS
+
+        assert result == expected
+
+    def test_fields_inherited_by_extended_entity(self):
+        # The inherited fields are named after the data block's extension of the entity declaring them
+        result = DataProviderToolkit._calculate_endpoint_column_remaps(
+            endpoint_maps.ExtendedFundamentalsDataBlock,
+            endpoint_maps.EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS
+        )
+        expected = endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS
 
         assert result == expected
 
@@ -507,9 +564,9 @@ class TestPrivateMergePrimaryKeySubsetsPreservingOrder:
 class TestPrivateProcessRemappedEndpointTables:
     def test_mixed_preprocessor_tags(self):
         result = DataProviderToolkit._process_remapped_endpoint_tables(
+            FundamentalsDataBlock,
             endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_PREPROCESSORS,
             endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD,
-            endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC,
         )
         expected = endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PROCESSED
 
@@ -528,7 +585,6 @@ class TestPrivateRemapEndpointTableColumns:
         result = DataProviderToolkit._remap_endpoint_table_columns(
             endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS,
             endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_TAG,
-            endpoint_maps.EXAMPLE_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC,
         )
         expected = endpoint_maps.EXAMPLE_ENDPOINT_TABLES_PER_FIELD
 
@@ -539,21 +595,4 @@ class TestPrivateRemapEndpointTableColumns:
             and result[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT].equals(
                 expected[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT]
             )
-        )
-
-    def test_mixed_preprocessor_tags_with_extended_fields(self):
-        result = DataProviderToolkit._remap_endpoint_table_columns(
-            endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_COLUMN_REMAPS,
-            endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_TAG,
-            endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_FIELD_MAP_MIXED_PREPROCESSOR_TAGS_ENTITY_FIELD_TO_MOST_SPECIFIC,
-        )
-        expected = endpoint_maps.EXAMPLE_EXTENDED_ENDPOINT_TABLES_PER_FIELD
-
-        assert (  # noqa: PT018
-            result[endpoint_maps.Endpoints.BALANCE_SHEET_STATEMENT].equals(
-                expected[endpoint_maps.Endpoints.BALANCE_SHEET_STATEMENT]
-            )
-            and result[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT].equals(
-            expected[endpoint_maps.Endpoints.CASH_FLOW_STATEMENT]
-        )
         )

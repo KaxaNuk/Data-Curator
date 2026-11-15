@@ -72,6 +72,28 @@ class DataBlockEntityPackingError(DataCuratorError):
         )
 
 
+class DataBlockEntityMissingValueError(DataBlockEntityPackingError):
+    """
+    Raised when packing an entity whose row has data, but no value for one of its non-nullable fields.
+    """
+
+    def __init__(
+        self,
+        entity_name: str,
+        clock_sync_value: datetime.date,
+        field_name: str,
+    ):
+        super().__init__(
+            entity_name,
+            clock_sync_value,
+        )
+        self.field_name = field_name
+        # Replace the parent's generic message with one naming the field missing its value
+        self.args = (
+            f"Missing value for non-nullable field {entity_name}.{field_name} @ {clock_sync_value}",
+        )
+
+
 class DataBlockError(DataCuratorError):
     pass
 

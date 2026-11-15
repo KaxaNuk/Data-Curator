@@ -7,6 +7,7 @@ easier to understand and remember than "building_blocks".
 
 __all__ = [
     'BaseDataEntity',
+    'ClockSpec',
     'Configuration',
     'DividendData',
     'DividendDataRow',
@@ -26,6 +27,7 @@ __all__ = [
 
 # make these classes part of the public API of the base namespace
 from kaxanuk.data_curator.entities.base_data_entity import BaseDataEntity
+from kaxanuk.data_curator.entities.clock_spec import ClockSpec
 from kaxanuk.data_curator.entities.configuration import Configuration
 from kaxanuk.data_curator.entities.main_identifier import MainIdentifier
 from kaxanuk.data_curator.entities.market_instrument_identifier import MarketInstrumentIdentifier
