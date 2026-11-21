@@ -201,6 +201,9 @@ The minimal steps are:
           rows_field = MyMarketData.rows
 
    - ``rows_field`` and ``clock_spec_field`` are the main entity's fields holding the rows and their ``ClockSpec``, which has to be typed as ``ClockSpec``, without allowing ``None``.
+   - ``clock_sync_field`` is the rows' date or datetime field, and the rows have to be keyed by its values in ISO format, e.g. ``'2024-01-30'`` for dates or ``'2024-01-30T09:30:00'`` for datetimes, as returned by their ``isoformat()`` method.
+   - All of an identifier's dates and datetimes are in the local time of its exchange, without a time zone, so they can be compared across data blocks: a date starts at its local midnight, so on an intraday master clock a dividend's ex-dividend date takes effect from its day's first bar. Datetimes with a time zone or UTC offset get rejected, so convert them to the exchange's local time in the data provider.
+   - Rows with periods of a day or longer can be labeled with any date inside their period, like a weekly bar labeled by its Friday, as their periods follow the calendar. Intraday rows, with ``SECOND``, ``MINUTE`` or ``HOUR`` periods, follow their trading sessions instead, so each row's period starts at its own timestamp and lasts its ``ClockSpec`` span, which requires labeling the rows by the start of their periods, e.g. ``'2024-01-30T09:30:00'`` for an hourly bar from 09:30 to 10:30. A session's last bar keeps its full span even when the session closes before it ends, so an event timestamped between the close and the end of that span still takes effect from that bar.
 
    - ``clock_upscale_method`` syncs the rows when they span at least as long as the master clock's: ``infill_from_period_end`` for data only known once its period ends, like this block's daily bars, ``infill_from_timestamp`` for data known from its timestamp onward, like financial statements, or ``match_same_period`` for data that only applies to its own period. Set it to ``None`` when the rows are instants, like the dates of dividends and splits, as instants never get upscaled.
    - ``clock_downscale_method`` syncs the rows when they span less time than the master clock's, consolidating the rows belonging to each master clock row with ``downscale_consolidation_methods``: ``group_by_calendar_period`` gives each row to the master clock row whose period contains it, dropping the rows between the master clock's periods, like weekend ticks, while ``group_by_next_period_end`` gives those rows to the next master clock row instead, like the dividend and split dates on non-trading days.
@@ -236,6 +239,36 @@ To add fields to a built-in data block instead, subclass it and map the prefix o
        }
 
 The extension then replaces the extended entity everywhere in the data block, so its rows keep the inherited columns (e.g., ``m_close``) and the main entity stays the same. The data provider toolkit also names the inherited fields' columns after the extension, as long as its methods receive the data block. Here the new field needs its own downscale consolidation method, as ``MarketDailyDataBlock`` lists one for each field, while an extension of an entity with a key of its own (e.g., ``FundamentalDataRowBalanceSheet``) gets the entity's method for its new fields.
+
+Choose the Master Clock
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Every data block's rows get synced to a master clock, whose rows become the output rows. By default, the master clock is ``MarketDailyDataBlock``'s dates, or those of the data block replacing it by sharing its ``m`` prefix, so each output row is a trading day. To use another data block's rows instead, like those of an intraday market data block under its own prefix, pass it to ``main`` as ``master_clock_data_block``:
+
+.. code-block:: python
+
+   kaxanuk.data_curator.main(
+       configuration=configuration,
+       data_block_providers={
+           MyMarketIntradayDataBlock: custom_provider,
+           MarketDailyDataBlock: data_provider,
+           DividendsDataBlock: data_provider,
+       },
+       output_handlers=[output_handler],
+       master_clock_data_block=MyMarketIntradayDataBlock,
+   )
+
+Each output row is then one of the intraday bars, whose ``clock_spec`` the provider sets to their size, e.g. ``ClockSpec(reference_period=ReferencePeriods.MINUTE, periods_per_row=5)`` for 5-minute bars. The ``Configuration`` start and end dates stay dates, so the provider fetches the bars of every day in that range. The other data blocks' rows then get synced to the bars:
+
+- A daily bar is only known once its day ends, so its columns appear from the next day's first bar.
+- Dividend and split dates take effect from their day's first bar, which opens the session.
+- Financial statements appear from the first bar of their filing date, even when they were filed after the session's close.
+
+Keep in mind that:
+
+- The built-in calculations assume daily rows: their windows count rows, like the 21 rows of ``c_simple_moving_average_21d_close_dividend_and_split_adjusted``, and the annualized ones assume 252 rows per year, so their results mean something else on intraday bars, unlike those of your own custom calculations.
+- ``InMemoryOutput.export_dataframe`` takes the name of the column to index the rows by, which needs to be the master clock's column, e.g. ``export_dataframe('mi_timestamp')`` for a data block with the ``mi`` prefix whose clock sync field is ``timestamp``.
+- In markets trading overnight, the local times repeat during the hour when the clocks go back at the end of daylight saving time, which the master clock rejects, as its timestamps need to be strictly increasing.
 
 Troubleshooting & Tips
 ~~~~~~~~~~~~~~~~~~~~~~

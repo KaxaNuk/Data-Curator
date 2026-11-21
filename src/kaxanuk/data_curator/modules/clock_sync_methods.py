@@ -4,13 +4,26 @@ Standard methods for syncing the clock chain columns to their master clock.
 The upscale and downscale methods match the rows of a reference clock to the rows of its master clock, while the
 consolidation methods consolidate the reference array rows belonging to each master clock row into a single row.
 """
+import datetime
+
 import pyarrow
 
 from kaxanuk.data_curator.exceptions import DataColumnSyncError
 from kaxanuk.data_curator.modules.data_column import (
     BEFORE_MASTER_CLOCK_INDEX,
+    FIXED_PERIOD_SECONDS,
     DataColumn,
+    ReferencePeriods,
 )
+
+
+# The reference periods shorter than a day, whose periods follow the trading sessions instead of the calendar, so each
+# of their rows' periods starts at the row's own timestamp and lasts its span, instead of flooring it to a calendar grid
+INTRADAY_REFERENCE_PERIODS = frozenset({
+    ReferencePeriods.SECOND,
+    ReferencePeriods.MINUTE,
+    ReferencePeriods.HOUR,
+})
 
 
 class ConsolidationMethods:
@@ -412,8 +425,11 @@ class DownscaleMethods:
 
     The periods are calculated by flooring the timestamps of both clocks to the master clock's reference period and
     periods per row, so each master clock row can be labeled with any timestamp inside its period, like its start, its
-    end, or its first or last trading day. The reference clock rows before the first master clock row get
-    BEFORE_MASTER_CLOCK_INDEX, so the consolidation methods holding states can start from them.
+    end, or its first or last trading day. The intraday master clocks, with periods shorter than a day, follow their
+    trading sessions instead, so each of their rows' periods starts at the row's own timestamp and lasts its span,
+    which requires labeling them by the start of their periods, like 09:30 for a bar from 09:30 to 10:30. The reference
+    clock rows before the first master clock row get BEFORE_MASTER_CLOCK_INDEX, so the consolidation methods holding
+    states can start from them.
     """
 
     @staticmethod
@@ -443,7 +459,8 @@ class DownscaleMethods:
         Raises
         ------
         DataColumnSyncError
-            If several master clock rows fall in the same period
+            If several master clock rows fall in the same period, or intraday master clock rows start less than one
+            period after the previous row
         """
         master_periods = _calculate_master_periods(master_clock_column)
         reference_periods = _calculate_reference_periods(
@@ -495,7 +512,8 @@ class DownscaleMethods:
         Raises
         ------
         DataColumnSyncError
-            If several master clock rows fall in the same period
+            If several master clock rows fall in the same period, or intraday master clock rows start less than one
+            period after the previous row
         """
         master_periods = _calculate_master_periods(master_clock_column)
         reference_periods = _calculate_reference_periods(
@@ -558,7 +576,9 @@ class UpscaleMethods:
 
         The periods are calculated by flooring the timestamps of both clocks to the master clock's reference period
         and periods per row, so with a daily master clock each master clock row gets matched to the reference clock
-        row with the same date. When several reference clock rows fall in the same period, the last one gets matched.
+        row with the same date, while with an intraday master clock each master clock row's period starts at its own
+        timestamp, as in the downscale methods. When several reference clock rows fall in the same period, the last
+        one gets matched.
 
         Parameters
         ----------
@@ -571,20 +591,17 @@ class UpscaleMethods:
         -------
         The index of the matching reference clock row for each master clock row, or null for the master clock rows
         without a match
+
+        Raises
+        ------
+        DataColumnSyncError
+            If several master clock rows fall in the same period, or intraday master clock rows start less than one
+            period after the previous row
         """
-        reference_timestamps = _cast_to_master_clock_type(
+        master_periods = _calculate_master_periods(master_clock_column)
+        reference_periods = _calculate_reference_periods(
             master_clock_column=master_clock_column,
             reference_clock_column=reference_clock_column,
-        )
-        master_periods = pyarrow.compute.floor_temporal(
-            master_clock_column.reference_array,
-            multiple=master_clock_column.periods_per_row,
-            unit=master_clock_column.reference_period,
-        )
-        reference_periods = pyarrow.compute.floor_temporal(
-            reference_timestamps,
-            multiple=master_clock_column.periods_per_row,
-            unit=master_clock_column.reference_period,
         )
 
         # index_in matches the first of any duplicate reference periods, so matching against the reversed reference
@@ -626,9 +643,10 @@ class UpscaleMethods:
         For the reference clocks whose rows hold the data of a whole period, which is only known once the period ends,
         like daily or weekly price bars, as opposed to `infill_from_timestamp`. The end of each row's period gets
         calculated by ceiling its timestamp to its own clock's reference period and periods per row, so the rows can be
-        labeled with any timestamp inside their period, like its start or its last trading day. With a daily master
-        clock, each row of a daily reference clock matches the master clock row of its same date, while each row of a
-        weekly one only matches from the master clock rows of the following week onward.
+        labeled with any timestamp inside their period, like its start or its last trading day, except for the intraday
+        clocks, whose rows get labeled by the start of their periods, so their periods end one span after their own
+        timestamps. With a daily master clock, each row of a daily reference clock matches the master clock row of its
+        same date, while each row of a weekly one only matches from the master clock rows of the following week onward.
 
         Each reference clock row stays matched to all the following master clock rows until the next reference clock
         row, without any limit on how long. When several reference clock rows' periods end at the same time, the last
@@ -651,19 +669,13 @@ class UpscaleMethods:
             master_clock_column=master_clock_column,
             reference_clock_column=reference_clock_column,
         )
-
-        # Ceiling strictly gets the start of the next period even for the timestamps already on a period start
-        master_period_ends = pyarrow.compute.ceil_temporal(
-            master_clock_column.reference_array,
-            multiple=master_clock_column.periods_per_row,
-            unit=master_clock_column.reference_period,
-            ceil_is_strictly_greater=True,
+        master_period_ends = _calculate_period_ends(
+            clock_column=master_clock_column,
+            timestamps=master_clock_column.reference_array,
         )
-        reference_period_ends = pyarrow.compute.ceil_temporal(
-            reference_timestamps,
-            multiple=reference_clock_column.periods_per_row,
-            unit=reference_clock_column.reference_period,
-            ceil_is_strictly_greater=True,
+        reference_period_ends = _calculate_period_ends(
+            clock_column=reference_clock_column,
+            timestamps=reference_timestamps,
         )
 
         return _match_latest_reference_rows(
@@ -712,7 +724,10 @@ class UpscaleMethods:
 
 def _calculate_master_periods(master_clock_column: DataColumn) -> pyarrow.Array:
     """
-    Return the period of each master clock row, by flooring its timestamp to its reference period and periods per row.
+    Return the start of each master clock row's period.
+
+    The periods get calculated by flooring each row's timestamp to the clock's reference period and periods per row,
+    except for the intraday master clocks, whose periods start at their rows' own timestamps.
 
     Parameters
     ----------
@@ -726,8 +741,27 @@ def _calculate_master_periods(master_clock_column: DataColumn) -> pyarrow.Array:
     Raises
     ------
     DataColumnSyncError
-        If several master clock rows fall in the same period
+        If several master clock rows fall in the same period, or intraday master clock rows start less than one period
+        after the previous row
     """
+    if master_clock_column.reference_period in INTRADAY_REFERENCE_PERIODS:
+        master_periods = master_clock_column.reference_array
+        is_overlapping_previous_row = pyarrow.compute.less(
+            pyarrow.compute.pairwise_diff(master_periods),
+            _calculate_span_duration(master_clock_column),
+        )
+
+        if pyarrow.compute.any(is_overlapping_previous_row).as_py():
+            msg = " ".join([
+                "DataColumn intraday master clock has rows starting less than its period of",
+                f"{master_clock_column.periods_per_row} {master_clock_column.reference_period}",
+                "after the previous row",
+            ])
+
+            raise DataColumnSyncError(msg)
+
+        return master_periods
+
     master_periods = pyarrow.compute.floor_temporal(
         master_clock_column.reference_array,
         multiple=master_clock_column.periods_per_row,
@@ -746,13 +780,55 @@ def _calculate_master_periods(master_clock_column: DataColumn) -> pyarrow.Array:
     return master_periods
 
 
+def _calculate_period_ends(
+    *,
+    clock_column: DataColumn,
+    timestamps: pyarrow.Array,
+) -> pyarrow.Array:
+    """
+    Return the end of the period of each timestamp, in the clock's own periods.
+
+    The periods end at the start of the next period after flooring each timestamp to the clock's reference period and
+    periods per row, except for the intraday clocks, whose periods end one span after their rows' own timestamps.
+
+    Parameters
+    ----------
+    clock_column
+        The clock whose periods the timestamps belong to
+    timestamps
+        The clock's timestamps, or the clock's timestamps cast to its master clock's type
+
+    Returns
+    -------
+    The end of each timestamp's period, or null for the null timestamps
+    """
+    if clock_column.reference_period in INTRADAY_REFERENCE_PERIODS:
+        return pyarrow.compute.add(
+            timestamps,
+            _calculate_span_duration(clock_column),
+        )
+
+    # Ceiling strictly gets the start of the next period even for the timestamps already on a period start
+    return pyarrow.compute.ceil_temporal(
+        timestamps,
+        multiple=clock_column.periods_per_row,
+        unit=clock_column.reference_period,
+        ceil_is_strictly_greater=True,
+    )
+
+
 def _calculate_reference_periods(
     *,
     master_clock_column: DataColumn,
     reference_clock_column: DataColumn,
 ) -> pyarrow.Array:
     """
-    Return the master clock period of each reference clock row, by flooring its timestamp to the master's periods.
+    Return the start of the master clock period each reference clock row falls in.
+
+    The periods get calculated by flooring each reference timestamp to the master clock's reference period and periods
+    per row, except for the intraday master clocks, whose periods start at their rows' own timestamps, so each reference
+    timestamp gets the start of the latest master clock row at or before it, as long as it falls within that row's
+    span.
 
     Parameters
     ----------
@@ -763,17 +839,83 @@ def _calculate_reference_periods(
 
     Returns
     -------
-    The start of the master clock period each reference clock row falls in, or null for the rows with null timestamps
+    The start of the master clock period each reference clock row falls in, or for an intraday master clock, the
+    reference timestamp itself when it falls outside all the master clock periods, which then matches none of them;
+    null for the rows with null timestamps
     """
     reference_timestamps = _cast_to_master_clock_type(
         master_clock_column=master_clock_column,
         reference_clock_column=reference_clock_column,
     )
 
-    return pyarrow.compute.floor_temporal(
+    if master_clock_column.reference_period not in INTRADAY_REFERENCE_PERIODS:
+        return pyarrow.compute.floor_temporal(
+            reference_timestamps,
+            multiple=master_clock_column.periods_per_row,
+            unit=master_clock_column.reference_period,
+        )
+
+    master_period_starts = master_clock_column.reference_array
+    latest_master_period_starts = pyarrow.compute.take(
+        master_period_starts,
+        _match_latest_boundary_rows(
+            boundaries=master_period_starts,
+            timestamps=reference_timestamps,
+        ),
+    )
+    latest_master_period_ends = pyarrow.compute.add(
+        latest_master_period_starts,
+        _calculate_span_duration(master_clock_column),
+    )
+    # The timestamps before all the master clock rows have no latest period, so they're outside all of them
+    is_inside_latest_master_period = pyarrow.compute.fill_null(
+        pyarrow.compute.less(
+            reference_timestamps,
+            latest_master_period_ends,
+        ),
+        fill_value=False,
+    )
+
+    return pyarrow.compute.if_else(
+        is_inside_latest_master_period,
+        latest_master_period_starts,
         reference_timestamps,
-        multiple=master_clock_column.periods_per_row,
-        unit=master_clock_column.reference_period,
+    )
+
+
+def _calculate_span_duration(clock_column: DataColumn) -> pyarrow.Scalar:
+    """
+    Return the time spanned by each row of a clock with a fixed-length reference period, like an intraday clock.
+
+    Parameters
+    ----------
+    clock_column
+        The clock column
+
+    Returns
+    -------
+    The duration spanned by each of the clock's rows
+
+    Raises
+    ------
+    DataColumnSyncError
+        If the column isn't a clock, or its reference period doesn't have a fixed length
+    """
+    periods_per_row = clock_column.periods_per_row
+    reference_period = clock_column.reference_period
+
+    if (
+        periods_per_row is None
+        or reference_period not in FIXED_PERIOD_SECONDS
+    ):
+        msg = "DataColumn clock span duration requires a clock with a fixed-length reference period"
+
+        raise DataColumnSyncError(msg)
+
+    return pyarrow.scalar(
+        datetime.timedelta(
+            seconds=periods_per_row * FIXED_PERIOD_SECONDS[reference_period],
+        )
     )
 
 
@@ -851,6 +993,74 @@ def _mark_rows_before_master_clock(
             type=pyarrow.int64(),
         ),
         master_row_indices,
+    )
+
+
+def _match_latest_boundary_rows(
+    *,
+    boundaries: pyarrow.Array,
+    timestamps: pyarrow.Array,
+) -> pyarrow.Int64Array:
+    """
+    Match each timestamp to the latest boundary at or before it.
+
+    Unlike in `_match_latest_reference_rows`, the matched timestamps don't need to be sorted, while the boundaries
+    they get matched to do.
+
+    Parameters
+    ----------
+    boundaries
+        The timestamps to match against, distinct and sorted from earliest to latest, like a master clock's timestamps
+    timestamps
+        The timestamps to match, with the same type as the boundaries
+
+    Returns
+    -------
+    The index of the latest boundary at or before each timestamp, or null for the timestamps before all the boundaries,
+    as well as for the null timestamps
+    """
+    boundary_count = len(boundaries)
+    timestamp_count = len(timestamps)
+
+    # Placing the boundaries before the timestamps keeps them first among equal values through the stable sort, so each
+    # timestamp also matches the boundary equal to it
+    combined_values = pyarrow.concat_arrays([
+        boundaries,
+        timestamps,
+    ])
+    combined_boundary_rows = pyarrow.concat_arrays([
+        pyarrow.array(
+            range(boundary_count),
+            type=pyarrow.int64(),
+        ),
+        pyarrow.nulls(
+            timestamp_count,
+            type=pyarrow.int64(),
+        ),
+    ])
+    sorted_positions = pyarrow.compute.sort_indices(combined_values)
+    sorted_boundary_rows = pyarrow.compute.take(
+        combined_boundary_rows,
+        sorted_positions,
+    )
+
+    # Each timestamp gets the latest boundary sorted before it, and sorting the sorted positions inverts the sort,
+    # getting back the timestamps in their own order
+    latest_boundary_rows = pyarrow.compute.fill_null_forward(sorted_boundary_rows)
+    unsorted_positions = pyarrow.compute.sort_indices(sorted_positions)
+    timestamp_latest_boundary_rows = pyarrow.compute.take(
+        latest_boundary_rows,
+        unsorted_positions.slice(boundary_count, timestamp_count),
+    )
+
+    # The null timestamps get sorted after all the boundaries, so they need their match removed
+    return pyarrow.compute.if_else(
+        pyarrow.compute.is_null(timestamps),
+        pyarrow.scalar(
+            None,
+            type=pyarrow.int64(),
+        ),
+        timestamp_latest_boundary_rows,
     )
 
 

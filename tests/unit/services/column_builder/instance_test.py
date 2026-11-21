@@ -166,6 +166,81 @@ class TestProcessColumns:
 
         assert result == expected
 
+    def test_dividend_on_intraday_master_clock(self):
+        # The ex-dividend date starts at midnight, so the dividend takes effect from the first bar of its day
+        configuration = Configuration(
+            start_date=datetime.date(2024, 1, 1),
+            end_date=datetime.date(2024, 2, 1),
+            period='annual',
+            identifiers=('TEST',),
+            columns=(
+                'mi_timestamp',
+                'd_ex_dividend_date_dividend',
+            ),
+        )
+        ColumnBuilder.initialize_data_blocks(
+            calculation_modules=[calculations],
+            configuration=configuration,
+            data_blocks=[data_blocks.IntradayMarketDataBlock],
+            master_clock_data_block=data_blocks.IntradayMarketDataBlock,
+        )
+        column_builder = ColumnBuilder(
+            data_block_entities={
+                DividendsDataBlock: data_block_entities.DIVIDEND_DATA,
+                data_blocks.IntradayMarketDataBlock: data_block_entities.INTRADAY_MARKET_DATA,
+            },
+        )
+        result = column_builder.process_columns(configuration.columns).to_pydict()
+        expected = {
+            'mi_timestamp': [
+                datetime.datetime(2024, 1, 29, 15),
+                datetime.datetime(2024, 1, 30, 9),
+                datetime.datetime(2024, 1, 30, 10),
+                datetime.datetime(2024, 1, 31, 9),
+            ],
+            'd_ex_dividend_date_dividend': [
+                None,
+                decimal.Decimal('0.25'),
+                None,
+                None,
+            ],
+        }
+
+        assert result == expected
+
+    def test_daily_rows_on_intraday_master_clock(self):
+        # Each daily bar is only known once its day ends, so its close appears from the first bar of the next day
+        configuration = Configuration(
+            start_date=datetime.date(2024, 1, 1),
+            end_date=datetime.date(2024, 2, 1),
+            period='annual',
+            identifiers=('TEST',),
+            columns=('m_close',),
+        )
+        ColumnBuilder.initialize_data_blocks(
+            calculation_modules=[calculations],
+            configuration=configuration,
+            data_blocks=[data_blocks.IntradayMarketDataBlock],
+            master_clock_data_block=data_blocks.IntradayMarketDataBlock,
+        )
+        column_builder = ColumnBuilder(
+            data_block_entities={
+                MarketDailyDataBlock: data_block_entities.MARKET_DATA,
+                data_blocks.IntradayMarketDataBlock: data_block_entities.INTRADAY_MARKET_DATA,
+            },
+        )
+        result = column_builder.process_columns(configuration.columns).to_pydict()
+        expected = {
+            'm_close': [
+                None,
+                None,
+                None,
+                decimal.Decimal('10.5'),
+            ],
+        }
+
+        assert result == expected
+
     def test_dividend_paid_after_master_clock_dates(self):
         configuration = Configuration(
             start_date=datetime.date(2024, 1, 1),

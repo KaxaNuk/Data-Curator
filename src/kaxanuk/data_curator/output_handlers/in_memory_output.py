@@ -1,7 +1,10 @@
 import pandas
 import pyarrow
 
-from kaxanuk.data_curator.exceptions import OutputHandlerError
+from kaxanuk.data_curator.exceptions import (
+    OutputHandlerError,
+    PassedArgumentError,
+)
 from kaxanuk.data_curator.output_handlers.output_handler_interface import OutputHandlerInterface
 
 
@@ -46,13 +49,29 @@ class InMemoryOutput(OutputHandlerInterface):
 
         return True
 
-    def export_dataframe(self) -> pandas.DataFrame:
+    def export_dataframe(
+        self,
+        date_index_column: str,
+    ) -> pandas.DataFrame:
         """
-        Export the stored data as a pandas DataFrame.
+        Export the stored data as a pandas DataFrame, indexed by each identifier and the date index column.
+
+        Parameters
+        ----------
+        date_index_column
+            The output column holding the dates or timestamps of the rows, like the master clock column, e.g. 'm_date'
+            for daily market data
 
         Returns
         -------
         The DataFrame containing the stored data.
+
+        Raises
+        ------
+        OutputHandlerError
+            If there's no data to export
+        PassedArgumentError
+            If the output of any identifier doesn't have the date index column
         """
         if len(self.data) < 1:
             msg = "No data to export."
@@ -63,10 +82,13 @@ class InMemoryOutput(OutputHandlerInterface):
         for (identifier, table) in self.data.items():
             dataframe = table.to_pandas()
 
-            if 'm_date' not in dataframe.columns:
-                msg = "Unable to index in-memory output by date as 'm_date' column is missing."
+            if date_index_column not in dataframe.columns:
+                msg = " ".join([
+                    f"Unable to index the in-memory output by {date_index_column},",
+                    f"as the output of {identifier} doesn't have that column.",
+                ])
 
-                raise OutputHandlerError(msg)
+                raise PassedArgumentError(msg)
 
             dataframe['main_identifier'] = identifier
             dataframes.append(dataframe)
@@ -78,7 +100,10 @@ class InMemoryOutput(OutputHandlerInterface):
             ignore_index=True
         )
         combined_dataframe.set_index(
-            ['main_identifier', 'm_date'],
+            [
+                'main_identifier',
+                date_index_column,
+            ],
             inplace=True
         )
 

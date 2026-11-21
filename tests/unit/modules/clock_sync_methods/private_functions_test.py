@@ -23,6 +23,20 @@ def daily_master_clock():
 
 
 @pytest.fixture
+def half_hourly_labeled_master_clock():
+    # Hourly bars starting at the half hours, like those of a session opening at 09:30
+    return DataColumn.load(
+        [
+            datetime.datetime(2024, 1, 30, 9, 30),
+            datetime.datetime(2024, 1, 30, 10, 30),
+        ],
+        clock_master=True,
+        clock_periods_per_row=1,
+        clock_reference_period=ReferencePeriods.HOUR,
+    )
+
+
+@pytest.fixture
 def master_timestamps():
     return pyarrow.array([
         datetime.date(2024, 1, 30),
@@ -64,6 +78,60 @@ class TestPrivateCalculateMasterPeriods:
 
         with pytest.raises(DataColumnSyncError):
             clock_sync_methods._calculate_master_periods(master_clock)
+
+    def test_intraday_master_clock_labeled_by_half_hours(
+        self,
+        half_hourly_labeled_master_clock,
+    ):
+        result = clock_sync_methods._calculate_master_periods(half_hourly_labeled_master_clock)
+
+        assert result is half_hourly_labeled_master_clock.reference_array
+
+    def test_overlapping_intraday_master_clock_rows(self):
+        master_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10),
+            ],
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.HOUR,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            clock_sync_methods._calculate_master_periods(master_clock)
+
+
+class TestPrivateCalculatePeriodEnds:
+    def test_daily_clock(
+        self,
+        daily_master_clock,
+    ):
+        result = clock_sync_methods._calculate_period_ends(
+            clock_column=daily_master_clock,
+            timestamps=daily_master_clock.reference_array,
+        )
+        expected = pyarrow.array([
+            datetime.date(2024, 1, 31),
+            datetime.date(2024, 2, 1),
+        ])
+
+        assert result.equals(expected)
+
+    def test_intraday_clock_labeled_by_half_hours(
+        self,
+        half_hourly_labeled_master_clock,
+    ):
+        result = clock_sync_methods._calculate_period_ends(
+            clock_column=half_hourly_labeled_master_clock,
+            timestamps=half_hourly_labeled_master_clock.reference_array,
+        )
+        expected = pyarrow.array([
+            datetime.datetime(2024, 1, 30, 10, 30),
+            datetime.datetime(2024, 1, 30, 11, 30),
+        ])
+
+        assert result.equals(expected)
 
 
 class TestPrivateCalculateReferencePeriods:
@@ -118,6 +186,72 @@ class TestPrivateCalculateReferencePeriods:
         ])
 
         assert result.equals(expected)
+
+    def test_intraday_master_clock_labeled_by_half_hours(
+        self,
+        half_hourly_labeled_master_clock,
+    ):
+        reference_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 10, 15),
+                datetime.datetime(2024, 1, 30, 11, 45),
+                datetime.datetime(2024, 1, 30, 9),
+                None,
+            ],
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_next_period_end,
+            clock_master=half_hourly_labeled_master_clock,
+            clock_periods_per_row=0,
+            clock_reference_period=ReferencePeriods.MINUTE,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.sum,
+        )
+        result = clock_sync_methods._calculate_reference_periods(
+            master_clock_column=half_hourly_labeled_master_clock,
+            reference_clock_column=reference_clock,
+        )
+        # 10:15 falls in the bar from 09:30 to 10:30, while 11:45 falls after the bar from 10:30 to 11:30, and 09:00
+        # before all the bars, so they keep their own timestamps
+        expected = pyarrow.array([
+            datetime.datetime(2024, 1, 30, 9, 30),
+            datetime.datetime(2024, 1, 30, 11, 45),
+            datetime.datetime(2024, 1, 30, 9),
+            None,
+        ])
+
+        assert result.equals(expected)
+
+
+class TestPrivateCalculateSpanDuration:
+    def test_hourly_clock(self):
+        master_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+            ],
+            clock_master=True,
+            clock_periods_per_row=2,
+            clock_reference_period=ReferencePeriods.HOUR,
+        )
+        result = clock_sync_methods._calculate_span_duration(master_clock)
+
+        assert result.as_py() == datetime.timedelta(hours=2)
+
+    def test_calendar_period_clock(self):
+        master_clock = DataColumn.load(
+            [
+                datetime.date(2024, 1, 31),
+            ],
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.MONTH,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            clock_sync_methods._calculate_span_duration(master_clock)
+
+    def test_column_without_clock(self):
+        with pytest.raises(DataColumnSyncError):
+            clock_sync_methods._calculate_span_duration(
+                DataColumn.load([1, 2])
+            )
 
 
 class TestPrivateCastToMasterClockType:
@@ -282,6 +416,60 @@ class TestPrivateMarkRowsBeforeMasterClock:
         )
 
         assert result is master_row_indices
+
+
+class TestPrivateMatchLatestBoundaryRows:
+    def test_latest_boundary_at_or_before_each_timestamp(self):
+        result = clock_sync_methods._match_latest_boundary_rows(
+            boundaries=pyarrow.array([
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10, 30),
+            ]),
+            timestamps=pyarrow.array([
+                datetime.datetime(2024, 1, 30, 11),
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10, 29),
+            ]),
+        )
+        expected = pyarrow.array(
+            [1, 0, 0],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_timestamps_before_all_boundaries(self):
+        result = clock_sync_methods._match_latest_boundary_rows(
+            boundaries=pyarrow.array([
+                datetime.datetime(2024, 1, 30, 9, 30),
+            ]),
+            timestamps=pyarrow.array([
+                datetime.datetime(2024, 1, 30, 9),
+            ]),
+        )
+        expected = pyarrow.array(
+            [None],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_null_timestamp(self):
+        result = clock_sync_methods._match_latest_boundary_rows(
+            boundaries=pyarrow.array([
+                datetime.datetime(2024, 1, 30, 9, 30),
+            ]),
+            timestamps=pyarrow.array(
+                [None],
+                type=pyarrow.timestamp('us'),
+            ),
+        )
+        expected = pyarrow.array(
+            [None],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
 
 
 class TestPrivateMatchLatestReferenceRows:

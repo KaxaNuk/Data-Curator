@@ -176,8 +176,70 @@ class TestMatchSamePeriod:
 
         assert result.equals(expected)
 
+    def test_intraday_master_clock_labeled_by_half_hours(self):
+        # The master clock's periods start at its rows' own timestamps, so 10:15 falls in the bar from 09:30 to 10:30
+        master_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10, 30),
+            ],
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.HOUR,
+        )
+        reference_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 10, 15),
+            ],
+            clock_master=master_clock,
+            clock_periods_per_row=2,
+            clock_reference_period=ReferencePeriods.HOUR,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.match_same_period,
+        )
+        result = clock_sync_methods.UpscaleMethods.match_same_period(
+            master_clock,
+            reference_clock,
+        )
+        expected = pyarrow.array(
+            [0, None],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
 
 class TestInfillFromPeriodEnd:
+    def test_intraday_reference_rows_labeled_by_half_hours(self):
+        # The hourly bar from 09:30 to 10:30 is only known once the half hour bar from 10:00 to 10:30 ends
+        master_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10),
+            ],
+            clock_master=True,
+            clock_periods_per_row=30,
+            clock_reference_period=ReferencePeriods.MINUTE,
+        )
+        reference_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+            ],
+            clock_master=master_clock,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.HOUR,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_period_end,
+        )
+        result = clock_sync_methods.UpscaleMethods.infill_from_period_end(
+            master_clock,
+            reference_clock,
+        )
+        expected = pyarrow.array(
+            [None, 0],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
     def test_reference_rows_on_same_scale_master_clock(
         self,
         daily_master_clock,

@@ -4,6 +4,7 @@ Handles the logic of building the columnar output of the system.
 
 import collections.abc
 import dataclasses
+import datetime
 import inspect
 import logging
 import types
@@ -513,7 +514,7 @@ class ColumnBuilder:
                 clock_spec=clock_spec,
                 data_block=data_block,
                 master_clock_column=master_clock_column,
-                timestamps=cls._calculate_field_timestamps(date_field.__name__, rows),
+                timestamps=cls._calculate_field_timestamps(data_block, date_field, rows),
             )
 
         return clocks
@@ -786,54 +787,97 @@ class ColumnBuilder:
 
         return column_extractors
 
-    @staticmethod
+    @classmethod
     def _calculate_field_timestamps(
-        field_name: str,
+        cls,
+        data_block: type[BaseDataBlock],
+        field: EntityField,
         rows: DataRows,
     ) -> pyarrow.Array:
         """
-        Return the values of a date field of each row, as the timestamps of the clock tracking that field.
+        Return the values of a date or datetime field of each row, as the timestamps of the clock tracking that field.
+
+        The timestamps get the type of the field, as PyArrow would silently convert any mixed dates and datetimes, or
+        mixed local and time zoned datetimes, when inferring it.
 
         Parameters
         ----------
-        field_name
-            The name of the date field
+        data_block
+            The data block whose rows hold the field
+        field
+            The date or datetime field
         rows
             The rows holding the field
 
         Returns
         -------
         The field's value of each row, null for the rows without data or without a value
-        """
-        return pyarrow.array([
-            getattr(row, field_name, None)
-            for row in rows.values()
-        ])
 
-    @staticmethod
+        Raises
+        ------
+        ColumnBuilderClockError
+            If any value has a time zone or UTC offset, as the timestamps hold the local time of the identifier's
+            exchange
+        """
+        field_values = [
+            getattr(row, field.__name__, None)
+            for row in rows.values()
+        ]
+        zoned_values = [
+            field_value
+            for field_value in field_values
+            if getattr(field_value, 'tzinfo', None) is not None
+        ]
+
+        if len(zoned_values) > 0:
+            msg = " ".join([
+                f"{data_block.__name__} {field.__name__} values have a time zone or UTC offset,",
+                f"like {zoned_values[0]}, while the clock fields need the local time of the identifier's exchange",
+                "without one",
+            ])
+
+            raise ColumnBuilderClockError(
+                msg,
+                data_block=data_block,
+            )
+
+        return pyarrow.array(
+            field_values,
+            type=cls._get_clock_field_arrow_type(data_block, field),
+        )
+
+    @classmethod
     def _calculate_key_timestamps(
+        cls,
         data_block: type[BaseDataBlock],
         rows: DataRows,
     ) -> pyarrow.Array:
         """
-        Return the dates of a data block's row keys, as the timestamps of the clock tracking its clock sync field.
+        Return the timestamps of a data block's row keys, as the timestamps of the clock tracking its clock sync field.
+
+        The keys hold the clock sync values in ISO format, so they get parsed as dates when the clock sync field holds
+        dates, and as local timestamps without a time zone when it holds datetimes.
 
         Parameters
         ----------
         data_block
             The data block whose rows get keyed by their clock sync values
         rows
-            The rows of the data block's main entity, keyed by their clock sync values in 'YYYY-MM-DD' format
+            The rows of the data block's main entity, keyed by their clock sync values in ISO format
 
         Returns
         -------
-        The date of each row key
+        The timestamp of each row key
 
         Raises
         ------
         ColumnBuilderClockError
-            If any row key isn't a date in 'YYYY-MM-DD' format
+            If any row key isn't in the ISO format of the clock sync field's type, like a datetime with a UTC offset
         """
+        key_type = cls._get_clock_field_arrow_type(
+            data_block,
+            data_block.clock_sync_field,
+        )
         try:
 
             return pyarrow.compute.cast(
@@ -841,10 +885,15 @@ class ColumnBuilder:
                     list(rows.keys()),
                     type=pyarrow.string(),
                 ),
-                pyarrow.date32(),
+                key_type,
             )
         except pyarrow.ArrowInvalid as error:
-            msg = f"{data_block.__name__} rows have keys that aren't dates in 'YYYY-MM-DD' format: {error}"
+            key_format = (
+                "dates in 'YYYY-MM-DD' format"
+                if pyarrow.types.is_date(key_type)
+                else "local datetimes in ISO format, without a time zone or UTC offset"
+            )
+            msg = f"{data_block.__name__} rows have keys that aren't {key_format}: {error}"
 
             raise ColumnBuilderClockError(
                 msg,
@@ -1036,6 +1085,48 @@ class ColumnBuilder:
         else:   # noqa: PLW0120
             msg = f"Custom column calculation function not found: {function_name}"
             raise ColumnBuilderCustomFunctionNotFoundError(msg)
+
+    @staticmethod
+    def _get_clock_field_arrow_type(
+        data_block: type[BaseDataBlock],
+        clock_field: EntityField,
+    ) -> pyarrow.DataType:
+        """
+        Return the PyArrow type of a clock field's timestamps, based on the field's type.
+
+        The datetime fields hold the local time of the identifier's exchange, so their timestamps don't have a time
+        zone, while all the other clock fields hold dates.
+
+        Parameters
+        ----------
+        data_block
+            The data block whose entities hold the clock field
+        clock_field
+            The field whose values a clock tracks, like the clock sync field or a dated factor date field
+
+        Returns
+        -------
+        A timestamp type without a time zone for the datetime fields, or else the date type
+        """
+        field_entity = data_block.get_field_entity(clock_field)
+        field_type = typing.get_type_hints(field_entity)[clock_field.__name__]
+        # The nullable fields get typed as unions with None
+        field_types = (
+            typing.get_args(field_type)
+            or (field_type,)
+        )
+        is_datetime_field = any(
+            (
+                isinstance(candidate_type, type)
+                and issubclass(candidate_type, datetime.datetime)
+            )
+            for candidate_type in field_types
+        )
+
+        if is_datetime_field:
+            return pyarrow.timestamp('us')
+
+        return pyarrow.date32()
 
     @staticmethod
     def _get_dated_factor_columns(

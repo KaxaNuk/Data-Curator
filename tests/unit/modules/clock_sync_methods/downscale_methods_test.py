@@ -112,6 +112,71 @@ class TestGroupByCalendarPeriod:
 
         assert result.equals(expected)
 
+    def test_intraday_master_clock_labeled_by_half_hours(self):
+        # Each bar's period starts at its own timestamp, while 16:40 falls after the last bar's period, which ends at
+        # 16:30 even though the session closes at 16:00
+        master_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10, 30),
+                datetime.datetime(2024, 1, 30, 15, 30),
+            ],
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.HOUR,
+        )
+        reference_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 10, 15),
+                datetime.datetime(2024, 1, 30, 10, 45),
+                datetime.datetime(2024, 1, 30, 16, 10),
+                datetime.datetime(2024, 1, 30, 16, 40),
+            ],
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
+            clock_master=master_clock,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.MINUTE,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.last,
+        )
+        result = clock_sync_methods.DownscaleMethods.group_by_calendar_period(
+            master_clock,
+            reference_clock,
+        )
+        expected = pyarrow.array(
+            [0, 1, 2, None],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_overlapping_intraday_master_clock_rows(self):
+        # The hourly bar starting at 10:00 starts before the one starting at 09:30 ends
+        master_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10),
+            ],
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.HOUR,
+        )
+        reference_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 45),
+            ],
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
+            clock_master=master_clock,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.MINUTE,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.last,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            clock_sync_methods.DownscaleMethods.group_by_calendar_period(
+                master_clock,
+                reference_clock,
+            )
+
     def test_weekly_master_clock_labeled_by_friday(self):
         master_clock = DataColumn.load(
             [
@@ -497,6 +562,44 @@ class TestGroupByNextPeriodEnd:
         # The date starts at midnight, so it takes effect from the first row of its day, its open
         expected = pyarrow.array(
             [2],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_intraday_master_clock_labeled_by_half_hours(self):
+        master_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10, 30),
+                datetime.datetime(2024, 1, 30, 15, 30),
+                datetime.datetime(2024, 1, 31, 9, 30),
+            ],
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.HOUR,
+        )
+        reference_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 10, 15),
+                datetime.datetime(2024, 1, 30, 16, 40),
+                datetime.datetime(2024, 1, 31),
+                datetime.datetime(2024, 1, 30, 9),
+            ],
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_next_period_end,
+            clock_master=master_clock,
+            clock_periods_per_row=0,
+            clock_reference_period=ReferencePeriods.MINUTE,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.sum,
+        )
+        result = clock_sync_methods.DownscaleMethods.group_by_next_period_end(
+            master_clock,
+            reference_clock,
+        )
+        # 10:15 falls in the bar from 09:30 to 10:30, 16:40 and midnight fall between the sessions, so they take effect
+        # from the next day's first bar, and 09:00 comes before the master clock
+        expected = pyarrow.array(
+            [0, 3, 3, -1],
             type=pyarrow.int64(),
         )
 

@@ -19,6 +19,7 @@ from kaxanuk.data_curator.exceptions import (
     DataBlockIncorrectMappingTypeError,
     DataBlockIncorrectPackingStructureError,
     DataBlockRowEntityErrorGroup,
+    DataBlockTypeConversionRuntimeError,
 )
 from .fixtures import entities
 from ..fixtures import entity_tables
@@ -481,6 +482,61 @@ class TestDunderInitSubclass:
         with pytest.raises(TypeError):
             class InvalidDataBlock(ExampleDataBlock):
                 rows_field = entities.ExampleBlockEntity.subentity
+
+
+class TestConvertValueToType:
+    def test_datetime_from_iso_string(self):
+        result = BaseDataBlock.convert_value_to_type(
+            '2026-11-20 15:30:00',
+            datetime.datetime,
+        )
+
+        assert result == datetime.datetime(2026, 11, 20, 15, 30)
+
+    def test_local_datetime(self):
+        result = BaseDataBlock.convert_value_to_type(
+            datetime.datetime(2026, 11, 20, 15, 30),
+            datetime.datetime | None,
+        )
+
+        assert result == datetime.datetime(2026, 11, 20, 15, 30)
+
+    def test_empty_nullable_datetime(self):
+        result = BaseDataBlock.convert_value_to_type(
+            '',
+            datetime.datetime | None,
+        )
+
+        assert result is None
+
+    def test_iso_string_with_utc_offset(self):
+        with pytest.raises(DataBlockTypeConversionRuntimeError):
+            BaseDataBlock.convert_value_to_type(
+                '2026-11-20T15:30:00-05:00',
+                datetime.datetime,
+            )
+
+    def test_datetime_with_time_zone(self):
+        with pytest.raises(DataBlockTypeConversionRuntimeError):
+            BaseDataBlock.convert_value_to_type(
+                datetime.datetime(2026, 11, 20, 20, 30, tzinfo=datetime.UTC),
+                datetime.datetime,
+            )
+
+    def test_invalid_datetime_string(self):
+        with pytest.raises(DataBlockTypeConversionRuntimeError):
+            BaseDataBlock.convert_value_to_type(
+                '2026-11-20 25:30:00',
+                datetime.datetime,
+            )
+
+    def test_datetime_to_date(self):
+        result = BaseDataBlock.convert_value_to_type(
+            datetime.datetime(2026, 11, 20, 15, 30),
+            datetime.date,
+        )
+
+        assert result == datetime.date(2026, 11, 20)
 
 
 class TestGetDownscaleConsolidationMethod:

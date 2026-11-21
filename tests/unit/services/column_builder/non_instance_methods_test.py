@@ -783,7 +783,8 @@ class TestPrivateCalculateColumnExtractors:
 class TestPrivateCalculateFieldTimestamps:
     def test_field_values(self, example_entity_rows_dividend_data):
         result = ColumnBuilder._calculate_field_timestamps(
-            'payment_date',
+            DividendsDataBlock,
+            DividendDataRow.payment_date,
             example_entity_rows_dividend_data,
         )
         expected = pyarrow.array([
@@ -795,7 +796,8 @@ class TestPrivateCalculateFieldTimestamps:
 
     def test_rows_without_field_value(self, example_entity_rows_dividend_data):
         result = ColumnBuilder._calculate_field_timestamps(
-            'record_date',
+            DividendsDataBlock,
+            DividendDataRow.record_date,
             example_entity_rows_dividend_data,
         )
         expected = pyarrow.array([
@@ -807,16 +809,49 @@ class TestPrivateCalculateFieldTimestamps:
 
     def test_rows_without_data(self):
         result = ColumnBuilder._calculate_field_timestamps(
-            'payment_date',
+            DividendsDataBlock,
+            DividendDataRow.payment_date,
             {
                 '2020-01-03': None,
             },
         )
-        expected = pyarrow.array([
-            None,
-        ])
+        expected = pyarrow.array(
+            [None],
+            type=pyarrow.date32(),
+        )
 
         assert result.equals(expected)
+
+    def test_datetime_field_values(self):
+        result = ColumnBuilder._calculate_field_timestamps(
+            data_blocks.IntradayMarketDataBlock,
+            data_blocks.IntradayMarketDataRow.timestamp,
+            {
+                '2024-01-30T09:30:00': data_blocks.IntradayMarketDataRow(
+                    timestamp=datetime.datetime(2024, 1, 30, 9, 30),
+                    close=decimal.Decimal('10.5'),
+                ),
+            },
+        )
+        expected = pyarrow.array(
+            [datetime.datetime(2024, 1, 30, 9, 30)],
+            type=pyarrow.timestamp('us'),
+        )
+
+        assert result.equals(expected)
+
+    def test_datetime_field_values_with_time_zone(self):
+        with pytest.raises(ColumnBuilderClockError):
+            ColumnBuilder._calculate_field_timestamps(
+                data_blocks.IntradayMarketDataBlock,
+                data_blocks.IntradayMarketDataRow.timestamp,
+                {
+                    '2024-01-30T14:30:00': data_blocks.IntradayMarketDataRow(
+                        timestamp=datetime.datetime(2024, 1, 30, 14, 30, tzinfo=datetime.UTC),
+                        close=decimal.Decimal('10.5'),
+                    ),
+                },
+            )
 
 
 class TestPrivateCalculateKeyTimestamps:
@@ -850,6 +885,33 @@ class TestPrivateCalculateKeyTimestamps:
                 MarketDailyDataBlock,
                 {
                     '2020-13-01': None,
+                },
+            )
+
+    def test_datetime_keys(self):
+        result = ColumnBuilder._calculate_key_timestamps(
+            data_blocks.IntradayMarketDataBlock,
+            {
+                '2024-01-30T09:30:00': None,
+                '2024-01-30T10:30:00.250000': None,
+            },
+        )
+        expected = pyarrow.array(
+            [
+                datetime.datetime(2024, 1, 30, 9, 30),
+                datetime.datetime(2024, 1, 30, 10, 30, 0, 250000),
+            ],
+            type=pyarrow.timestamp('us'),
+        )
+
+        assert result.equals(expected)
+
+    def test_datetime_keys_with_utc_offset(self):
+        with pytest.raises(ColumnBuilderClockError):
+            ColumnBuilder._calculate_key_timestamps(
+                data_blocks.IntradayMarketDataBlock,
+                {
+                    '2024-01-30T09:30:00-05:00': None,
                 },
             )
 
@@ -972,6 +1034,32 @@ class TestPrivateGetCalculationModule:
                 'example_nonexistent_function',
                 [entities]
             )
+
+
+class TestPrivateGetClockFieldArrowType:
+    def test_date_field(self):
+        result = ColumnBuilder._get_clock_field_arrow_type(
+            MarketDailyDataBlock,
+            MarketDataDailyRow.date,
+        )
+
+        assert result == pyarrow.date32()
+
+    def test_nullable_date_field(self):
+        result = ColumnBuilder._get_clock_field_arrow_type(
+            DividendsDataBlock,
+            DividendDataRow.payment_date,
+        )
+
+        assert result == pyarrow.date32()
+
+    def test_datetime_field(self):
+        result = ColumnBuilder._get_clock_field_arrow_type(
+            data_blocks.IntradayMarketDataBlock,
+            data_blocks.IntradayMarketDataRow.timestamp,
+        )
+
+        assert result == pyarrow.timestamp('us')
 
 
 class TestPrivateGetDatedFactorColumns:

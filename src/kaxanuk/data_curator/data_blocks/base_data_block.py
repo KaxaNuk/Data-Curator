@@ -176,9 +176,13 @@ class BaseDataBlock:
         """
         Convert a value to the specified type.
 
-        Handles nullable types (Union with None), date conversions, Decimal conversions,
+        Handles nullable types (Union with None), date and datetime conversions, Decimal conversions,
         and basic primitive type conversions. Returns None for nullable types when the
         original value is None or empty string.
+
+        Datetimes hold the local time of the identifier's exchange without a time zone, so they can be compared with
+        all the other timestamps and dates of the identifier's data, and the values with a time zone or a UTC offset
+        get rejected.
 
         Parameters
         ----------
@@ -212,7 +216,11 @@ class BaseDataBlock:
                 else:
                     to_type = to_type.__args__[0]
 
-            if type(original_value) is to_type:
+            # The datetimes still need checking for a time zone
+            if (
+                type(original_value) is to_type
+                and to_type is not datetime.datetime
+            ):
                 return original_value
 
             match to_type.__name__:
@@ -221,6 +229,21 @@ class BaseDataBlock:
                         return original_value.date()
                     else:
                         return datetime.date.fromisoformat(original_value)
+                case 'datetime':
+                    local_datetime = (
+                        original_value
+                        if isinstance(original_value, datetime.datetime)
+                        else datetime.datetime.fromisoformat(original_value)
+                    )
+                    if local_datetime.tzinfo is not None:
+                        msg = " ".join([
+                            f"Datetime {original_value} has a time zone or UTC offset,",
+                            "while datetimes need the local time of the identifier's exchange without one",
+                        ])
+
+                        raise ValueError(msg)
+
+                    return local_datetime
                 case 'Decimal':
                     return decimal.Decimal(
                         str(original_value)

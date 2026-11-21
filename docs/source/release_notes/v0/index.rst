@@ -3,6 +3,86 @@
 V0 Changelog
 ============
 
+0.51.0 (2026-10-23)
+-------------------
+
+Added
+~~~~~
+
+* Sharadar data provider
+
+Changed
+~~~~~~~
+
+* ``DividendDataRow.dividend`` is now optional, but at least one of ``dividend`` or ``dividend_split_adjusted`` must be set, as there exist data providers that do not provide the unadjusted dividend
+* PyArrow requirement is now ``>=26.0.0``, removing the ``<24`` cap now that the upstream regressions are fixed
+* Breaking: ``kaxanuk.data_curator.main`` now requires the ``data_block_providers`` parameter
+* Breaking: ``ExcelConfigurator.__init__`` now requires the ``data_blocks`` parameter
+* Breaking: ``ExcelConfigurator`` now only accepts parameters files of the current format, with any older format having to be updated by running ``kaxanuk.data_curator update excel``
+* ``Configuration`` now only validates the format of its column names, leaving their prefixes to be validated against the data blocks of each run, so custom data blocks can declare new prefixes
+
+Deprecated
+~~~~~~~~~~
+
+* ``ExcelConfigurator.__new__`` check that exits with instructions for updating outdated entry scripts that don't pass the ``data_blocks`` parameter, which will be removed in the next version
+
+Removed
+~~~~~~~
+
+* Deprecated ``kaxanuk.data_curator.main`` parameters ``market_data_provider`` and ``fundamental_data_provider``
+* Deprecated ``ExcelConfigurator`` methods ``get_market_data_provider`` and ``get_fundamental_data_provider``
+* Support for the deprecated parameters file format, which selected its data providers in the ``General`` sheet ``market_data_provider`` and ``fundamental_data_provider`` keys, and identified them by their snake_case aliases instead of their class names
+
+Fixed
+~~~~~
+
+* ``ColumnBuilder`` syncing of non-dated-factor data blocks like fundamentals to the master clock dates was dropping a data row dated on the first output date, and lagging behind when several data rows fell between two consecutive output dates
+* ``DataColumn`` division of an integer column by a Python number crashed with ``AttributeError``, also breaking ``//`` and ``%``, while dividing a number by an integer column returned truncated integers instead of floats
+
+
+
+0.50.0 (2026-08-28)
+-------------------
+
+Added
+~~~~~
+
+* ``ColumnBuilder.get_sorted_required_columns`` method for returning the required columns topologically sorted by dependency order
+* ``ColumnBuilder.initialize_data_blocks`` new classmethod to precompute required data structures
+* Data blocks are now surfaced as part of the public interface
+* ``DataProviderInterface.get_data_block_data`` shim method; will become abstract once all data providers have implemented their own versions
+* ``kaxanuk.data_curator.main`` can now handle totally custom data block and data provider combinations
+
+Changed
+~~~~~~~
+
+* Moved entities into their respective data blocks
+* Generalilzed ``ColumnBuilder`` to work with arbitrary data blocks
+* Breaking: ``MarketData.daily_rows`` is now ``MarketData.rows``
+* ``kaxanuk.data_curator.main`` now accepts a ``data_block_providers`` mapping from data block name to provider instance, and a ``master_clock_data_block`` data block reference in case a custom data block should act as the master clock
+* ``ExcelConfigurator.__init__`` now takes a ``data_blocks`` list of the data blocks the parameters file can choose from, and expects data provider class names instead of snake_case aliases
+* Excel template now adds a new ``Data_Providers`` sheet for mappings from data blocks to data providers, replacing the ``General`` sheet ``market_data_provider`` and ``fundamental_data_provider`` keys
+* ``DataProviderInterface.get_data_block_endpoint_tag_map`` abstract class method
+* ``helpers.indexed_rolling_window_operation`` now checks and raises a clear error if keys repeat across non-contiguous row groups
+
+Deprecated
+~~~~~~~~~~
+
+* ``kaxanuk.data_curator.main`` parameters ``market_data_provider`` and ``fundamental_data_provider``
+* Data provider methods ``get_dividend_data``, ``get_fundamental_data``, ``get_market_data``, and ``get_split_data``
+* ``ExcelConfigurator.__init__`` calls without the ``data_blocks`` parameter, which default to all the built-in data blocks
+* ``ExcelConfigurator`` methods ``get_market_data_provider`` and ``get_fundamental_data_provider``
+* Parameters files of the previous format, which select their data providers in the ``General`` sheet ``market_data_provider`` and ``fundamental_data_provider`` keys, and identify them by their snake_case aliases instead of their class names
+
+Fixed
+~~~~~
+
+* Catch FMP erroneous dividend data with duplicate ex-dividend dates
+* Wrong package namespace in the ``ExcelConfigurator`` error message suggesting how to install missing data provider extensions
+* Documentation generator was printing "Returns type" instead of "Returns", which doesn't make sense as our style guide disallows type hints inside docstrings,
+
+
+
 0.49.1 (2026-06-25)
 -------------------
 
