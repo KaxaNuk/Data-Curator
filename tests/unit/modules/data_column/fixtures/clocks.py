@@ -32,7 +32,7 @@ def create_hourly_reference_clock(master_clock: DataColumn) -> DataColumn:
             datetime.datetime(2024, 1, 31, 10),
             datetime.datetime(2024, 2, 1, 10),
         ],
-        clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+        clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
         clock_master=master_clock,
         clock_periods_per_row=1,
         clock_reference_period=ReferencePeriods.HOUR,

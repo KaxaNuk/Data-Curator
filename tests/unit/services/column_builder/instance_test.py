@@ -8,6 +8,7 @@ from kaxanuk.data_curator.data_blocks.market_daily import MarketDailyDataBlock
 from kaxanuk.data_curator.entities import Configuration
 from kaxanuk.data_curator.exceptions import (
     ColumnBuilderCalculationError,
+    ColumnBuilderUninitializedError,
     InjectedDependencyError,
 )
 from kaxanuk.data_curator.services.column_builder import ColumnBuilder
@@ -117,6 +118,26 @@ class TestDunderInit:
             )
 
 class TestProcessColumns:
+    def test_uninitialized_configuration(
+        self,
+        market_close_configuration,
+        monkeypatch,
+    ):
+        ColumnBuilder.initialize_data_blocks(
+            calculation_modules=[calculations],
+            configuration=market_close_configuration,
+            data_blocks=[],
+        )
+        column_builder = ColumnBuilder(
+            data_block_entities={
+                MarketDailyDataBlock: data_block_entities.MARKET_DATA,
+            },
+        )
+        monkeypatch.setattr(ColumnBuilder, '_configuration', None)
+
+        with pytest.raises(ColumnBuilderUninitializedError):
+            column_builder.process_columns(market_close_configuration.columns)
+
     def test_dividend_on_its_ex_dividend_date(self):
         configuration = Configuration(
             start_date=datetime.date(2024, 1, 1),

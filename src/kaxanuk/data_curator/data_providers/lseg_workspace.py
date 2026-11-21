@@ -267,10 +267,15 @@ class LsegWorkspace(DataProviderInterface):
 
         STOCK_SPLIT = "stock_split"
 
-    # the clock spec of the data blocks with daily rows: the market data and the dividend and split events
+    # the clock spec of the market data's daily rows
     _daily_clock_spec: typing.Final[ClockSpec] = ClockSpec(
         reference_period=ReferencePeriods.DAY,
         periods_per_row=1,
+    )
+    # the clock spec of the dividend and split rows, which are instants dated without a time
+    _event_clock_spec: typing.Final[ClockSpec] = ClockSpec(
+        reference_period=ReferencePeriods.DAY,
+        periods_per_row=0,
     )
     # the clock spec of the fundamental data rows, for each configuration period
     _fundamental_period_clock_specs: typing.Final[dict[str, ClockSpec]] = {
@@ -3612,7 +3617,7 @@ class LsegWorkspace(DataProviderInterface):
         # Create empty dividend data for cases with no data
         empty_dividend_data = DividendData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
-            clock_spec=self._daily_clock_spec,
+            clock_spec=self._event_clock_spec,
             rows={}
         )
 
@@ -3651,7 +3656,7 @@ class LsegWorkspace(DataProviderInterface):
             common_field_data={
                 DividendData: {
                     DividendData.main_identifier: MarketInstrumentIdentifier(main_identifier),
-                    DividendData.clock_spec: self._daily_clock_spec,
+                    DividendData.clock_spec: self._event_clock_spec,
                 }
             }
         )
@@ -3698,7 +3703,7 @@ class LsegWorkspace(DataProviderInterface):
         # Create empty split data for cases with no data
         empty_split_data = SplitData(
             main_identifier=MarketInstrumentIdentifier(main_identifier),
-            clock_spec=self._daily_clock_spec,
+            clock_spec=self._event_clock_spec,
             rows={}
         )
 
@@ -3737,7 +3742,7 @@ class LsegWorkspace(DataProviderInterface):
             common_field_data={
                 SplitData: {
                     SplitData.main_identifier: MarketInstrumentIdentifier(main_identifier),
-                    SplitData.clock_spec: self._daily_clock_spec,
+                    SplitData.clock_spec: self._event_clock_spec,
                 }
             }
         )

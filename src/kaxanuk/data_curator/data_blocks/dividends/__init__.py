@@ -25,16 +25,16 @@ from kaxanuk.data_curator.exceptions import (
 from kaxanuk.data_curator.modules.clock_sync_methods import (
     ConsolidationMethods,
     DownscaleMethods,
-    UpscaleMethods,
 )
 
 
 class DividendsDataBlock(BaseDataBlock):
-    clock_downscale_method = DownscaleMethods.calendar_periods
+    # each dividend date takes effect from the master clock row in progress, or the next one if it falls between them:
+    clock_downscale_method = DownscaleMethods.group_by_next_period_end
     clock_spec_field = DividendData.clock_spec
     clock_sync_field = DividendDataRow.ex_dividend_date
-    # each dividend only appears on its own dates:
-    clock_upscale_method = UpscaleMethods.exact_match
+    # the dividend dates are instants, which never get upscaled:
+    clock_upscale_method = None
     dated_factor_date_fields = (
         DividendDataRow.declaration_date,
         DividendDataRow.ex_dividend_date,

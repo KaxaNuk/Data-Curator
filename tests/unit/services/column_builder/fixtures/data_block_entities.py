@@ -58,7 +58,7 @@ DIVIDEND_DATA = DividendData(
     main_identifier=MarketInstrumentIdentifier('TEST'),
     clock_spec=ClockSpec(
         reference_period=ReferencePeriods.DAY,
-        periods_per_row=1,
+        periods_per_row=0,
     ),
     rows={
         '2024-01-30': DividendDataRow(

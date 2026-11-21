@@ -31,7 +31,7 @@ from kaxanuk.data_curator.modules.clock_sync_methods import (
 
 
 class MarketDailyDataBlock(BaseDataBlock):
-    clock_downscale_method = DownscaleMethods.calendar_periods
+    clock_downscale_method = DownscaleMethods.group_by_calendar_period
     clock_spec_field = MarketData.clock_spec
     clock_sync_field = MarketDataDailyRow.date
     # each daily bar is only known once its day ends:

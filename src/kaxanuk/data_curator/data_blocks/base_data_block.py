@@ -79,7 +79,8 @@ class BaseDataBlock:
     clock_sync_field: EntityField
     # method for matching each master clock row to at most one of the block's clock rows,
     # used when the block's rows span at least as long as the master clock's:
-    clock_upscale_method: UpscaleMethod
+    # (None for the blocks whose rows are instants, like event dates, as instants always get downscaled)
+    clock_upscale_method: UpscaleMethod | None
     # entity date and value fields whose combinations each produce one dated-factor column;
     # empty means this block uses plain clock-synced column extraction instead:
     dated_factor_date_fields: tuple[EntityField, ...] = ()
@@ -1049,18 +1050,20 @@ class BaseDataBlock:
     def _validate_clock_methods(
         *,
         clock_downscale_method: DownscaleMethod,
-        clock_upscale_method: UpscaleMethod,
+        clock_upscale_method: UpscaleMethod | None,
         data_block_name: str,
     ) -> None:
         """
         Validate that the data block's methods for syncing its clock to the master clock are callable.
+
+        The upscale method can also be None, for the data blocks whose rows are instants, which never get upscaled.
 
         Parameters
         ----------
         clock_downscale_method
             The data block's method for matching each of its clock rows to the master clock row it belongs to
         clock_upscale_method
-            The data block's method for matching each master clock row to at most one of its clock rows
+            The data block's method for matching each master clock row to at most one of its clock rows, or None
         data_block_name
             The name of the data block, for the error messages
 
@@ -1073,8 +1076,11 @@ class BaseDataBlock:
 
             raise TypeError(msg)
 
-        if not callable(clock_upscale_method):
-            msg = f"{data_block_name} clock_upscale_method must be callable"
+        if (
+            clock_upscale_method is not None
+            and not callable(clock_upscale_method)
+        ):
+            msg = f"{data_block_name} clock_upscale_method must be callable, or None for rows that are instants"
 
             raise TypeError(msg)
 

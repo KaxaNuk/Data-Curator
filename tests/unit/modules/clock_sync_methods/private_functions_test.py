@@ -5,6 +5,7 @@ import pytest
 
 from kaxanuk.data_curator import DataColumn
 from kaxanuk.data_curator import clock_sync_methods
+from kaxanuk.data_curator.exceptions import DataColumnSyncError
 from kaxanuk.data_curator.modules.data_column import ReferencePeriods
 
 
@@ -28,6 +29,95 @@ def master_timestamps():
         datetime.date(2024, 1, 31),
         datetime.date(2024, 2, 1),
     ])
+
+
+class TestPrivateCalculateMasterPeriods:
+    def test_weekly_master_clock_labeled_by_friday(self):
+        master_clock = DataColumn.load(
+            [
+                datetime.date(2024, 1, 5),
+                datetime.date(2024, 1, 12),
+            ],
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.WEEK,
+        )
+        result = clock_sync_methods._calculate_master_periods(master_clock)
+        expected = pyarrow.array([
+            datetime.date(2024, 1, 1),
+            datetime.date(2024, 1, 8),
+        ])
+
+        assert result.equals(expected)
+
+    def test_several_master_clock_rows_in_same_period(self):
+        # Monday 2024-01-01 and Wednesday 2024-01-03 fall in the same week
+        master_clock = DataColumn.load(
+            [
+                datetime.date(2024, 1, 1),
+                datetime.date(2024, 1, 3),
+            ],
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.WEEK,
+        )
+
+        with pytest.raises(DataColumnSyncError):
+            clock_sync_methods._calculate_master_periods(master_clock)
+
+
+class TestPrivateCalculateReferencePeriods:
+    def test_floored_to_master_clock_periods(
+        self,
+        daily_master_clock,
+    ):
+        reference_clock = DataColumn.load(
+            [
+                datetime.datetime(2024, 1, 30, 10),
+                datetime.datetime(2024, 1, 31, 16),
+            ],
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_next_period_end,
+            clock_master=daily_master_clock,
+            clock_periods_per_row=0,
+            clock_reference_period=ReferencePeriods.HOUR,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.sum,
+        )
+        result = clock_sync_methods._calculate_reference_periods(
+            master_clock_column=daily_master_clock,
+            reference_clock_column=reference_clock,
+        )
+        expected = pyarrow.array([
+            datetime.date(2024, 1, 30),
+            datetime.date(2024, 1, 31),
+        ])
+
+        assert result.equals(expected)
+
+    def test_null_reference_timestamp(
+        self,
+        daily_master_clock,
+    ):
+        reference_clock = DataColumn.load(
+            [
+                datetime.date(2024, 1, 30),
+                None,
+            ],
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_next_period_end,
+            clock_master=daily_master_clock,
+            clock_periods_per_row=0,
+            clock_reference_period=ReferencePeriods.DAY,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.sum,
+        )
+        result = clock_sync_methods._calculate_reference_periods(
+            master_clock_column=daily_master_clock,
+            reference_clock_column=reference_clock,
+        )
+        expected = pyarrow.array([
+            datetime.date(2024, 1, 30),
+            None,
+        ])
+
+        assert result.equals(expected)
 
 
 class TestPrivateCastToMasterClockType:
@@ -128,6 +218,70 @@ class TestPrivateCastToMasterClockType:
         )
 
         assert result.equals(expected)
+
+
+class TestPrivateMarkRowsBeforeMasterClock:
+    def test_rows_before_first_master_clock_period(self):
+        result = clock_sync_methods._mark_rows_before_master_clock(
+            master_periods=pyarrow.array([
+                datetime.date(2024, 1, 30),
+                datetime.date(2024, 1, 31),
+            ]),
+            master_row_indices=pyarrow.array(
+                [None, 0, 1],
+                type=pyarrow.int64(),
+            ),
+            reference_periods=pyarrow.array([
+                datetime.date(2024, 1, 29),
+                datetime.date(2024, 1, 30),
+                datetime.date(2024, 1, 31),
+            ]),
+        )
+        expected = pyarrow.array(
+            [-1, 0, 1],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_null_reference_period(self):
+        result = clock_sync_methods._mark_rows_before_master_clock(
+            master_periods=pyarrow.array([
+                datetime.date(2024, 1, 30),
+            ]),
+            master_row_indices=pyarrow.array(
+                [None],
+                type=pyarrow.int64(),
+            ),
+            reference_periods=pyarrow.array(
+                [None],
+                type=pyarrow.date32(),
+            ),
+        )
+        expected = pyarrow.array(
+            [None],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_master_clock_without_rows(self):
+        master_row_indices = pyarrow.array(
+            [None],
+            type=pyarrow.int64(),
+        )
+        result = clock_sync_methods._mark_rows_before_master_clock(
+            master_periods=pyarrow.array(
+                [],
+                type=pyarrow.date32(),
+            ),
+            master_row_indices=master_row_indices,
+            reference_periods=pyarrow.array([
+                datetime.date(2024, 1, 29),
+            ]),
+        )
+
+        assert result is master_row_indices
 
 
 class TestPrivateMatchLatestReferenceRows:

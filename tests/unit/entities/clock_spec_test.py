@@ -38,9 +38,17 @@ class TestDunderPostInit:
                 periods_per_row=True,
             )
 
-    def test_periods_per_row_below_one(self):
+    def test_instant_rows(self):
+        result = ClockSpec(
+            reference_period=ReferencePeriods.DAY,
+            periods_per_row=0,
+        )
+
+        assert result.periods_per_row == 0
+
+    def test_negative_periods_per_row(self):
         with pytest.raises(EntityValueError):
             ClockSpec(
                 reference_period=ReferencePeriods.MONTH,
-                periods_per_row=0,
+                periods_per_row=-1,
             )

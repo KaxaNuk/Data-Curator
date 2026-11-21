@@ -330,7 +330,13 @@ class ColumnBuilder:
         ColumnBuilderCalculationError
         ColumnBuilderCustomFunctionNotFoundError
         ColumnBuilderUnavailableEntityFieldError
+        ColumnBuilderUninitializedError
         """
+        if self._configuration is None:
+            msg = "ColumnBuilder used before its configuration was initialized"
+
+            raise ColumnBuilderUninitializedError(msg)
+
         # here we will save the columns that we've finished obtaining:
         completed_columns: CompletedColumns = {}
         completed_columns['configuration'] = self._configuration
@@ -408,7 +414,7 @@ class ColumnBuilder:
 
             raise ColumnBuilderCircularDependenciesError(msg)
 
-        subgraph = networkx.DiGraph()
+        subgraph: networkx.DiGraph[ColumnIdentifier] = networkx.DiGraph()
         subgraph.add_node(column)
         column_prefix = column.split('_', 1)[0]
 
@@ -539,7 +545,7 @@ class ColumnBuilder:
         -------
         The full column dependency graph, with directed edges pointing from each dependency to its dependent column
         """
-        dependency_graph = networkx.DiGraph()
+        dependency_graph: networkx.DiGraph[ColumnIdentifier] = networkx.DiGraph()
         for column in required_columns:
             column_subgraph = cls._build_column_subgraph(
                 column,

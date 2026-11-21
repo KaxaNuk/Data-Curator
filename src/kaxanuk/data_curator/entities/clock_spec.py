@@ -21,7 +21,7 @@ class ClockSpec:
 
     # the base reference period of the rows:
     reference_period: ReferencePeriods
-    # the number of reference periods spanned by each row:
+    # the number of reference periods spanned by each row, or 0 for rows that are instants, like event dates:
     periods_per_row: int
 
     def __post_init__(self):
@@ -39,7 +39,7 @@ class ClockSpec:
 
             raise EntityTypeError(msg)
 
-        if self.periods_per_row < 1:
-            msg = f"{self.__class__.__name__}.periods_per_row must be at least 1"
+        if self.periods_per_row < 0:
+            msg = f"{self.__class__.__name__}.periods_per_row must be at least 0"
 
             raise EntityValueError(msg)

@@ -60,6 +60,122 @@ class TestFirst:
         assert result.equals(expected)
 
 
+class TestInfillLast:
+    def test_master_rows_without_reference_rows(self):
+        result = clock_sync_methods.ConsolidationMethods.infill_last(
+            pyarrow.array([1, 2, 3]),
+            pyarrow.array(
+                [0, 0, 2],
+                type=pyarrow.int64(),
+            ),
+            4,
+        )
+        expected = pyarrow.array([2, 2, 3, 3])
+
+        assert result.equals(expected)
+
+    def test_interleaved_master_rows(self):
+        result = clock_sync_methods.ConsolidationMethods.infill_last(
+            pyarrow.array([1, 2, 3, 4]),
+            pyarrow.array(
+                [0, 1, 0, 1],
+                type=pyarrow.int64(),
+            ),
+            3,
+        )
+        expected = pyarrow.array([3, 4, 4])
+
+        assert result.equals(expected)
+
+    def test_newer_null_replaces_older_value(self):
+        result = clock_sync_methods.ConsolidationMethods.infill_last(
+            pyarrow.array([1, None]),
+            pyarrow.array(
+                [0, 1],
+                type=pyarrow.int64(),
+            ),
+            3,
+        )
+        expected = pyarrow.array(
+            [1, None, None],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_reference_rows_before_master_clock(self):
+        result = clock_sync_methods.ConsolidationMethods.infill_last(
+            pyarrow.array([1, 2, 3]),
+            pyarrow.array(
+                [-1, -1, 1],
+                type=pyarrow.int64(),
+            ),
+            3,
+        )
+        # The last row before the master clock holds the state of master row 0, until master row 1 changes it
+        expected = pyarrow.array([2, 3, 3])
+
+        assert result.equals(expected)
+
+    def test_master_rows_before_all_reference_rows(self):
+        result = clock_sync_methods.ConsolidationMethods.infill_last(
+            pyarrow.array([5]),
+            pyarrow.array(
+                [1],
+                type=pyarrow.int64(),
+            ),
+            3,
+        )
+        expected = pyarrow.array([None, 5, 5])
+
+        assert result.equals(expected)
+
+    def test_reference_rows_after_master_clock(self):
+        result = clock_sync_methods.ConsolidationMethods.infill_last(
+            pyarrow.array([1, 2]),
+            pyarrow.array(
+                [0, None],
+                type=pyarrow.int64(),
+            ),
+            2,
+        )
+        expected = pyarrow.array([1, 1])
+
+        assert result.equals(expected)
+
+    def test_null_array(
+        self,
+        master_row_indices,
+    ):
+        result = clock_sync_methods.ConsolidationMethods.infill_last(
+            pyarrow.nulls(6),
+            master_row_indices,
+            3,
+        )
+        expected = pyarrow.nulls(3)
+
+        assert result.equals(expected)
+
+    def test_empty_reference_array(self):
+        result = clock_sync_methods.ConsolidationMethods.infill_last(
+            pyarrow.array(
+                [],
+                type=pyarrow.int64(),
+            ),
+            pyarrow.array(
+                [],
+                type=pyarrow.int64(),
+            ),
+            2,
+        )
+        expected = pyarrow.array(
+            [None, None],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+
 class TestLast:
     def test_last_valid_row_of_each_master_row(
         self,
@@ -380,6 +496,23 @@ class TestPrivateAggregate:
         )
         expected = pyarrow.array(
             [None, None],
+            type=pyarrow.int64(),
+        )
+
+        assert result.equals(expected)
+
+    def test_reference_rows_before_master_clock(self):
+        result = clock_sync_methods.ConsolidationMethods._aggregate(
+            aggregation='sum',
+            master_row_count=2,
+            master_row_indices=pyarrow.array(
+                [-1, 0],
+                type=pyarrow.int64(),
+            ),
+            reference_array=pyarrow.array([1, 2]),
+        )
+        expected = pyarrow.array(
+            [2, None],
             type=pyarrow.int64(),
         )
 

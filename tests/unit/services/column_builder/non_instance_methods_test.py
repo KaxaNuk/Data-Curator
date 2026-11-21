@@ -60,6 +60,11 @@ DAILY_CLOCK_SPEC = ClockSpec(
     reference_period=ReferencePeriods.DAY,
     periods_per_row=1,
 )
+# the dividend and split rows are instants dated without a time
+EVENT_CLOCK_SPEC = ClockSpec(
+    reference_period=ReferencePeriods.DAY,
+    periods_per_row=0,
+)
 QUARTERLY_CLOCK_SPEC = ClockSpec(
     reference_period=ReferencePeriods.MONTH,
     periods_per_row=3,
@@ -336,7 +341,7 @@ def example_clocked_rows_by_block(
     return {
         DividendsDataBlock: ClockedDataBlockRows(
             clocks=ColumnBuilder._build_data_block_clocks(
-                clock_spec=DAILY_CLOCK_SPEC,
+                clock_spec=EVENT_CLOCK_SPEC,
                 data_block=DividendsDataBlock,
                 master_clock_column=example_master_clock_column,
                 master_clock_data_block=MarketDailyDataBlock,
@@ -366,13 +371,49 @@ def example_clocked_rows_by_block(
         ),
         SplitsDataBlock: ClockedDataBlockRows(
             clocks=ColumnBuilder._build_data_block_clocks(
-                clock_spec=DAILY_CLOCK_SPEC,
+                clock_spec=EVENT_CLOCK_SPEC,
                 data_block=SplitsDataBlock,
                 master_clock_column=example_master_clock_column,
                 master_clock_data_block=MarketDailyDataBlock,
                 rows=example_entity_rows_split_data,
             ),
             rows=tuple(example_entity_rows_split_data.values()),
+        ),
+    }
+
+
+@pytest.fixture(scope="module")
+def example_clocked_rows_of_dividends_sharing_dates(example_master_clock_column):
+    # Two dividends declared on 2020-01-02, between the master clock dates, and paid on the same date
+    dividend_rows = {
+        '2020-01-03': DividendDataRow(
+            declaration_date=datetime.date(2020, 1, 2),
+            ex_dividend_date=datetime.date(2020, 1, 3),
+            record_date=None,
+            payment_date=datetime.date(2020, 1, 4),
+            dividend=decimal.Decimal('0.64'),
+            dividend_split_adjusted=decimal.Decimal('0.64'),
+        ),
+        '2020-01-04': DividendDataRow(
+            declaration_date=datetime.date(2020, 1, 2),
+            ex_dividend_date=datetime.date(2020, 1, 4),
+            record_date=None,
+            payment_date=datetime.date(2020, 1, 4),
+            dividend=decimal.Decimal('0.69'),
+            dividend_split_adjusted=decimal.Decimal('0.69'),
+        ),
+    }
+
+    return {
+        DividendsDataBlock: ClockedDataBlockRows(
+            clocks=ColumnBuilder._build_data_block_clocks(
+                clock_spec=EVENT_CLOCK_SPEC,
+                data_block=DividendsDataBlock,
+                master_clock_column=example_master_clock_column,
+                master_clock_data_block=MarketDailyDataBlock,
+                rows=dividend_rows,
+            ),
+            rows=tuple(dividend_rows.values()),
         ),
     }
 
@@ -498,7 +539,7 @@ class TestPrivateBuildDataBlockClocks:
         example_master_clock_column,
     ):
         result = ColumnBuilder._build_data_block_clocks(
-            clock_spec=DAILY_CLOCK_SPEC,
+            clock_spec=EVENT_CLOCK_SPEC,
             data_block=DividendsDataBlock,
             master_clock_column=example_master_clock_column,
             master_clock_data_block=MarketDailyDataBlock,
@@ -519,7 +560,7 @@ class TestPrivateBuildDataBlockClocks:
         example_master_clock_column,
     ):
         result = ColumnBuilder._build_data_block_clocks(
-            clock_spec=DAILY_CLOCK_SPEC,
+            clock_spec=EVENT_CLOCK_SPEC,
             data_block=DividendsDataBlock,
             master_clock_column=example_master_clock_column,
             master_clock_data_block=MarketDailyDataBlock,
@@ -1325,6 +1366,85 @@ class TestPrivateProcessColumn:
             None,
             None,
             example_entity_rows_dividend_data['2020-01-03'].dividend,
+        ])
+
+        assert DataColumn.fully_equal(
+            result,
+            expected_column,
+            equal_nulls=True
+        )
+
+    def test_d_column_dated_before_master_clock(
+        self,
+        example_clocked_rows_by_block,
+        example_entity_rows_dividend_data,
+        example_master_clock_column,
+    ):
+        # The first dividend gets declared before the master clock starts, so it doesn't belong to any of its rows
+        result = ColumnBuilder._process_column(
+            'd_declaration_date_dividend',
+            {},
+            calculated_columns={},
+            clocked_rows_by_block=example_clocked_rows_by_block,
+            column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
+            master_clock_column=example_master_clock_column,
+        )
+        expected_column = DataColumn.load([
+            example_entity_rows_dividend_data['2020-01-04'].dividend,
+            None,
+            None,
+        ])
+
+        assert DataColumn.fully_equal(
+            result,
+            expected_column,
+            equal_nulls=True
+        )
+
+    def test_d_column_dated_between_master_clock_dates(
+        self,
+        example_clocked_rows_of_dividends_sharing_dates,
+        example_master_clock_column,
+    ):
+        # Both dividends get declared on 2020-01-02, so they take effect from the next master clock date
+        result = ColumnBuilder._process_column(
+            'd_declaration_date_dividend',
+            {},
+            calculated_columns={},
+            clocked_rows_by_block=example_clocked_rows_of_dividends_sharing_dates,
+            column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
+            master_clock_column=example_master_clock_column,
+        )
+        expected_column = DataColumn.load([
+            None,
+            decimal.Decimal('1.33'),
+            None,
+        ])
+
+        assert DataColumn.fully_equal(
+            result,
+            expected_column,
+            equal_nulls=True
+        )
+
+    def test_d_columns_sharing_master_clock_date(
+        self,
+        example_clocked_rows_of_dividends_sharing_dates,
+        example_master_clock_column,
+    ):
+        # Both dividends get paid on 2020-01-04, so they get summed
+        result = ColumnBuilder._process_column(
+            'd_payment_date_dividend',
+            {},
+            calculated_columns={},
+            clocked_rows_by_block=example_clocked_rows_of_dividends_sharing_dates,
+            column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
+            master_clock_column=example_master_clock_column,
+        )
+        expected_column = DataColumn.load([
+            None,
+            None,
+            decimal.Decimal('1.33'),
         ])
 
         assert DataColumn.fully_equal(

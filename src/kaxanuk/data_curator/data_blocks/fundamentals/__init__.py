@@ -42,7 +42,7 @@ from kaxanuk.data_curator.modules.clock_sync_methods import (
 
 
 class FundamentalsDataBlock(BaseDataBlock):
-    clock_downscale_method = DownscaleMethods.calendar_periods
+    clock_downscale_method = DownscaleMethods.group_by_calendar_period
     clock_spec_field = FundamentalData.clock_spec
     clock_sync_field = FundamentalDataRow.filing_date   # @todo check if accepted_date should be used instead
     # each filing is known from its filing date onward:

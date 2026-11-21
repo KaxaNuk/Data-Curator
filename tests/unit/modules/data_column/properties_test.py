@@ -191,7 +191,7 @@ class TestArray:
                 datetime.datetime(2024, 1, 30, 10),
                 datetime.datetime(2024, 1, 30, 11),
             ],
-            clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.HOUR,
@@ -274,7 +274,7 @@ class TestClockChainParameters:
         parameter_name,
     ):
         parameters = {
-            'clock_downscale_method': clock_sync_methods.DownscaleMethods.calendar_periods,
+            'clock_downscale_method': clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             'clock_master': daily_master_clock,
             'clock_periods_per_row': 1,
             'clock_reference_period': ReferencePeriods.MONTH,
@@ -410,19 +410,19 @@ class TestDownscaleMethod:
             [
                 datetime.date(2024, 1, 30),
             ],
-            clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             clock_master=True,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
         )
 
-        assert clock.downscale_method is clock_sync_methods.DownscaleMethods.calendar_periods
+        assert clock.downscale_method is clock_sync_methods.DownscaleMethods.group_by_calendar_period
 
     def test_downscaling_reference_clock(
         self,
         hourly_reference_clock,
     ):
-        assert hourly_reference_clock.downscale_method is clock_sync_methods.DownscaleMethods.calendar_periods
+        assert hourly_reference_clock.downscale_method is clock_sync_methods.DownscaleMethods.group_by_calendar_period
 
     def test_column_on_downscaling_clock(
         self,
@@ -433,7 +433,7 @@ class TestDownscaleMethod:
             reference_clock_column=hourly_reference_clock,
         )
 
-        assert column.downscale_method is clock_sync_methods.DownscaleMethods.calendar_periods
+        assert column.downscale_method is clock_sync_methods.DownscaleMethods.group_by_calendar_period
 
     def test_column_on_upscaling_clock(
         self,

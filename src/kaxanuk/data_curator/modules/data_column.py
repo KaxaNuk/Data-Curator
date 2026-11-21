@@ -17,8 +17,10 @@ class ReferencePeriods(enum.StrEnum):
     The base periods for expressing how much time each clock row spans, together with the clock's periods per row.
 
     Each clock uses the largest period that can express its frequency, like MONTH with 3 periods per row for
-    quarterly data. Periods up to WEEK have fixed lengths, while MONTH and YEAR depend on the calendar. The values
-    match PyArrow's temporal units, so they can be passed directly to functions like `pyarrow.compute.floor_temporal`.
+    quarterly data, while the reference clocks whose rows are instants, like event dates, use 0 periods per row, with
+    the period matching the precision of their timestamps, like DAY for dates. Periods up to WEEK have fixed lengths,
+    while MONTH and YEAR depend on the calendar. The values match PyArrow's temporal units, so they can be passed
+    directly to functions like `pyarrow.compute.floor_temporal`.
     """
 
     SECOND = 'second'
@@ -30,6 +32,9 @@ class ReferencePeriods(enum.StrEnum):
     YEAR = 'year'
 
 
+# The master clock row index that the downscale methods give to the reference clock rows before the first master clock
+# row, which only the consolidation methods holding states use, for the master clock rows before any other reference row
+BEFORE_MASTER_CLOCK_INDEX = -1
 # The reference periods with calendar-dependent lengths, by their number of months
 CALENDAR_PERIOD_MONTHS = {
     ReferencePeriods.MONTH: 1,
@@ -47,7 +52,8 @@ LONGEST_MONTH_DAYS = 31
 SHORTEST_MONTH_DAYS = 28
 
 # Receives a reference array, the index of the master clock row each of its rows belongs to, and the number of master
-# clock rows, and returns the reference array consolidated into one row per master clock row
+# clock rows, and returns the reference array consolidated into one row per master clock row; the rows before the
+# master clock come with BEFORE_MASTER_CLOCK_INDEX, and only belong to the output when they hold the starting states
 type ConsolidationMethod = typing.Callable[
     [
         pyarrow.Array,
@@ -57,7 +63,8 @@ type ConsolidationMethod = typing.Callable[
     pyarrow.Array,
 ]
 # Receives the master clock column and a reference clock column, and returns the index of the master clock row each
-# reference clock row belongs to, or null for the reference clock rows outside all the master clock rows
+# reference clock row belongs to, BEFORE_MASTER_CLOCK_INDEX for the reference clock rows before the first master clock
+# row, or null for the rest of the reference clock rows outside all the master clock rows
 type DownscaleMethod = typing.Callable[
     [
         DataColumn,
@@ -106,7 +113,8 @@ class DataColumn:
         - DataColumn: This column is a reference clock, pointing to the master clock column it gets synced to
         - None: This column is not a clock
     clock_periods_per_row
-        Only for clock columns: the number of reference periods spanned by each array row.
+        Only for clock columns: the number of reference periods spanned by each array row. Only reference clocks can
+        set 0, for rows that are instants, like event dates, which always get downscaled.
     clock_reference_period
         Only for clock columns: the base reference period of the array rows.
         Used for matching clocks between time scales, and for rolling window functions
@@ -2253,7 +2261,8 @@ class DataColumn:
         Spans of calendar periods are compared exactly by their number of months, while all other spans are compared
         by their number of seconds, with calendar periods counting anything between their shortest and longest
         possible month lengths. Equal spans get upscaled, as each master clock row matches at most one reference
-        clock row.
+        clock row, while reference clock rows that are instants, with 0 periods per row, always get downscaled, as
+        they span no time at all.
 
         Parameters
         ----------
@@ -2830,10 +2839,20 @@ class DataColumn:
             and (
                 isinstance(clock_periods_per_row, bool)
                 or not isinstance(clock_periods_per_row, int)
-                or clock_periods_per_row < 1
+                or clock_periods_per_row < 0
             )
         ):
-            msg = "DataColumn clock_periods_per_row must be a positive integer"
+            msg = "DataColumn clock_periods_per_row must be a non-negative integer"
+
+            raise DataColumnParameterError(msg)
+
+        # Only the reference clocks' rows can be instants, as the master clock's rows have to span the periods the
+        # reference clocks' rows get synced into
+        if (
+            clock_master is True
+            and clock_periods_per_row == 0
+        ):
+            msg = "DataColumn master clock clock_periods_per_row must be at least 1, as its rows can't be instants"
 
             raise DataColumnParameterError(msg)
 

@@ -440,6 +440,10 @@ class TestPrivateCalculateSyncDirection:
             (ReferencePeriods.WEEK, 5, ReferencePeriods.MONTH, 1, DataColumn.SyncDirections.DOWNSCALE),
             (ReferencePeriods.YEAR, 1, ReferencePeriods.WEEK, 1, DataColumn.SyncDirections.DOWNSCALE),
             (ReferencePeriods.WEEK, 1, ReferencePeriods.YEAR, 1, DataColumn.SyncDirections.UPSCALE),
+            # Instants, which span no time at all
+            (ReferencePeriods.DAY, 1, ReferencePeriods.DAY, 0, DataColumn.SyncDirections.DOWNSCALE),
+            (ReferencePeriods.HOUR, 1, ReferencePeriods.DAY, 0, DataColumn.SyncDirections.DOWNSCALE),
+            (ReferencePeriods.MONTH, 3, ReferencePeriods.MONTH, 0, DataColumn.SyncDirections.DOWNSCALE),
         ]
     )
     def test_orderable_spans(
@@ -517,7 +521,7 @@ class TestPrivateCalculateSyncIndices:
         hourly_reference_clock,
     ):
         result = DataColumn._calculate_sync_indices(
-            clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             clock_upscale_method=None,
             master_clock_column=daily_master_clock,
             reference_clock_column=hourly_reference_clock,
@@ -537,7 +541,7 @@ class TestPrivateCalculateSyncIndices:
     ):
         with pytest.raises(DataColumnSyncError):
             DataColumn._calculate_sync_indices(
-                clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+                clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
                 clock_upscale_method=None,
                 master_clock_column=daily_master_clock,
                 reference_clock_column=monthly_reference_clock,
@@ -1168,7 +1172,7 @@ class TestPrivateValidateClockParameters:
     ):
         result = DataColumn._validate_clock_parameters(
             array=monthly_dates_array,
-            clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.MONTH,
@@ -1464,7 +1468,7 @@ class TestPrivateValidateClockParameters:
             'clock_upscale_method',
         ),
         [
-            (clock_sync_methods.DownscaleMethods.calendar_periods, None),
+            (clock_sync_methods.DownscaleMethods.group_by_calendar_period, None),
             (None, clock_sync_methods.UpscaleMethods.infill_from_timestamp),
         ]
     )
@@ -1563,7 +1567,7 @@ class TestPrivateValidateSyncMethods:
 
     def test_downscale_with_only_downscale_and_consolidation_methods(self):
         result = DataColumn._validate_sync_methods(
-            clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             clock_upscale_method=None,
             consolidation_method=clock_sync_methods.ConsolidationMethods.last,
             sync_direction=DataColumn.SyncDirections.DOWNSCALE,
@@ -1574,7 +1578,7 @@ class TestPrivateValidateSyncMethods:
     def test_upscale_without_upscale_method(self):
         with pytest.raises(DataColumnParameterError):
             DataColumn._validate_sync_methods(
-                clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+                clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
                 clock_upscale_method=None,
                 consolidation_method=clock_sync_methods.ConsolidationMethods.last,
                 sync_direction=DataColumn.SyncDirections.UPSCALE,
@@ -1592,7 +1596,7 @@ class TestPrivateValidateSyncMethods:
     def test_downscale_without_consolidation_method(self):
         with pytest.raises(DataColumnParameterError):
             DataColumn._validate_sync_methods(
-                clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+                clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
                 clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 consolidation_method=None,
                 sync_direction=DataColumn.SyncDirections.DOWNSCALE,

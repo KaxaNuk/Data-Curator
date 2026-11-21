@@ -22,7 +22,7 @@ def daily_master_clock():
     )
 
 
-class TestExactMatch:
+class TestMatchSamePeriod:
     def test_unsorted_reference_rows(
         self,
         daily_master_clock,
@@ -35,9 +35,9 @@ class TestExactMatch:
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.exact_match,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.match_same_period,
         )
-        result = clock_sync_methods.UpscaleMethods.exact_match(
+        result = clock_sync_methods.UpscaleMethods.match_same_period(
             daily_master_clock,
             reference_clock,
         )
@@ -60,9 +60,9 @@ class TestExactMatch:
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.exact_match,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.match_same_period,
         )
-        result = clock_sync_methods.UpscaleMethods.exact_match(
+        result = clock_sync_methods.UpscaleMethods.match_same_period(
             daily_master_clock,
             reference_clock,
         )
@@ -85,9 +85,9 @@ class TestExactMatch:
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.exact_match,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.match_same_period,
         )
-        result = clock_sync_methods.UpscaleMethods.exact_match(
+        result = clock_sync_methods.UpscaleMethods.match_same_period(
             daily_master_clock,
             reference_clock,
         )
@@ -116,9 +116,9 @@ class TestExactMatch:
             clock_master=master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.WEEK,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.exact_match,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.match_same_period,
         )
-        result = clock_sync_methods.UpscaleMethods.exact_match(
+        result = clock_sync_methods.UpscaleMethods.match_same_period(
             master_clock,
             reference_clock,
         )
@@ -141,9 +141,9 @@ class TestExactMatch:
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.exact_match,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.match_same_period,
         )
-        result = clock_sync_methods.UpscaleMethods.exact_match(
+        result = clock_sync_methods.UpscaleMethods.match_same_period(
             daily_master_clock,
             reference_clock,
         )
@@ -163,9 +163,9 @@ class TestExactMatch:
             clock_master=daily_master_clock,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
-            clock_upscale_method=clock_sync_methods.UpscaleMethods.exact_match,
+            clock_upscale_method=clock_sync_methods.UpscaleMethods.match_same_period,
         )
-        result = clock_sync_methods.UpscaleMethods.exact_match(
+        result = clock_sync_methods.UpscaleMethods.match_same_period(
             daily_master_clock,
             reference_clock,
         )

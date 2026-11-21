@@ -25,16 +25,16 @@ from kaxanuk.data_curator.exceptions import (
 from kaxanuk.data_curator.modules.clock_sync_methods import (
     ConsolidationMethods,
     DownscaleMethods,
-    UpscaleMethods,
 )
 
 
 class SplitsDataBlock(BaseDataBlock):
-    clock_downscale_method = DownscaleMethods.calendar_periods
+    # each split takes effect from the master clock row in progress, or the next one if it falls between them:
+    clock_downscale_method = DownscaleMethods.group_by_next_period_end
     clock_spec_field = SplitData.clock_spec
     clock_sync_field = SplitDataRow.split_date
-    # each split only appears on its own date:
-    clock_upscale_method = UpscaleMethods.exact_match
+    # the split dates are instants, which never get upscaled:
+    clock_upscale_method = None
     dated_factor_date_fields = (
         SplitDataRow.split_date,
     )

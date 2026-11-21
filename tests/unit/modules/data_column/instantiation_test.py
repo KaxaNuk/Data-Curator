@@ -116,7 +116,7 @@ class TestDunderInit:
     ):
         column = DataColumn(
             daily_dates_array,
-            clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             clock_master=True,
             clock_periods_per_row=1,
             clock_reference_period=ReferencePeriods.DAY,
@@ -212,6 +212,10 @@ class TestDunderInit:
             (ReferencePeriods.WEEK, 5, ReferencePeriods.MONTH, 1, DataColumn.SyncDirections.DOWNSCALE),
             (ReferencePeriods.YEAR, 1, ReferencePeriods.WEEK, 1, DataColumn.SyncDirections.DOWNSCALE),
             (ReferencePeriods.WEEK, 1, ReferencePeriods.YEAR, 1, DataColumn.SyncDirections.UPSCALE),
+            # Instants, which span no time at all
+            (ReferencePeriods.DAY, 1, ReferencePeriods.DAY, 0, DataColumn.SyncDirections.DOWNSCALE),
+            (ReferencePeriods.HOUR, 1, ReferencePeriods.DAY, 0, DataColumn.SyncDirections.DOWNSCALE),
+            (ReferencePeriods.MONTH, 3, ReferencePeriods.MONTH, 0, DataColumn.SyncDirections.DOWNSCALE),
         ]
     )
     def test_reference_clock_with_orderable_span(
@@ -238,7 +242,7 @@ class TestDunderInit:
                     datetime.date(2024, 1, 31),
                 ]
             ),
-            clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             clock_master=master_clock,
             clock_periods_per_row=reference_periods_per_row,
             clock_reference_period=reference_period,
@@ -289,7 +293,7 @@ class TestDunderInit:
                         datetime.date(2024, 1, 31),
                     ]
                 ),
-                clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+                clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
                 clock_master=master_clock,
                 clock_periods_per_row=reference_periods_per_row,
                 clock_reference_period=reference_period,
@@ -564,7 +568,7 @@ class TestDunderInit:
     @pytest.mark.parametrize(
         'clock_sync_method',
         [
-            {'clock_downscale_method': clock_sync_methods.DownscaleMethods.calendar_periods},
+            {'clock_downscale_method': clock_sync_methods.DownscaleMethods.group_by_calendar_period},
             {'clock_upscale_method': clock_sync_methods.UpscaleMethods.infill_from_timestamp},
         ]
     )
@@ -604,7 +608,6 @@ class TestDunderInit:
     @pytest.mark.parametrize(
         'clock_periods_per_row',
         [
-            0,
             -1,
             1.5,
             # A bool, as bool is a subclass of int
@@ -624,6 +627,34 @@ class TestDunderInit:
                 clock_periods_per_row=clock_periods_per_row,
                 clock_reference_period=ReferencePeriods.DAY,
             )
+
+    def test_master_clock_with_instant_rows(
+        self,
+        daily_dates_array,
+    ):
+        with pytest.raises(DataColumnParameterError):
+            DataColumn(
+                daily_dates_array,
+                clock_master=True,
+                clock_periods_per_row=0,
+                clock_reference_period=ReferencePeriods.DAY,
+            )
+
+    def test_reference_clock_with_instant_rows(
+        self,
+        daily_dates_array,
+        daily_master_clock,
+    ):
+        reference_clock = DataColumn(
+            daily_dates_array,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_next_period_end,
+            clock_master=daily_master_clock,
+            clock_periods_per_row=0,
+            clock_reference_period=ReferencePeriods.DAY,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.sum,
+        )
+
+        assert reference_clock.sync_direction is DataColumn.SyncDirections.DOWNSCALE
 
     @pytest.mark.parametrize(
         'array',
@@ -721,7 +752,7 @@ class TestDunderInit:
         with pytest.raises(DataColumnParameterError):
             DataColumn(
                 monthly_dates_array,
-                clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+                clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
                 clock_master=daily_master_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.MONTH,
@@ -751,7 +782,7 @@ class TestDunderInit:
         with pytest.raises(DataColumnParameterError):
             DataColumn(
                 hourly_timestamps_array,
-                clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+                clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
                 clock_master=daily_master_clock,
                 clock_periods_per_row=1,
                 clock_reference_period=ReferencePeriods.HOUR,

@@ -186,7 +186,7 @@ The minimal steps are:
    .. code-block:: python
 
       class MyMarketDailyDataBlock(BaseDataBlock):
-          clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+          clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
           clock_spec_field = MyMarketData.clock_spec
           clock_sync_field = MyMarketDataRow.date
           clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_period_end
@@ -202,12 +202,12 @@ The minimal steps are:
 
    - ``rows_field`` and ``clock_spec_field`` are the main entity's fields holding the rows and their ``ClockSpec``, which has to be typed as ``ClockSpec``, without allowing ``None``.
 
-   - ``clock_upscale_method`` syncs the rows when they span at least as long as the master clock's: ``infill_from_period_end`` for data only known once its period ends, like this block's daily bars, ``infill_from_timestamp`` for data known from its timestamp onward, like financial statements, or ``exact_match`` for events, like dividends.
-   - ``clock_downscale_method`` syncs the rows when they span less time than the master clock's, consolidating the rows belonging to each master clock row with ``downscale_consolidation_methods``.
-   - Each ``downscale_consolidation_methods`` key is either an entity, setting the method of all its fields and those of its extensions, or a field, overriding its entity's method. Every field needs a method, or defining the class raises a ``TypeError``.
+   - ``clock_upscale_method`` syncs the rows when they span at least as long as the master clock's: ``infill_from_period_end`` for data only known once its period ends, like this block's daily bars, ``infill_from_timestamp`` for data known from its timestamp onward, like financial statements, or ``match_same_period`` for data that only applies to its own period. Set it to ``None`` when the rows are instants, like the dates of dividends and splits, as instants never get upscaled.
+   - ``clock_downscale_method`` syncs the rows when they span less time than the master clock's, consolidating the rows belonging to each master clock row with ``downscale_consolidation_methods``: ``group_by_calendar_period`` gives each row to the master clock row whose period contains it, dropping the rows between the master clock's periods, like weekend ticks, while ``group_by_next_period_end`` gives those rows to the next master clock row instead, like the dividend and split dates on non-trading days.
+   - Each ``downscale_consolidation_methods`` key is either an entity, setting the method of all its fields and those of its extensions, or a field, overriding its entity's method. Every field needs a method, or defining the class raises a ``TypeError``. Use ``infill_last`` for the fields holding states that last until they change, like ratings, which fills the master clock rows without any rows of their own from the latest earlier one, starting from the rows before the master clock. Pair it with ``group_by_next_period_end``, as ``group_by_calendar_period`` would drop the changes between the master clock's periods.
    - The ``prefix_entity_map`` prefixes can't contain underscores, as column names get split at their first one, and the shortest prefix has to start all the other ones (e.g., ``f``, ``fbs`` and ``fcf``). The ``c`` prefix is reserved for calculated columns.
 
-3. Return its ``main_entity`` from your provider's ``get_data_block_data``, add it to its ``get_data_block_endpoint_tag_map``, and pass it as a ``data_block_providers`` key to ``main``. The provider sets the rows' time scale in the entity's ``clock_spec``, e.g. ``ClockSpec(reference_period=ReferencePeriods.DAY, periods_per_row=1)`` for daily rows, with ``ReferencePeriods`` imported from ``kaxanuk.data_curator``.
+3. Return its ``main_entity`` from your provider's ``get_data_block_data``, add it to its ``get_data_block_endpoint_tag_map``, and pass it as a ``data_block_providers`` key to ``main``. The provider sets the rows' time scale in the entity's ``clock_spec``, e.g. ``ClockSpec(reference_period=ReferencePeriods.DAY, periods_per_row=1)`` for daily rows, or ``ClockSpec(reference_period=ReferencePeriods.DAY, periods_per_row=0)`` for rows that are instants dated without a time, like events, with ``ReferencePeriods`` imported from ``kaxanuk.data_curator``.
 
 A data block shadows any built-in one sharing its prefixes, so this one replaces ``MarketDailyDataBlock`` for the whole run, while one with new prefixes (e.g., ``alt``) adds its columns alongside the built-in ones.
 

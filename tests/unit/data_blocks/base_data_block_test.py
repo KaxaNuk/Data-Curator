@@ -29,7 +29,7 @@ class ExampleDataBlock(BaseDataBlock):
     Complete data block declaration, which the tests can subclass to override a single attribute.
     """
 
-    clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+    clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
     clock_spec_field = entities.ExampleBlockEntity.clock_spec
     clock_sync_field = entities.ExampleSubentity2.id
     clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_timestamp
@@ -53,7 +53,7 @@ class ExampleDatedDataBlock(BaseDataBlock):
     Data block packing dated rows, which the tests can subclass to pack an extension of the rows' entity.
     """
 
-    clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+    clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
     clock_spec_field = entities.ExampleDatedRows.clock_spec
     clock_sync_field = entities.ExampleDatedRow.date
     clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_timestamp
@@ -83,7 +83,7 @@ class ExampleExtendedDatedDataBlock(BaseDataBlock):
     Data block packing the rows of an entity extending another one, without subclassing another data block.
     """
 
-    clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+    clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
     clock_spec_field = entities.ExampleExtendedDatedRows.clock_spec
     clock_sync_field = entities.ExampleExtendedDatedRow.date
     clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_timestamp
@@ -103,7 +103,7 @@ class ExampleLabeledDataBlock(BaseDataBlock):
     Data block packing rows with a non-nullable field besides their clock sync field.
     """
 
-    clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+    clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
     clock_spec_field = entities.ExampleLabeledRows.clock_spec
     clock_sync_field = entities.ExampleLabeledRow.date
     clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_timestamp
@@ -123,7 +123,7 @@ class ExampleMiniFundamentalsDataBlock(BaseDataBlock):
     Data block packing rows with subentities, made of the shared mini fundamental entities.
     """
 
-    clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+    clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
     clock_spec_field = entities.ExampleMiniFundamentalRows.clock_spec
     clock_sync_field = entity_tables.MiniFundamentalRow.filing_date
     clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_timestamp
@@ -257,7 +257,7 @@ class TestDunderInitSubclass:
     def test_missing_clock_spec_field(self):
         with pytest.raises(TypeError):
             class IncompleteDataBlock(BaseDataBlock):
-                clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+                clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
                 clock_sync_field = entities.ExampleSubentity2.id
                 clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_timestamp
                 downscale_consolidation_methods: typing.ClassVar = {
@@ -273,7 +273,7 @@ class TestDunderInitSubclass:
     def test_missing_clock_upscale_method(self):
         with pytest.raises(TypeError):
             class IncompleteDataBlock(BaseDataBlock):
-                clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+                clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
                 clock_spec_field = entities.ExampleBlockEntity.clock_spec
                 clock_sync_field = entities.ExampleSubentity2.id
                 downscale_consolidation_methods: typing.ClassVar = {
@@ -289,7 +289,7 @@ class TestDunderInitSubclass:
     def test_missing_downscale_consolidation_methods(self):
         with pytest.raises(TypeError):
             class IncompleteDataBlock(BaseDataBlock):
-                clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+                clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
                 clock_spec_field = entities.ExampleBlockEntity.clock_spec
                 clock_sync_field = entities.ExampleSubentity2.id
                 clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_timestamp
@@ -303,7 +303,7 @@ class TestDunderInitSubclass:
     def test_missing_rows_field(self):
         with pytest.raises(TypeError):
             class IncompleteDataBlock(BaseDataBlock):
-                clock_downscale_method = clock_sync_methods.DownscaleMethods.calendar_periods
+                clock_downscale_method = clock_sync_methods.DownscaleMethods.group_by_calendar_period
                 clock_spec_field = entities.ExampleBlockEntity.clock_spec
                 clock_sync_field = entities.ExampleSubentity2.id
                 clock_upscale_method = clock_sync_methods.UpscaleMethods.infill_from_timestamp
@@ -319,7 +319,7 @@ class TestDunderInitSubclass:
     def test_noncallable_clock_downscale_method(self):
         with pytest.raises(TypeError):
             class InvalidDataBlock(ExampleDataBlock):
-                clock_downscale_method = 'calendar_periods'
+                clock_downscale_method = 'group_by_calendar_period'
 
     def test_noncallable_clock_upscale_method(self):
         with pytest.raises(TypeError):
@@ -1200,7 +1200,7 @@ class TestPrivateUnwrapOptionalType:
 class TestPrivateValidateClockMethods:
     def test_callable_methods(self):
         result = BaseDataBlock._validate_clock_methods(
-            clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
             clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
             data_block_name='ExampleDataBlock',
         )
@@ -1210,7 +1210,7 @@ class TestPrivateValidateClockMethods:
     def test_noncallable_clock_downscale_method(self):
         with pytest.raises(TypeError):
             BaseDataBlock._validate_clock_methods(
-                clock_downscale_method='calendar_periods',
+                clock_downscale_method='group_by_calendar_period',
                 clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
                 data_block_name='ExampleDataBlock',
             )
@@ -1218,10 +1218,19 @@ class TestPrivateValidateClockMethods:
     def test_noncallable_clock_upscale_method(self):
         with pytest.raises(TypeError):
             BaseDataBlock._validate_clock_methods(
-                clock_downscale_method=clock_sync_methods.DownscaleMethods.calendar_periods,
+                clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_calendar_period,
                 clock_upscale_method='infill_from_timestamp',
                 data_block_name='ExampleDataBlock',
             )
+
+    def test_no_clock_upscale_method_for_instant_rows(self):
+        result = BaseDataBlock._validate_clock_methods(
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_next_period_end,
+            clock_upscale_method=None,
+            data_block_name='ExampleDataBlock',
+        )
+
+        assert result is None
 
 
 class TestPrivateValidateClockSpecField:
