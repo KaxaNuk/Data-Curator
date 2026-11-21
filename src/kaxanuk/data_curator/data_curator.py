@@ -13,6 +13,7 @@ main:
 import inspect
 import logging
 import os
+import traceback
 import types
 
 from kaxanuk.data_curator.data_blocks.base_data_block import BaseDataBlock
@@ -22,7 +23,9 @@ from kaxanuk.data_curator.entities import (
 )
 from kaxanuk.data_curator.exceptions import (
     ApiEndpointError,
+    ColumnBuilderCalculationError,
     ColumnBuilderCircularDependenciesError,
+    ColumnBuilderClockError,
     ColumnBuilderCustomFunctionNotFoundError,
     ColumnBuilderUnavailableEntityFieldError,
     DataBlockRowEntityErrorGroup,
@@ -280,10 +283,34 @@ def main(
 
                 continue
 
-            column_builder = ColumnBuilder(
-                data_block_entities=data_block_entities,
-            )
-            output_columns = column_builder.process_columns(configuration.columns)
+            # These errors stop the run, as they need fixing in the data provider or the calculation that raises them
+            try:
+                column_builder = ColumnBuilder(
+                    data_block_entities=data_block_entities,
+                )
+                output_columns = column_builder.process_columns(configuration.columns)
+            except ColumnBuilderClockError as error:
+                data_provider = data_block_providers[error.data_block]
+                msg = "\n  ".join([
+                    " ".join([
+                        f"{main_identifier} {error.data_block.__name__} data from the",
+                        f"{type(data_provider).__name__} data provider can't be synced to the master clock,",
+                        "which the data provider needs to handle. Stopping the run:",
+                    ]),
+                    str(error),
+                ])
+                logging.getLogger(__name__).critical(msg)
+
+                return
+            except ColumnBuilderCalculationError as error:
+                msg = _format_calculation_error_message(
+                    error,
+                    custom_calculation_modules=custom_calculation_modules,
+                    main_identifier=main_identifier,
+                )
+                logging.getLogger(__name__).critical(msg)
+
+                return
 
             for output_handler in output_handlers:
                 output_handler.output_data(
@@ -304,6 +331,76 @@ def main(
         logging.getLogger(__name__).critical(str(error))
     else:
         logging.getLogger(__name__).info("Finished processing data!")
+
+
+def _format_calculation_error_message(
+    error: ColumnBuilderCalculationError,
+    *,
+    custom_calculation_modules: list[types.ModuleType],
+    main_identifier: str,
+) -> str:
+    """
+    Format the message reporting a failed calculation, telling the custom calculations from the built-in ones.
+
+    When the calculation raised an error of its own, its traceback starts from the calculation function, leaving out
+    the frames of the Data Curator calling it, so it doesn't look like an error of the Data Curator itself.
+
+    Parameters
+    ----------
+    error
+        The error reporting the failed calculation, chained from the calculation's own error if it raised one
+    custom_calculation_modules
+        The modules with the custom calculation functions passed to main
+    main_identifier
+        The identifier whose columns were being calculated
+
+    Returns
+    -------
+    The message reporting the failed calculation
+    """
+    calculation_module = error.calculation_module
+    is_custom_calculation = any(
+        calculation_module is custom_calculation_module
+        for custom_calculation_module in custom_calculation_modules
+    )
+    calculation_kind = (
+        "Custom calculation"
+        if is_custom_calculation
+        else "Built-in calculation"
+    )
+    calculation_location = getattr(
+        calculation_module,
+        '__file__',
+        calculation_module.__name__,
+    )
+    header = " ".join([
+        f"{calculation_kind} {error.column} in {calculation_location}",
+        f"failed for {main_identifier}, stopping the run:",
+    ])
+    calculation_error = error.__cause__
+    if calculation_error is None:
+
+        return "\n  ".join([
+            header,
+            str(error),
+        ])
+
+    # The traceback's first frame is the Data Curator's call to the calculation function
+    calculation_traceback = (
+        calculation_error.__traceback__.tb_next
+        if calculation_error.__traceback__ is not None
+        else None
+    )
+    formatted_calculation_error = traceback.format_exception(
+        type(calculation_error),
+        calculation_error,
+        calculation_traceback,
+    )
+
+    return "\n".join([
+        header,
+        "".join(formatted_calculation_error).rstrip(),
+    ])
 
 
 def _get_nested_exception_messages(

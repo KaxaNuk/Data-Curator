@@ -66,7 +66,7 @@ File Structure
 ~~~~~~~~~~~~~~
 
 - Group the test methods of a file into classes, each one testing a single function or method.
-- Name each class ``Test`` followed by the CamelCase name of the function or method it tests, using ``TestPrivate`` for the ones starting with an underscore, and ``TestDunder`` for dunder methods, e.g. ``TestPrivateInfillData`` for ``_infill_data``, and ``TestDunderTruediv`` for ``__truediv__``.
+- Name each class ``Test`` followed by the CamelCase name of the function or method it tests, using ``TestPrivate`` for the ones starting with an underscore, and ``TestDunder`` for dunder methods, e.g. ``TestPrivateGenerateColumn`` for ``_generate_column``, and ``TestDunderTruediv`` for ``__truediv__``.
 - Name each test method ``test_`` followed by a short description of what makes the test unique.
 - Use a single ``assert`` per test method, unless the test's setup is complex enough to require intermediate assertions between its steps.
 - Prioritize readability and auditability over conciseness.

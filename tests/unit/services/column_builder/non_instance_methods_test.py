@@ -1,12 +1,13 @@
-import dataclasses
 import datetime
 import decimal
 import typing
 
+import pyarrow
 import pytest
 
 from kaxanuk.data_curator import (
     DataColumn,
+    ReferencePeriods,
     clock_sync_methods,
 )
 from kaxanuk.data_curator.data_blocks.dividends import (
@@ -22,6 +23,7 @@ from kaxanuk.data_curator.data_blocks.splits import (
     SplitsDataBlock,
 )
 from kaxanuk.data_curator.entities import (
+    ClockSpec,
     Configuration,
     DividendDataRow,
     FundamentalDataRow,
@@ -29,18 +31,21 @@ from kaxanuk.data_curator.entities import (
     FundamentalDataRowCashFlow,
     FundamentalDataRowIncomeStatement,
     MarketDataDailyRow,
-    #SplitDataRow
+    SplitDataRow,
 )
 from kaxanuk.data_curator.exceptions import (
+    ColumnBuilderCalculationError,
+    ColumnBuilderClockError,
     ColumnBuilderCustomFunctionNotFoundError,
-    ColumnBuilderNoDatesToInfillError,
     ColumnBuilderUnavailableEntityFieldError,
     InjectedDependencyError,
 )
 from kaxanuk.data_curator.services.column_builder import (
+    CalculatedColumn,
+    ClockedDataBlockRows,
     ColumnBuilder,
     CompletedColumns,
-    DataRows,
+    DatedFactorColumn,
 )
 from .fixtures import (
     calculations,
@@ -51,27 +56,14 @@ from .fixtures import (
 # note: data_column_debugger is defined in tests/conftest.py
 
 
-DIVIDEND_DATE_FIELD_NAMES = tuple(
-    field.__name__
-    for field in DividendsDataBlock.dated_factor_date_fields
+DAILY_CLOCK_SPEC = ClockSpec(
+    reference_period=ReferencePeriods.DAY,
+    periods_per_row=1,
 )
-DIVIDEND_VALUE_FIELD_NAMES = tuple(
-    field.__name__
-    for field in DividendsDataBlock.dated_factor_value_fields
+QUARTERLY_CLOCK_SPEC = ClockSpec(
+    reference_period=ReferencePeriods.MONTH,
+    periods_per_row=3,
 )
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ExampleSubEntity1:
-    subfield1: int
-    subfield2: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ExampleEntity1:
-    field1: int
-    field2: str
-    subfield_field1: ExampleSubEntity1
 
 
 @pytest.fixture(scope="module")
@@ -291,48 +283,6 @@ def example_entity_rows_market_data():
 
 
 @pytest.fixture(scope="module")
-def example_expanded_dividend_data():
-    return {
-        '2020-01-01': None,
-        '2020-01-03': {
-            'declaration_date_dividend': decimal.Decimal('0.64'),
-            'declaration_date_split_adjusted_dividend': decimal.Decimal('0.71'),
-            'ex_dividend_date_dividend': decimal.Decimal('0.64'),
-            'ex_dividend_date_split_adjusted_dividend': decimal.Decimal('0.71'),
-            'record_date_dividend': decimal.Decimal('0.64'),
-            'record_date_split_adjusted_dividend': decimal.Decimal('0.71'),
-            'payment_date_dividend': decimal.Decimal('0.64'),
-            'payment_date_split_adjusted_dividend': decimal.Decimal('0.71'),
-        },
-        '2020-01-04': {
-            'declaration_date_dividend': decimal.Decimal('0.69'),
-            'declaration_date_split_adjusted_dividend': decimal.Decimal('0.88'),
-            'ex_dividend_date_dividend': decimal.Decimal('0.69'),
-            'ex_dividend_date_split_adjusted_dividend': decimal.Decimal('0.88'),
-            'record_date_dividend': decimal.Decimal('0.69'),
-            'record_date_split_adjusted_dividend': decimal.Decimal('0.88'),
-            'payment_date_dividend': decimal.Decimal('0.69'),
-            'payment_date_split_adjusted_dividend': decimal.Decimal('0.88'),
-        }
-    }
-
-
-@pytest.fixture(scope="module")
-def example_expanded_split_data():
-    return {
-        '2020-01-01': None,
-        '2020-01-03': {
-            'split_date_numerator': 4,
-            'split_date_denominator': 1,
-        },
-        '2020-01-04': {
-            'split_date_numerator': 2,
-            'split_date_denominator': 5,
-        }
-    }
-
-
-@pytest.fixture(scope="module")
 def example_entities_with_subentities():
     return {
         '1': entities.ExampleEntity(
@@ -363,153 +313,121 @@ def example_entities_with_subentities():
 
 
 @pytest.fixture(scope="module")
-def example_expand_dated_factors_dividend_data():
-    data_rows: DataRows = {
-        '2021-01-01': DividendDataRow(
-            declaration_date=datetime.date.fromisoformat('2020-11-05'),
-            ex_dividend_date=datetime.date.fromisoformat('2021-01-01'),
-            record_date=datetime.date.fromisoformat('2021-01-02'),
-            payment_date=datetime.date.fromisoformat('2021-02-04'),
-            dividend=decimal.Decimal('2.1'),
-            dividend_split_adjusted=decimal.Decimal('2.225'),
+def example_calculated_column():
+    return CalculatedColumn(
+        function=calculations.c_sum_mhigh_and_mlow,
+        module=calculations,
+        parameter_names=(
+            'm_high',
+            'm_low',
         ),
-        '2021-03-15': DividendDataRow(
-            declaration_date=datetime.date.fromisoformat('2021-02-10'),
-            ex_dividend_date=datetime.date.fromisoformat('2021-03-15'),
-            record_date=datetime.date.fromisoformat('2021-03-18'),
-            payment_date=datetime.date.fromisoformat('2021-03-30'),
-            dividend=decimal.Decimal('2.3'),
-            dividend_split_adjusted=decimal.Decimal('2.431'),
+    )
+
+
+@pytest.fixture(scope="module")
+def example_clocked_rows_by_block(
+    example_entity_rows_dividend_data,
+    example_entity_rows_fundamental_data,
+    example_entity_rows_market_data,
+    example_entity_rows_split_data,
+    example_master_clock_column,
+):
+    # Each built-in data block's rows, with the clocks the ColumnBuilder builds for them
+    return {
+        DividendsDataBlock: ClockedDataBlockRows(
+            clocks=ColumnBuilder._build_data_block_clocks(
+                clock_spec=DAILY_CLOCK_SPEC,
+                data_block=DividendsDataBlock,
+                master_clock_column=example_master_clock_column,
+                master_clock_data_block=MarketDailyDataBlock,
+                rows=example_entity_rows_dividend_data,
+            ),
+            rows=tuple(example_entity_rows_dividend_data.values()),
         ),
-        '2022-07-07': DividendDataRow(
-            declaration_date=datetime.date.fromisoformat('2022-04-30'),
-            ex_dividend_date=datetime.date.fromisoformat('2022-07-07'),
-            record_date=datetime.date.fromisoformat('2022-07-08'),
-            payment_date=datetime.date.fromisoformat('2022-09-01'),
-            dividend=decimal.Decimal('1.7'),
-            dividend_split_adjusted=decimal.Decimal('1.865'),
-        )
-    }
-    data_rows_with_nones: DataRows = {
-        '2021-01-01': DividendDataRow(
-            declaration_date=None,
-            ex_dividend_date=datetime.date.fromisoformat('2021-01-01'),
-            record_date=None,
-            payment_date=None,
-            dividend=decimal.Decimal('2.1'),
-            dividend_split_adjusted=decimal.Decimal('2.225'),
+        FundamentalsDataBlock: ClockedDataBlockRows(
+            clocks=ColumnBuilder._build_data_block_clocks(
+                clock_spec=QUARTERLY_CLOCK_SPEC,
+                data_block=FundamentalsDataBlock,
+                master_clock_column=example_master_clock_column,
+                master_clock_data_block=MarketDailyDataBlock,
+                rows=example_entity_rows_fundamental_data,
+            ),
+            rows=tuple(example_entity_rows_fundamental_data.values()),
         ),
-        '2021-03-15': DividendDataRow(
-            declaration_date=datetime.date.fromisoformat('2021-02-10'),
-            ex_dividend_date=datetime.date.fromisoformat('2021-03-15'),
-            record_date=datetime.date.fromisoformat('2021-03-18'),
-            payment_date=datetime.date.fromisoformat('2021-03-30'),
-            dividend=decimal.Decimal('2.3'),
-            dividend_split_adjusted=decimal.Decimal('2.431'),
+        MarketDailyDataBlock: ClockedDataBlockRows(
+            clocks=ColumnBuilder._build_data_block_clocks(
+                clock_spec=DAILY_CLOCK_SPEC,
+                data_block=MarketDailyDataBlock,
+                master_clock_column=example_master_clock_column,
+                master_clock_data_block=MarketDailyDataBlock,
+                rows=example_entity_rows_market_data,
+            ),
+            rows=tuple(example_entity_rows_market_data.values()),
         ),
-        '2022-07-07': DividendDataRow(
-            declaration_date=None,
-            ex_dividend_date=datetime.date.fromisoformat('2022-07-07'),
-            record_date=datetime.date.fromisoformat('2022-07-08'),
-            payment_date=None,
-            dividend=decimal.Decimal('1.7'),
-            dividend_split_adjusted=decimal.Decimal('1.865'),
-        )
-    }
-    expected_result_full = {
-        '2020-11-05': {
-            'declaration_date_dividend': decimal.Decimal('2.1'),
-            'declaration_date_dividend_split_adjusted': decimal.Decimal('2.225'),
-        },
-        '2021-01-01': {
-            'ex_dividend_date_dividend': decimal.Decimal('2.1'),
-            'ex_dividend_date_dividend_split_adjusted': decimal.Decimal('2.225'),
-        },
-        '2021-01-02': {
-            'record_date_dividend': decimal.Decimal('2.1'),
-            'record_date_dividend_split_adjusted': decimal.Decimal('2.225'),
-        },
-        '2021-02-04': {
-            'payment_date_dividend': decimal.Decimal('2.1'),
-            'payment_date_dividend_split_adjusted': decimal.Decimal('2.225'),
-        },
-        '2021-02-10': {
-            'declaration_date_dividend': decimal.Decimal('2.3'),
-            'declaration_date_dividend_split_adjusted': decimal.Decimal('2.431'),
-        },
-        '2021-03-15': {
-            'ex_dividend_date_dividend': decimal.Decimal('2.3'),
-            'ex_dividend_date_dividend_split_adjusted': decimal.Decimal('2.431'),
-        },
-        '2021-03-18': {
-            'record_date_dividend': decimal.Decimal('2.3'),
-            'record_date_dividend_split_adjusted': decimal.Decimal('2.431'),
-        },
-        '2021-03-30': {
-            'payment_date_dividend': decimal.Decimal('2.3'),
-            'payment_date_dividend_split_adjusted': decimal.Decimal('2.431'),
-        },
-        '2022-04-30': {
-            'declaration_date_dividend': decimal.Decimal('1.7'),
-            'declaration_date_dividend_split_adjusted': decimal.Decimal('1.865'),
-        },
-        '2022-07-07': {
-            'ex_dividend_date_dividend': decimal.Decimal('1.7'),
-            'ex_dividend_date_dividend_split_adjusted': decimal.Decimal('1.865'),
-        },
-        '2022-07-08': {
-            'record_date_dividend': decimal.Decimal('1.7'),
-            'record_date_dividend_split_adjusted': decimal.Decimal('1.865'),
-        },
-        '2022-09-01': {
-            'payment_date_dividend': decimal.Decimal('1.7'),
-            'payment_date_dividend_split_adjusted': decimal.Decimal('1.865'),
-        },
-        '2023-01-01': {}
-    }
-    expected_result_with_nones = {
-        '2020-11-05': {},
-        '2021-01-01': {
-            'ex_dividend_date_dividend': decimal.Decimal('2.1'),
-            'ex_dividend_date_dividend_split_adjusted': decimal.Decimal('2.225'),
-        },
-        '2021-01-02': {},
-        '2021-02-04': {},
-        '2021-02-10': {
-            'declaration_date_dividend': decimal.Decimal('2.3'),
-            'declaration_date_dividend_split_adjusted': decimal.Decimal('2.431'),
-        },
-        '2021-03-15': {
-            'ex_dividend_date_dividend': decimal.Decimal('2.3'),
-            'ex_dividend_date_dividend_split_adjusted': decimal.Decimal('2.431'),
-        },
-        '2021-03-18': {
-            'record_date_dividend': decimal.Decimal('2.3'),
-            'record_date_dividend_split_adjusted': decimal.Decimal('2.431'),
-        },
-        '2021-03-30': {
-            'payment_date_dividend': decimal.Decimal('2.3'),
-            'payment_date_dividend_split_adjusted': decimal.Decimal('2.431'),
-        },
-        '2022-04-30': {},
-        '2022-07-07': {
-            'ex_dividend_date_dividend': decimal.Decimal('1.7'),
-            'ex_dividend_date_dividend_split_adjusted': decimal.Decimal('1.865'),
-        },
-        '2022-07-08': {
-            'record_date_dividend': decimal.Decimal('1.7'),
-            'record_date_dividend_split_adjusted': decimal.Decimal('1.865'),
-        },
-        '2022-09-01': {},
-        '2023-01-01': {}
+        SplitsDataBlock: ClockedDataBlockRows(
+            clocks=ColumnBuilder._build_data_block_clocks(
+                clock_spec=DAILY_CLOCK_SPEC,
+                data_block=SplitsDataBlock,
+                master_clock_column=example_master_clock_column,
+                master_clock_data_block=MarketDailyDataBlock,
+                rows=example_entity_rows_split_data,
+            ),
+            rows=tuple(example_entity_rows_split_data.values()),
+        ),
     }
 
+
+@pytest.fixture(scope="module")
+def example_entity_rows_dividend_data():
     return {
-        'data_rows': data_rows,
-        'data_rows_with_nones': data_rows_with_nones,
-        'expected_result_full': expected_result_full,
-        'expected_result_with_nones': expected_result_with_nones,
+        '2020-01-03': DividendDataRow(
+            declaration_date=datetime.date(2019, 12, 1),
+            ex_dividend_date=datetime.date(2020, 1, 3),
+            record_date=datetime.date(2020, 1, 4),
+            payment_date=datetime.date(2020, 1, 4),
+            dividend=decimal.Decimal('0.64'),
+            dividend_split_adjusted=decimal.Decimal('0.71'),
+        ),
+        '2020-01-04': DividendDataRow(
+            declaration_date=datetime.date(2020, 1, 1),
+            ex_dividend_date=datetime.date(2020, 1, 4),
+            record_date=None,
+            payment_date=datetime.date(2020, 2, 1),
+            dividend=decimal.Decimal('0.69'),
+            dividend_split_adjusted=decimal.Decimal('0.88'),
+        ),
     }
+
+
+@pytest.fixture(scope="module")
+def example_entity_rows_split_data():
+    return {
+        '2020-01-03': SplitDataRow(
+            split_date=datetime.date(2020, 1, 3),
+            numerator=4.0,
+            denominator=1.0,
+        ),
+        '2020-01-04': SplitDataRow(
+            split_date=datetime.date(2020, 1, 4),
+            numerator=2.0,
+            denominator=5.0,
+        ),
+    }
+
+
+@pytest.fixture(scope="module")
+def example_master_clock_column():
+    # The dates of the market data rows
+    return DataColumn(
+        pyarrow.array([
+            datetime.date(2020, 1, 1),
+            datetime.date(2020, 1, 3),
+            datetime.date(2020, 1, 4),
+        ]),
+        clock_master=True,
+        clock_periods_per_row=1,
+        clock_reference_period=ReferencePeriods.DAY,
+    )
 
 
 class TestInitializeDataBlocks:
@@ -531,6 +449,202 @@ class TestInitializeDataBlocks:
                     columns=('m_close',),
                 ),
                 data_blocks=[CalculatedPrefixDataBlock],
+            )
+
+
+class TestPrivateBuildDataBlockClocks:
+    def test_master_clock_data_block(
+        self,
+        example_entity_rows_market_data,
+        example_master_clock_column,
+    ):
+        result = ColumnBuilder._build_data_block_clocks(
+            clock_spec=DAILY_CLOCK_SPEC,
+            data_block=MarketDailyDataBlock,
+            master_clock_column=example_master_clock_column,
+            master_clock_data_block=MarketDailyDataBlock,
+            rows=example_entity_rows_market_data,
+        )
+
+        assert result['date'] is example_master_clock_column
+
+    def test_clock_sync_field_from_row_keys(
+        self,
+        example_entity_rows_fundamental_data,
+        example_master_clock_column,
+    ):
+        # The first row has no data, but still has its key
+        result = ColumnBuilder._build_data_block_clocks(
+            clock_spec=QUARTERLY_CLOCK_SPEC,
+            data_block=FundamentalsDataBlock,
+            master_clock_column=example_master_clock_column,
+            master_clock_data_block=MarketDailyDataBlock,
+            rows=example_entity_rows_fundamental_data,
+        )
+        expected = pyarrow.array(
+            [
+                datetime.date(2020, 1, 1),
+                datetime.date(2020, 1, 3),
+                datetime.date(2020, 1, 4),
+            ],
+            type=pyarrow.date32(),
+        )
+
+        assert result['filing_date'].reference_array.equals(expected)
+
+    def test_dated_factor_date_fields(
+        self,
+        example_entity_rows_dividend_data,
+        example_master_clock_column,
+    ):
+        result = ColumnBuilder._build_data_block_clocks(
+            clock_spec=DAILY_CLOCK_SPEC,
+            data_block=DividendsDataBlock,
+            master_clock_column=example_master_clock_column,
+            master_clock_data_block=MarketDailyDataBlock,
+            rows=example_entity_rows_dividend_data,
+        )
+        expected = {
+            'declaration_date',
+            'ex_dividend_date',
+            'payment_date',
+            'record_date',
+        }
+
+        assert set(result) == expected
+
+    def test_dated_factor_date_field_values(
+        self,
+        example_entity_rows_dividend_data,
+        example_master_clock_column,
+    ):
+        result = ColumnBuilder._build_data_block_clocks(
+            clock_spec=DAILY_CLOCK_SPEC,
+            data_block=DividendsDataBlock,
+            master_clock_column=example_master_clock_column,
+            master_clock_data_block=MarketDailyDataBlock,
+            rows=example_entity_rows_dividend_data,
+        )
+        expected = pyarrow.array([
+            datetime.date(2020, 1, 4),
+            datetime.date(2020, 2, 1),
+        ])
+
+        assert result['payment_date'].reference_array.equals(expected)
+
+
+class TestPrivateBuildMasterClockColumn:
+    def test_row_keys(self, example_entity_rows_market_data):
+        result = ColumnBuilder._build_master_clock_column(
+            clock_spec=DAILY_CLOCK_SPEC,
+            data_block=MarketDailyDataBlock,
+            rows=example_entity_rows_market_data,
+        )
+        expected = pyarrow.array(
+            [
+                datetime.date(2020, 1, 1),
+                datetime.date(2020, 1, 3),
+                datetime.date(2020, 1, 4),
+            ],
+            type=pyarrow.date32(),
+        )
+
+        assert result.reference_array.equals(expected)
+
+    def test_clock_spec(self, example_entity_rows_market_data):
+        result = ColumnBuilder._build_master_clock_column(
+            clock_spec=QUARTERLY_CLOCK_SPEC,
+            data_block=MarketDailyDataBlock,
+            rows=example_entity_rows_market_data,
+        )
+        expected = (
+            ReferencePeriods.MONTH,
+            3,
+        )
+
+        assert (result.reference_period, result.periods_per_row) == expected
+
+    def test_unsorted_row_keys(self):
+        with pytest.raises(ColumnBuilderClockError):
+            ColumnBuilder._build_master_clock_column(
+                clock_spec=DAILY_CLOCK_SPEC,
+                data_block=MarketDailyDataBlock,
+                rows={
+                    '2020-01-03': None,
+                    '2020-01-01': None,
+                },
+            )
+
+
+class TestPrivateBuildReferenceClockColumn:
+    def test_reference_clock(self, example_master_clock_column):
+        # The filing is known from its filing date onward
+        result = ColumnBuilder._build_reference_clock_column(
+            clock_field=FundamentalDataRow.filing_date,
+            clock_spec=QUARTERLY_CLOCK_SPEC,
+            data_block=FundamentalsDataBlock,
+            master_clock_column=example_master_clock_column,
+            timestamps=pyarrow.array([
+                datetime.date(2020, 1, 2),
+            ]),
+        )
+        expected = pyarrow.array(
+            [
+                None,
+                0,
+                0,
+            ],
+            type=pyarrow.int64(),
+        )
+
+        assert result.sync_indices.equals(expected)
+
+    def test_clock_spec_unorderable_against_master_clock(self):
+        # 4 weeks can be shorter or longer than a month, depending on the month
+        master_clock_column = DataColumn(
+            pyarrow.array([
+                datetime.date(2020, 1, 31),
+            ]),
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.MONTH,
+        )
+
+        with pytest.raises(ColumnBuilderClockError):
+            ColumnBuilder._build_reference_clock_column(
+                clock_field=MarketDataDailyRow.date,
+                clock_spec=ClockSpec(
+                    reference_period=ReferencePeriods.WEEK,
+                    periods_per_row=4,
+                ),
+                data_block=MarketDailyDataBlock,
+                master_clock_column=master_clock_column,
+                timestamps=pyarrow.array([
+                    datetime.date(2020, 1, 31),
+                ]),
+            )
+
+    def test_rows_unsyncable_to_master_clock(self):
+        # The weekly master clock has two rows in the same week, so the daily rows can't belong to a single one
+        master_clock_column = DataColumn(
+            pyarrow.array([
+                datetime.date(2024, 1, 1),
+                datetime.date(2024, 1, 2),
+            ]),
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.WEEK,
+        )
+
+        with pytest.raises(ColumnBuilderClockError):
+            ColumnBuilder._build_reference_clock_column(
+                clock_field=MarketDataDailyRow.date,
+                clock_spec=DAILY_CLOCK_SPEC,
+                data_block=MarketDailyDataBlock,
+                master_clock_column=master_clock_column,
+                timestamps=pyarrow.array([
+                    datetime.date(2024, 1, 1),
+                ]),
             )
 
 
@@ -560,6 +674,45 @@ class TestPrivateCalculateColumnExtractors:
 
         assert result['d'].valid_column_names == expected
 
+    def test_data_block(self):
+        result = ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock])
+
+        assert result['fbs'].data_block is FundamentalsDataBlock
+
+    def test_entity_method_unavailable_as_column(self):
+        result = ColumnBuilder._calculate_column_extractors([MarketDailyDataBlock])
+
+        assert '__init__' not in result['m'].valid_column_names
+
+    def test_field_consolidation_method(self):
+        result = ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock])
+
+        assert result['fis'].consolidation_methods['revenues'] is clock_sync_methods.ConsolidationMethods.sum
+
+    def test_dated_factor_consolidation_method(self):
+        # The column's values are its value field's, so they get consolidated like it
+        result = ColumnBuilder._calculate_column_extractors([SplitsDataBlock])
+
+        assert (
+            result['s'].consolidation_methods['split_date_numerator']
+            is clock_sync_methods.ConsolidationMethods.product
+        )
+
+    def test_dated_factor_columns(self):
+        result = ColumnBuilder._calculate_column_extractors([SplitsDataBlock])
+        expected = {
+            'split_date_numerator': DatedFactorColumn(
+                date_field=SplitDataRow.split_date,
+                value_field=SplitDataRow.numerator,
+            ),
+            'split_date_denominator': DatedFactorColumn(
+                date_field=SplitDataRow.split_date,
+                value_field=SplitDataRow.denominator,
+            ),
+        }
+
+        assert result['s'].dated_factor_columns == expected
+
     def test_extended_main_row_entity(self):
         result = ColumnBuilder._calculate_column_extractors([data_blocks.ExtendedMarketDailyDataBlock])
 
@@ -586,78 +739,98 @@ class TestPrivateCalculateColumnExtractors:
         assert result['d'].valid_column_names == expected
 
 
-class TestPrivateExpandDatedFactors:
-    def test_full(self, example_expand_dated_factors_dividend_data):
-        result = ColumnBuilder._expand_dated_factors(
-            iter(example_expand_dated_factors_dividend_data['expected_result_full'].keys()),
-            DIVIDEND_DATE_FIELD_NAMES,
-            DIVIDEND_VALUE_FIELD_NAMES,
-            example_expand_dated_factors_dividend_data['data_rows']
+class TestPrivateCalculateFieldTimestamps:
+    def test_field_values(self, example_entity_rows_dividend_data):
+        result = ColumnBuilder._calculate_field_timestamps(
+            'payment_date',
+            example_entity_rows_dividend_data,
+        )
+        expected = pyarrow.array([
+            datetime.date(2020, 1, 4),
+            datetime.date(2020, 2, 1),
+        ])
+
+        assert result.equals(expected)
+
+    def test_rows_without_field_value(self, example_entity_rows_dividend_data):
+        result = ColumnBuilder._calculate_field_timestamps(
+            'record_date',
+            example_entity_rows_dividend_data,
+        )
+        expected = pyarrow.array([
+            datetime.date(2020, 1, 4),
+            None,
+        ])
+
+        assert result.equals(expected)
+
+    def test_rows_without_data(self):
+        result = ColumnBuilder._calculate_field_timestamps(
+            'payment_date',
+            {
+                '2020-01-03': None,
+            },
+        )
+        expected = pyarrow.array([
+            None,
+        ])
+
+        assert result.equals(expected)
+
+
+class TestPrivateCalculateKeyTimestamps:
+    def test_date_keys(self, example_entity_rows_market_data):
+        result = ColumnBuilder._calculate_key_timestamps(
+            MarketDailyDataBlock,
+            example_entity_rows_market_data,
+        )
+        expected = pyarrow.array(
+            [
+                datetime.date(2020, 1, 1),
+                datetime.date(2020, 1, 3),
+                datetime.date(2020, 1, 4),
+            ],
+            type=pyarrow.date32(),
         )
 
-        assert result == example_expand_dated_factors_dividend_data['expected_result_full']
+        assert result.equals(expected)
 
-    def test_no_data_rows(self):
-        data_rows:DataRows = {}
-        expected_result = {
-            '2022-07-07': None,
-            '2022-10-07': None,
-            '2023-01-14': None,
-        }
-        result = ColumnBuilder._expand_dated_factors(
-            iter(expected_result.keys()),
-            DIVIDEND_DATE_FIELD_NAMES,
-            DIVIDEND_VALUE_FIELD_NAMES,
-            data_rows
+    def test_no_rows(self):
+        result = ColumnBuilder._calculate_key_timestamps(
+            MarketDailyDataBlock,
+            {},
         )
 
-        assert result == expected_result
+        assert result.type == pyarrow.date32()
 
-    def test_more_dates_than_data_rows(self, example_expand_dated_factors_dividend_data):
-        results_with_extra_dates = {
-            **example_expand_dated_factors_dividend_data['expected_result_full'],
-            '2020-11-01': {},   # before all dates
-            '2021-01-03': {},
-            '2021-01-05': {},
-            '2023-01-06': {},    #after all dates
-        }
-        expected_result = dict(
-            sorted(
-                results_with_extra_dates.items()
+    def test_keys_that_are_not_dates(self):
+        with pytest.raises(ColumnBuilderClockError):
+            ColumnBuilder._calculate_key_timestamps(
+                MarketDailyDataBlock,
+                {
+                    '2020-13-01': None,
+                },
             )
-        )
-
-        result = ColumnBuilder._expand_dated_factors(
-            iter(expected_result.keys()),
-            DIVIDEND_DATE_FIELD_NAMES,
-            DIVIDEND_VALUE_FIELD_NAMES,
-            example_expand_dated_factors_dividend_data['data_rows']
-        )
-
-        assert result == expected_result
-
-    def test_with_none_date_fields(self, example_expand_dated_factors_dividend_data):
-        result = ColumnBuilder._expand_dated_factors(
-            iter(example_expand_dated_factors_dividend_data['expected_result_with_nones'].keys()),
-            DIVIDEND_DATE_FIELD_NAMES,
-            DIVIDEND_VALUE_FIELD_NAMES,
-            example_expand_dated_factors_dividend_data['data_rows_with_nones']
-        )
-
-        assert result == example_expand_dated_factors_dividend_data['expected_result_with_nones']
 
 
 class TestPrivateGenerateColumn:
-    def test_empty_rows(self):
-        data_entity_rows = {'1': None}
-        field = 'test_field'
-        subfield = 'test_subfield'
+    def test_rows_without_data(self, example_master_clock_column):
         result = ColumnBuilder._generate_column(
-            data_entity_rows,
-            field,
-            subfield
+            (
+                None,
+                None,
+                None,
+            ),
+            'test_field',
+            'test_subfield',
+            clock_column=example_master_clock_column,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.last,
         )
-        expected_result = DataColumn.load([None])
+        expected_result = DataColumn.load([
+            None,
+            None,
+            None,
+        ])
 
         assert DataColumn.fully_equal(
             expected_result,
@@ -665,27 +838,61 @@ class TestPrivateGenerateColumn:
             equal_nulls=True
         )
 
-    def test_full_rows(
-        self,
-        example_entities_with_subentities
-    ):
-        field = 'field_subentity'
-        subfield = 'subfield_int'
+    def test_full_rows(self, example_entities_with_subentities):
+        clock_column = DataColumn(
+            pyarrow.array([
+                datetime.date(2020, 1, 1),
+                datetime.date(2020, 2, 1),
+            ]),
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.DAY,
+        )
+        result = ColumnBuilder._generate_column(
+            tuple(example_entities_with_subentities.values()),
+            'field_subentity',
+            'subfield_int',
+            clock_column=clock_column,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.last,
+        )
         expected_result = DataColumn.load([
             11,
             21,
         ])
-        result = ColumnBuilder._generate_column(
-            example_entities_with_subentities,
-            field,
-            subfield
-        )
 
         assert DataColumn.fully_equal(
-            DataColumn.load(expected_result),
+            expected_result,
             result,
             equal_nulls=True
         )
+
+    def test_clock_tracking_rows(self, example_master_clock_column):
+        result = ColumnBuilder._generate_column(
+            (
+                None,
+                None,
+                None,
+            ),
+            'test_field',
+            clock_column=example_master_clock_column,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.last,
+        )
+
+        assert result.reference_clock_column is example_master_clock_column
+
+    def test_consolidation_method(self, example_master_clock_column):
+        result = ColumnBuilder._generate_column(
+            (
+                None,
+                None,
+                None,
+            ),
+            'test_field',
+            clock_column=example_master_clock_column,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.sum,
+        )
+
+        assert result.consolidation_method is clock_sync_methods.ConsolidationMethods.sum
 
 
 class TestPrivateGetCalculationFunction:
@@ -706,6 +913,87 @@ class TestPrivateGetCalculationFunction:
             )
 
 
+class TestPrivateGetCalculationModule:
+    def test_module_defining_function(self):
+        result = ColumnBuilder._get_calculation_module(
+            'example_sum_function_1',
+            [
+                calculations,
+                entities,
+            ]
+        )
+
+        assert result is entities
+
+    def test_missing(self):
+        with pytest.raises(ColumnBuilderCustomFunctionNotFoundError):
+            ColumnBuilder._get_calculation_module(
+                'example_nonexistent_function',
+                [entities]
+            )
+
+
+class TestPrivateGetDatedFactorColumns:
+    def test_date_and_value_field_combinations(self):
+        result = ColumnBuilder._get_dated_factor_columns(
+            (
+                SplitDataRow.split_date,
+            ),
+            (
+                SplitDataRow.numerator,
+                SplitDataRow.denominator,
+            ),
+        )
+        expected = {
+            'split_date_numerator': DatedFactorColumn(
+                date_field=SplitDataRow.split_date,
+                value_field=SplitDataRow.numerator,
+            ),
+            'split_date_denominator': DatedFactorColumn(
+                date_field=SplitDataRow.split_date,
+                value_field=SplitDataRow.denominator,
+            ),
+        }
+
+        assert result == expected
+
+
+class TestPrivateGetEntityClockSpec:
+    def test_clock_spec_held_by_clock_spec_field(self):
+        result = ColumnBuilder._get_entity_clock_spec(
+            data_block_entities.MARKET_DATA,
+            MarketDailyDataBlock.clock_spec_field,
+        )
+
+        assert result is data_block_entities.MARKET_DATA.clock_spec
+
+
+class TestPrivateGetEntityFieldNames:
+    def test_existing_field(self):
+        assert (
+            'field_str'
+            in ColumnBuilder._get_entity_field_names(
+                entities.ExampleEntity
+            )
+        )
+
+    def test_missing_field(self):
+        assert (
+            'nonexistent_field'
+            not in ColumnBuilder._get_entity_field_names(
+                entities.ExampleEntity
+            )
+        )
+
+    def test_method(self):
+        assert (
+            '__init__'
+            not in ColumnBuilder._get_entity_field_names(
+                entities.ExampleEntity
+            )
+        )
+
+
 class TestPrivateGetFieldFromRow:
     def test_empty_row(self):
         result = ColumnBuilder._get_field_from_row(
@@ -714,90 +1002,6 @@ class TestPrivateGetFieldFromRow:
         )
 
         assert result is None
-
-    def test_dict_existing_field(self):
-        test_value = 189
-        test_dict = {
-            'a': 115,
-            'b': test_value
-        }
-
-        assert (
-            ColumnBuilder._get_field_from_row(
-                test_dict,
-                'b'
-            )
-            == test_value
-        )
-
-    def test_dict_existing_subfield(self):
-        test_value = 57
-        test_dict = {
-            'c': 115,
-            'd': {
-                'e': 54,
-                'f': test_value,
-            }
-        }
-
-        assert (
-            ColumnBuilder._get_field_from_row(
-                test_dict,
-                'd',
-                'f'
-            )
-            == test_value
-        )
-
-    def test_dict_missing_field(self):
-        test_dict = {
-            'a': 115,
-            'b': 189
-        }
-
-        assert (
-            ColumnBuilder._get_field_from_row(
-                test_dict,
-                'c'
-            )
-            is None
-        )
-
-    def test_dict_missing_subfield(self):
-        test_dict = {
-            'c': 115,
-            'd': {
-                'e': 127,
-                'f': 54
-            }
-        }
-
-        assert (
-            ColumnBuilder._get_field_from_row(
-                test_dict,
-                'd',
-                'g'
-            )
-            is None
-        )
-
-    def test_dict_with_non_dict_subfield(self):
-        test_dict = {
-            'c': 115,
-            'd': {
-                'e': 127,
-                'f': 54
-            }
-        }
-
-        assert (
-            ColumnBuilder._get_field_from_row(
-                test_dict,
-                'c',
-                'g'
-            )
-            is None
-        )
 
     def test_entity_existing_field(
         self,
@@ -929,214 +1133,21 @@ class TestPrivateGetSubentityFieldName:
             )
 
 
-class TestPrivateInfillData:
-    def test_data_rows_with_dates_starting_after(self):
-        data_rows = {
-            '2021-04-03': ExampleSubEntity1(
-                1,
-                'subtest1'
-            ),
-            '2021-04-06': ExampleSubEntity1(
-                2,
-                'subtest2'
-            ),
-            '2021-04-12': ExampleSubEntity1(
-                3,
-                'subtest3'
-            ),
-        }
-        expected_result = {
-            '2021-04-04': data_rows['2021-04-03'],
-            '2021-04-06': data_rows['2021-04-06'],
-            '2021-04-09': data_rows['2021-04-06'],
-            '2022-12-21': data_rows['2021-04-12'],
-        }
-        dates = iter([
-            '2021-04-04',
-            '2021-04-06',
-            '2021-04-09',
-            '2022-12-21',
-        ])
-
-        assert (
-            ColumnBuilder._infill_data(
-                dates,
-                data_rows
-            )
-            == expected_result
+class TestPrivateGetEntityRows:
+    def test_rows_held_by_rows_field(self):
+        result = ColumnBuilder._get_entity_rows(
+            data_block_entities.MARKET_DATA,
+            MarketDailyDataBlock.rows_field,
         )
 
-    def test_data_rows_with_dates_starting_before(self):
-        data_rows = {
-            '2021-04-03': ExampleSubEntity1(
-                1,
-                'subtest1'
-            ),
-            '2021-04-06': ExampleSubEntity1(
-                2,
-                'subtest2'
-            ),
-            '2021-04-12': ExampleSubEntity1(
-                3,
-                'subtest3'
-            ),
-        }
-        expected_result = {
-            '2021-04-02': None,
-            '2021-04-04': data_rows['2021-04-03'],
-            '2021-04-06': data_rows['2021-04-06'],
-            '2021-04-09': data_rows['2021-04-06'],
-            '2022-12-21': data_rows['2021-04-12'],
-        }
-        dates = iter(
-            expected_result.keys()
-        )
-
-        assert (
-            ColumnBuilder._infill_data(
-                dates,
-                data_rows
-            )
-            == expected_result
-        )
-
-    def test_data_rows_with_first_date_after_all_rows(self):
-        data_rows = {
-            '2021-04-03': ExampleSubEntity1(
-                1,
-                'subtest1'
-            ),
-            '2021-04-06': ExampleSubEntity1(
-                2,
-                'subtest2'
-            ),
-            '2021-04-12': ExampleSubEntity1(
-                3,
-                'subtest3'
-            ),
-        }
-        expected_result = {
-            '2021-04-13': data_rows['2021-04-12'],
-            '2022-12-21': data_rows['2021-04-12'],
-        }
-        dates = iter([
-            '2021-04-13',
-            '2022-12-21',
-        ])
-
-        assert (
-            ColumnBuilder._infill_data(
-                dates,
-                data_rows
-            )
-            == expected_result
-        )
-
-    def test_data_rows_with_first_date_on_first_row(self):
-        data_rows = {
-            '2021-04-03': ExampleSubEntity1(
-                1,
-                'subtest1'
-            ),
-            '2021-04-06': ExampleSubEntity1(
-                2,
-                'subtest2'
-            ),
-        }
-        expected_result = {
-            '2021-04-03': data_rows['2021-04-03'],
-            '2021-04-04': data_rows['2021-04-03'],
-            '2021-04-06': data_rows['2021-04-06'],
-        }
-        dates = iter(
-            expected_result.keys()
-        )
-
-        assert (
-            ColumnBuilder._infill_data(
-                dates,
-                data_rows
-            )
-            == expected_result
-        )
-
-    def test_data_rows_with_several_rows_between_dates(self):
-        data_rows = {
-            '2021-04-03': ExampleSubEntity1(
-                1,
-                'subtest1'
-            ),
-            '2021-04-04': ExampleSubEntity1(
-                2,
-                'subtest2'
-            ),
-            '2021-04-05': ExampleSubEntity1(
-                3,
-                'subtest3'
-            ),
-        }
-        expected_result = {
-            '2021-04-02': None,
-            '2021-04-06': data_rows['2021-04-05'],
-            '2021-04-07': data_rows['2021-04-05'],
-        }
-        dates = iter(
-            expected_result.keys()
-        )
-
-        assert (
-            ColumnBuilder._infill_data(
-                dates,
-                data_rows
-            )
-            == expected_result
-        )
-
-    def test_data_rows_without_dates(self):
-        dates = iter({})
-        data_rows = {
-            '2021-04-03': ExampleSubEntity1(
-                1,
-                'subtest1'
-            ),
-            '2021-04-06': ExampleSubEntity1(
-                2,
-                'subtest2'
-            ),
-            '2021-04-12': ExampleSubEntity1(
-                3,
-                'subtest3'
-            ),
-        }
-        with pytest.raises(ColumnBuilderNoDatesToInfillError):
-            ColumnBuilder._infill_data(
-                dates,
-                data_rows
-            )
-
-    def test_dates_without_data_rows(self):
-        expected_result = {
-            '2021-04-04': None,
-            '2021-04-09': None,
-            '2022-12-21': None,
-        }
-        dates = iter(
-            expected_result.keys()
-        )
-
-        assert (
-            ColumnBuilder._infill_data(
-                dates,
-                {}
-            )
-            == expected_result
-        )
+        assert result is data_block_entities.MARKET_DATA.rows
 
 
 class TestPrivateProcessColumn:
     def test_c_column_with_base_params(
         self,
-        example_entity_rows_market_data
+        example_entity_rows_market_data,
+        example_master_clock_column,
     ):
         completed_columns: CompletedColumns = {
             'm_high': DataColumn.load([
@@ -1157,8 +1168,9 @@ class TestPrivateProcessColumn:
                 ['c_sum_mhigh_and_mlow'],
                 [calculations],
             ),
-            data_block_rows_by_prefix={},
+            clocked_rows_by_block={},
             column_extractors={},
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             (
@@ -1184,6 +1196,7 @@ class TestPrivateProcessColumn:
     def test_c_column_with_calculated_param(
         self,
         example_entity_rows_market_data,
+        example_master_clock_column,
     ):
         completed_columns: CompletedColumns = {
             'm_close': DataColumn.load([
@@ -1213,8 +1226,9 @@ class TestPrivateProcessColumn:
                 ['c_multiply_sum_by_mclose'],
                 [calculations],
             ),
-            data_block_rows_by_prefix={},
+            clocked_rows_by_block={},
             column_extractors={},
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             (
@@ -1246,23 +1260,71 @@ class TestPrivateProcessColumn:
             equal_nulls=True
         )
 
+    def test_c_column_raising_error(self, example_master_clock_column):
+        with pytest.raises(ColumnBuilderCalculationError):
+            ColumnBuilder._process_column(
+                'c_failing_calculation',
+                {
+                    'm_close': DataColumn.load([
+                        1.0,
+                        2.0,
+                        3.0,
+                    ]),
+                },
+                calculated_columns=ColumnBuilder._calculate_calculated_columns(
+                    ['c_failing_calculation'],
+                    [calculations],
+                ),
+                clocked_rows_by_block={},
+                column_extractors={},
+                master_clock_column=example_master_clock_column,
+            )
+
     def test_d_column_existent_property(
         self,
-        example_expanded_dividend_data,
+        example_clocked_rows_by_block,
+        example_entity_rows_dividend_data,
+        example_master_clock_column,
     ):
         result = ColumnBuilder._process_column(
             'd_ex_dividend_date_dividend',
             {},
             calculated_columns={},
-            data_block_rows_by_prefix={
-                'd': example_expanded_dividend_data
-            },
+            clocked_rows_by_block=example_clocked_rows_by_block,
             column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             None,
-            example_expanded_dividend_data['2020-01-03']['ex_dividend_date_dividend'],
-            example_expanded_dividend_data['2020-01-04']['ex_dividend_date_dividend'],
+            example_entity_rows_dividend_data['2020-01-03'].dividend,
+            example_entity_rows_dividend_data['2020-01-04'].dividend,
+        ])
+
+        assert DataColumn.fully_equal(
+            result,
+            expected_column,
+            equal_nulls=True
+        )
+
+    def test_d_column_of_another_date_field(
+        self,
+        example_clocked_rows_by_block,
+        example_entity_rows_dividend_data,
+        example_master_clock_column,
+    ):
+        # Only the first dividend gets paid on a master clock date
+        result = ColumnBuilder._process_column(
+            'd_payment_date_dividend',
+            {},
+            calculated_columns={},
+            clocked_rows_by_block=example_clocked_rows_by_block,
+            column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
+            master_clock_column=example_master_clock_column,
+        )
+        expected_column = DataColumn.load([
+            None,
+            None,
+            example_entity_rows_dividend_data['2020-01-03'].dividend,
         ])
 
         assert DataColumn.fully_equal(
@@ -1273,31 +1335,56 @@ class TestPrivateProcessColumn:
 
     def test_d_column_nonexistent_property(
         self,
-        example_expand_dated_factors_dividend_data
+        example_clocked_rows_by_block,
+        example_master_clock_column,
     ):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
             ColumnBuilder._process_column(
                 'd_non_existent_column',
                 {},
                 calculated_columns={},
-                data_block_rows_by_prefix={
-                    'd': example_expand_dated_factors_dividend_data['expected_result_full']
-                },
+                clocked_rows_by_block=example_clocked_rows_by_block,
                 column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
+                master_clock_column=example_master_clock_column,
             )
+
+    def test_column_of_data_block_without_entity(
+        self,
+        example_master_clock_column,
+    ):
+        result = ColumnBuilder._process_column(
+            'd_ex_dividend_date_dividend',
+            {},
+            calculated_columns={},
+            clocked_rows_by_block={},
+            column_extractors=ColumnBuilder._calculate_column_extractors([DividendsDataBlock]),
+            master_clock_column=example_master_clock_column,
+        )
+        expected_column = DataColumn.load([
+            None,
+            None,
+            None,
+        ])
+
+        assert DataColumn.fully_equal(
+            result,
+            expected_column,
+            equal_nulls=True
+        )
 
     def test_f_column_existent_property(
         self,
+        example_clocked_rows_by_block,
         example_entity_rows_fundamental_data,
+        example_master_clock_column,
     ):
         result = ColumnBuilder._process_column(
             'f_fiscal_year',
             {},
             calculated_columns={},
-            data_block_rows_by_prefix={
-                'f': example_entity_rows_fundamental_data
-            },
+            clocked_rows_by_block=example_clocked_rows_by_block,
             column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             None,
@@ -1313,31 +1400,32 @@ class TestPrivateProcessColumn:
 
     def test_f_column_nonexistent_property(
         self,
-        example_entity_rows_fundamental_data
+        example_clocked_rows_by_block,
+        example_master_clock_column,
     ):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
             ColumnBuilder._process_column(
                 'f_non_existent_column',
                 {},
                 calculated_columns={},
-                data_block_rows_by_prefix={
-                    'f': example_entity_rows_fundamental_data
-                },
+                clocked_rows_by_block=example_clocked_rows_by_block,
                 column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
+                master_clock_column=example_master_clock_column,
             )
 
     def test_fbs_column_existent_property(
         self,
+        example_clocked_rows_by_block,
         example_entity_rows_fundamental_data,
+        example_master_clock_column,
     ):
         result = ColumnBuilder._process_column(
             'fbs_total_liabilities_and_equity',
             {},
             calculated_columns={},
-            data_block_rows_by_prefix={
-                'fbs': example_entity_rows_fundamental_data
-            },
+            clocked_rows_by_block=example_clocked_rows_by_block,
             column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             None,
@@ -1353,31 +1441,32 @@ class TestPrivateProcessColumn:
 
     def test_fbs_column_nonexistent_property(
         self,
-        example_entity_rows_fundamental_data
+        example_clocked_rows_by_block,
+        example_master_clock_column,
     ):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
             ColumnBuilder._process_column(
                 'fbs_non_existent_column',
                 {},
                 calculated_columns={},
-                data_block_rows_by_prefix={
-                    'fbs': example_entity_rows_fundamental_data
-                },
+                clocked_rows_by_block=example_clocked_rows_by_block,
                 column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
+                master_clock_column=example_master_clock_column,
             )
 
     def test_fcf_column_existent_property(
         self,
+        example_clocked_rows_by_block,
         example_entity_rows_fundamental_data,
+        example_master_clock_column,
     ):
         result = ColumnBuilder._process_column(
             'fcf_net_income',
             {},
             calculated_columns={},
-            data_block_rows_by_prefix={
-                'fcf': example_entity_rows_fundamental_data
-            },
+            clocked_rows_by_block=example_clocked_rows_by_block,
             column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             None,
@@ -1393,31 +1482,32 @@ class TestPrivateProcessColumn:
 
     def test_fcf_column_nonexistent_property(
         self,
-        example_entity_rows_fundamental_data
+        example_clocked_rows_by_block,
+        example_master_clock_column,
     ):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
             ColumnBuilder._process_column(
                 'fcf_non_existent_column',
                 {},
                 calculated_columns={},
-                data_block_rows_by_prefix={
-                    'fcf': example_entity_rows_fundamental_data
-                },
+                clocked_rows_by_block=example_clocked_rows_by_block,
                 column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
+                master_clock_column=example_master_clock_column,
             )
 
     def test_fis_column_existent_property(
         self,
+        example_clocked_rows_by_block,
         example_entity_rows_fundamental_data,
+        example_master_clock_column,
     ):
         result = ColumnBuilder._process_column(
             'fis_gross_profit',
             {},
             calculated_columns={},
-            data_block_rows_by_prefix={
-                'fis': example_entity_rows_fundamental_data
-            },
+            clocked_rows_by_block=example_clocked_rows_by_block,
             column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             None,
@@ -1433,31 +1523,32 @@ class TestPrivateProcessColumn:
 
     def test_fis_column_nonexistent_property(
         self,
-        example_entity_rows_fundamental_data
+        example_clocked_rows_by_block,
+        example_master_clock_column,
     ):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
             ColumnBuilder._process_column(
                 'fis_non_existent_column',
                 {},
                 calculated_columns={},
-                data_block_rows_by_prefix={
-                    'fis': example_entity_rows_fundamental_data
-                },
+                clocked_rows_by_block=example_clocked_rows_by_block,
                 column_extractors=ColumnBuilder._calculate_column_extractors([FundamentalsDataBlock]),
+                master_clock_column=example_master_clock_column,
             )
 
     def test_m_column_existent_property(
         self,
+        example_clocked_rows_by_block,
         example_entity_rows_market_data,
+        example_master_clock_column,
     ):
         result = ColumnBuilder._process_column(
             'm_close',
             {},
             calculated_columns={},
-            data_block_rows_by_prefix={
-                'm': example_entity_rows_market_data
-            },
+            clocked_rows_by_block=example_clocked_rows_by_block,
             column_extractors=ColumnBuilder._calculate_column_extractors([MarketDailyDataBlock]),
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             example_entity_rows_market_data['2020-01-01'].close,
@@ -1471,35 +1562,39 @@ class TestPrivateProcessColumn:
             equal_nulls=True
         )
 
-    def test_m_column_nonexistent_property(self, example_entity_rows_market_data):
+    def test_m_column_nonexistent_property(
+        self,
+        example_clocked_rows_by_block,
+        example_master_clock_column,
+    ):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
             ColumnBuilder._process_column(
                 'm_non_existent_column',
                 {},
                 calculated_columns={},
-                data_block_rows_by_prefix={
-                    'm': example_entity_rows_market_data
-                },
+                clocked_rows_by_block=example_clocked_rows_by_block,
                 column_extractors=ColumnBuilder._calculate_column_extractors([MarketDailyDataBlock]),
+                master_clock_column=example_master_clock_column,
             )
 
     def test_s_column_existent_property(
         self,
-        example_expanded_split_data,
+        example_clocked_rows_by_block,
+        example_entity_rows_split_data,
+        example_master_clock_column,
     ):
         result = ColumnBuilder._process_column(
             's_split_date_numerator',
             {},
             calculated_columns={},
-            data_block_rows_by_prefix={
-                's': example_expanded_split_data
-            },
+            clocked_rows_by_block=example_clocked_rows_by_block,
             column_extractors=ColumnBuilder._calculate_column_extractors([SplitsDataBlock]),
+            master_clock_column=example_master_clock_column,
         )
         expected_column = DataColumn.load([
             None,
-            example_expanded_split_data['2020-01-03']['split_date_numerator'],
-            example_expanded_split_data['2020-01-04']['split_date_numerator'],
+            example_entity_rows_split_data['2020-01-03'].numerator,
+            example_entity_rows_split_data['2020-01-04'].numerator,
         ])
 
         assert DataColumn.fully_equal(
@@ -1510,56 +1605,29 @@ class TestPrivateProcessColumn:
 
     def test_s_column_nonexistent_property(
         self,
-        example_expanded_split_data
+        example_clocked_rows_by_block,
+        example_master_clock_column,
     ):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
             ColumnBuilder._process_column(
                 's_non_existent_column',
                 {},
                 calculated_columns={},
-                data_block_rows_by_prefix={
-                    's': example_expanded_split_data
-                },
+                clocked_rows_by_block=example_clocked_rows_by_block,
                 column_extractors=ColumnBuilder._calculate_column_extractors([SplitsDataBlock]),
+                master_clock_column=example_master_clock_column,
             )
 
-    def test_unknown_prefix(self):
+    def test_unknown_prefix(self, example_master_clock_column):
         with pytest.raises(ColumnBuilderUnavailableEntityFieldError):
             ColumnBuilder._process_column(
                 '7_non_existent_prefix',
                 {},
                 calculated_columns={},
-                data_block_rows_by_prefix={},
+                clocked_rows_by_block={},
                 column_extractors={},
+                master_clock_column=example_master_clock_column,
             )
-
-
-class TestPrivateGetEntityPropertyNames:
-    def test_existing_property(self):
-        assert (
-            'field_str'
-            in ColumnBuilder._get_entity_property_names(
-                entities.ExampleEntity
-            )
-        )
-
-    def test_missing_property(self):
-        assert (
-            'nonexistent_field'
-            not in ColumnBuilder._get_entity_property_names(
-                entities.ExampleEntity
-            )
-        )
-
-
-class TestPrivateGetEntityRows:
-    def test_rows_held_by_rows_field(self):
-        result = ColumnBuilder._get_entity_rows(
-            data_block_entities.MARKET_DATA,
-            MarketDailyDataBlock.rows_field,
-        )
-
-        assert result is data_block_entities.MARKET_DATA.rows
 
 
 class TestPrivateValidateDataBlockEntities:
@@ -1627,4 +1695,146 @@ class TestPrivateValidateReservedPrefixes:
                     CalculatedPrefixDataBlock,
                 ],
                 ('c',),
+            )
+
+
+class TestPrivateWrapCalculationOutput:
+    def test_column_synced_to_master_clock(
+        self,
+        example_calculated_column,
+        example_master_clock_column,
+    ):
+        calculation_output = DataColumn.load(
+            [
+                1,
+                2,
+                3,
+            ],
+            reference_clock_column=example_master_clock_column,
+        )
+        result = ColumnBuilder._wrap_calculation_output(
+            calculation_output,
+            calculated_column=example_calculated_column,
+            column='c_sum_mhigh_and_mlow',
+            master_clock_column=example_master_clock_column,
+        )
+
+        assert result is calculation_output
+
+    def test_column_without_clock(
+        self,
+        example_calculated_column,
+        example_master_clock_column,
+    ):
+        result = ColumnBuilder._wrap_calculation_output(
+            DataColumn.load([
+                1,
+                2,
+                3,
+            ]),
+            calculated_column=example_calculated_column,
+            column='c_sum_mhigh_and_mlow',
+            master_clock_column=example_master_clock_column,
+        )
+
+        assert result.reference_clock_column is example_master_clock_column
+
+    def test_list(
+        self,
+        example_calculated_column,
+        example_master_clock_column,
+    ):
+        result = ColumnBuilder._wrap_calculation_output(
+            [
+                1,
+                2,
+                3,
+            ],
+            calculated_column=example_calculated_column,
+            column='c_sum_mhigh_and_mlow',
+            master_clock_column=example_master_clock_column,
+        )
+        expected = [
+            1,
+            2,
+            3,
+        ]
+
+        assert result.array.to_pylist() == expected
+
+    def test_output_with_other_length_than_master_clock(
+        self,
+        example_calculated_column,
+        example_master_clock_column,
+    ):
+        with pytest.raises(ColumnBuilderCalculationError):
+            ColumnBuilder._wrap_calculation_output(
+                [
+                    1,
+                    2,
+                ],
+                calculated_column=example_calculated_column,
+                column='c_sum_mhigh_and_mlow',
+                master_clock_column=example_master_clock_column,
+            )
+
+    def test_column_synced_to_another_master_clock(
+        self,
+        example_calculated_column,
+        example_master_clock_column,
+    ):
+        other_master_clock_column = DataColumn(
+            pyarrow.array([
+                datetime.date(2020, 1, 1),
+                datetime.date(2020, 1, 3),
+                datetime.date(2020, 1, 4),
+            ]),
+            clock_master=True,
+            clock_periods_per_row=1,
+            clock_reference_period=ReferencePeriods.DAY,
+        )
+
+        with pytest.raises(ColumnBuilderCalculationError):
+            ColumnBuilder._wrap_calculation_output(
+                DataColumn.load(
+                    [
+                        1,
+                        2,
+                        3,
+                    ],
+                    reference_clock_column=other_master_clock_column,
+                ),
+                calculated_column=example_calculated_column,
+                column='c_sum_mhigh_and_mlow',
+                master_clock_column=example_master_clock_column,
+            )
+
+    def test_output_not_iterable(
+        self,
+        example_calculated_column,
+        example_master_clock_column,
+    ):
+        with pytest.raises(ColumnBuilderCalculationError):
+            ColumnBuilder._wrap_calculation_output(
+                42,
+                calculated_column=example_calculated_column,
+                column='c_sum_mhigh_and_mlow',
+                master_clock_column=example_master_clock_column,
+            )
+
+    def test_output_unloadable_into_column(
+        self,
+        example_calculated_column,
+        example_master_clock_column,
+    ):
+        with pytest.raises(ColumnBuilderCalculationError):
+            ColumnBuilder._wrap_calculation_output(
+                [
+                    object(),
+                    object(),
+                    object(),
+                ],
+                calculated_column=example_calculated_column,
+                column='c_sum_mhigh_and_mlow',
+                master_clock_column=example_master_clock_column,
             )

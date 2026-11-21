@@ -2,6 +2,7 @@
 Handles the logic of building the columnar output of the system.
 """
 
+import collections.abc
 import dataclasses
 import inspect
 import logging
@@ -10,6 +11,7 @@ import typing
 
 import networkx
 import pyarrow
+import pyarrow.compute
 
 import kaxanuk.data_curator.data_blocks
 from kaxanuk.data_curator.data_blocks.base_data_block import (
@@ -21,19 +23,25 @@ from kaxanuk.data_curator.data_blocks.market_daily import (
 )
 from kaxanuk.data_curator.entities import (
     BaseDataEntity,
+    ClockSpec,
     Configuration,
 )
 from kaxanuk.data_curator.exceptions import (
+    ColumnBuilderCalculationError,
     ColumnBuilderCircularDependenciesError,
+    ColumnBuilderClockError,
     ColumnBuilderCustomFunctionNotFoundError,
-    ColumnBuilderNoDatesToInfillError,
     ColumnBuilderUnavailableEntityFieldError,
     ColumnBuilderUninitializedError,
+    DataColumnParameterError,
+    DataColumnSyncError,
     InjectedDependencyError,
 )
 # can't import directly from kaxanuk.data_curator.DataColumn because of circular import error:
-from kaxanuk.data_curator.modules.data_column import DataColumn
-from kaxanuk.data_curator.services.entity_helper import DataclassProtocol
+from kaxanuk.data_curator.modules.data_column import (
+    ConsolidationMethod,
+    DataColumn,
+)
 
 
 # Type for a list of modules with calculation functions
@@ -42,14 +50,12 @@ type CalculationModules = list[types.ModuleType]
 type ColumnIdentifier = str
 # Type for the container of the columns that have been completely calculated
 type CompletedColumns = dict[ColumnIdentifier, DataColumn | Configuration]
+# Type for the clocks syncing a data block's rows to the master clock, keyed by the name of the field each one tracks
+type DataBlockClocks = dict[str, DataColumn]
 # Type for the data entities, keyed by the data block each one belongs to
 type DataBlockEntities = dict[type[BaseDataBlock], BaseDataEntity]
-# Type for the built rows of each data block, keyed by each of the block's prefixes
-type DataBlockRowsByPrefix = dict[str, DataRows | ExpandedDatedFactors]
 # Type for the indexed data rows we'll use to build some columns
-type DataRows = dict[str, DataclassProtocol | None]
-# Type for factors expanded by date (example: dividends, splits)
-type ExpandedDatedFactors = dict[str, dict[str, typing.Any] | None]
+type DataRows = dict[str, BaseDataEntity | None]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -59,8 +65,21 @@ class CalculatedColumn:
     """
     # the calculation function that produces the column:
     function: typing.Callable
+    # the module the calculation function was found in, which tells custom calculations from built-in ones:
+    module: types.ModuleType
     # the names of the columns the function takes as parameters, in order:
     parameter_names: tuple[ColumnIdentifier, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ClockedDataBlockRows:
+    """
+    A data block's own rows, with the clocks that sync them to the master clock.
+    """
+    # the clocks syncing the rows, keyed by the name of the field each one tracks:
+    clocks: DataBlockClocks
+    # the rows of the data block's main entity, in the order of its row keys:
+    rows: tuple[BaseDataEntity | None, ...]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -68,10 +87,27 @@ class ColumnExtractor:
     """
     Precomputed instructions for extracting a data block's columns under a single prefix.
     """
+    # the method for consolidating each column's values when its rows get downscaled, keyed by column name:
+    consolidation_methods: dict[str, ConsolidationMethod]
+    # the data block whose rows hold the columns:
+    data_block: type[BaseDataBlock]
+    # the fields of each dated factor column, keyed by column name, or empty for the other prefixes:
+    dated_factor_columns: dict[str, 'DatedFactorColumn']
     # the field of the block's main row entity that holds the subentity, or None for direct/dated-factor columns:
     subentity_field_name: str | None
     # the column names available under this prefix, used to validate requested columns:
     valid_column_names: frozenset[str]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class DatedFactorColumn:
+    """
+    The fields of a dated factor column, which holds each row's value on the dates of one of the row's date fields.
+    """
+    # the date field whose clock syncs the column's values:
+    date_field: EntityField
+    # the field holding the column's values:
+    value_field: EntityField
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -133,57 +169,48 @@ class ColumnBuilder:
             self._data_blocks,
         )
 
-        # Get each data block's entity rows, and locate the master clock rows that all the other blocks' rows will be
-        # synced against. The entities come keyed by their data blocks, as several blocks can share a main entity.
-        entity_rows_by_block = {}
-        master_clock_rows = None
-        for (data_block, entity) in data_block_entities.items():
-            entity_rows = self._get_entity_rows(entity, data_block.rows_field)
-            entity_rows_by_block[data_block] = entity_rows
-            if data_block is self._master_clock_data_block:
-                master_clock_rows = entity_rows
-
-        if master_clock_rows is None:
+        # The master clock comes from the master clock data block's rows, which all the other blocks' rows get synced
+        # to. The entities come keyed by their data blocks, as several blocks can share a main entity.
+        master_clock_data_block = self._master_clock_data_block
+        if (
+            master_clock_data_block is None
+            or master_clock_data_block not in data_block_entities
+        ):
             msg = "No master clock data entity passed to ColumnBuilder"
 
             raise InjectedDependencyError(msg)
 
-        # Build each block's rows according to its column strategy, keyed by every one of the block's prefixes.
-        self._rows_by_prefix: DataBlockRowsByPrefix = {}
-        for (data_block, entity_rows) in entity_rows_by_block.items():
-            if data_block is self._master_clock_data_block:
-                built_rows = entity_rows
-            elif len(data_block.dated_factor_date_fields) > 0:
-                built_rows = self._expand_dated_factors(
-                    iter(master_clock_rows.keys()),
-                    tuple(
-                        field.__name__
-                        for field in data_block.dated_factor_date_fields
+        master_clock_entity = data_block_entities[master_clock_data_block]
+        self._master_clock_column = self._build_master_clock_column(
+            clock_spec=self._get_entity_clock_spec(
+                master_clock_entity,
+                master_clock_data_block.clock_spec_field,
+            ),
+            data_block=master_clock_data_block,
+            rows=self._get_entity_rows(
+                master_clock_entity,
+                master_clock_data_block.rows_field,
+            ),
+        )
+
+        # Each data block's rows keep their own scale, with the clocks that sync them to the master clock. The data
+        # blocks with no passed entity have no data at all, so all their columns resolve to None.
+        self._clocked_rows_by_block: dict[type[BaseDataBlock], ClockedDataBlockRows] = {}
+        for (data_block, entity) in data_block_entities.items():
+            entity_rows = self._get_entity_rows(entity, data_block.rows_field)
+            self._clocked_rows_by_block[data_block] = ClockedDataBlockRows(
+                clocks=self._build_data_block_clocks(
+                    clock_spec=self._get_entity_clock_spec(
+                        entity,
+                        data_block.clock_spec_field,
                     ),
-                    tuple(
-                        field.__name__
-                        for field in data_block.dated_factor_value_fields
-                    ),
-                    entity_rows,
-                )
-            else:
-                built_rows = self._infill_data(
-                    iter(master_clock_rows.keys()),
-                    entity_rows,
-                )
-
-            for prefix in data_block.prefix_entity_map:
-                self._rows_by_prefix[prefix] = built_rows
-
-        # Data blocks with no passed entity have no data at all, so all their columns resolve to None, just like
-        # the columns of a block whose passed entity contains no rows.
-        empty_block_rows = dict.fromkeys(master_clock_rows.keys())
-        for data_block in self._data_blocks:
-            if data_block in entity_rows_by_block:
-                continue
-
-            for prefix in data_block.prefix_entity_map:
-                self._rows_by_prefix[prefix] = empty_block_rows
+                    data_block=data_block,
+                    master_clock_column=self._master_clock_column,
+                    master_clock_data_block=master_clock_data_block,
+                    rows=entity_rows,
+                ),
+                rows=tuple(entity_rows.values()),
+            )
 
     @classmethod
     def get_sorted_required_columns(cls) -> list[ColumnIdentifier]:
@@ -300,6 +327,7 @@ class ColumnBuilder:
 
         Raises
         ------
+        ColumnBuilderCalculationError
         ColumnBuilderCustomFunctionNotFoundError
         ColumnBuilderUnavailableEntityFieldError
         """
@@ -315,8 +343,9 @@ class ColumnBuilder:
                 column,
                 completed_columns,
                 calculated_columns=self._calculated_columns,
+                clocked_rows_by_block=self._clocked_rows_by_block,
                 column_extractors=self._column_extractors_by_prefix,
-                data_block_rows_by_prefix=self._rows_by_prefix,
+                master_clock_column=self._master_clock_column,
             )
 
         return pyarrow.Table.from_pydict(
@@ -415,6 +444,75 @@ class ColumnBuilder:
         return subgraph
 
     @classmethod
+    def _build_data_block_clocks(
+        cls,
+        *,
+        clock_spec: ClockSpec,
+        data_block: type[BaseDataBlock],
+        master_clock_column: DataColumn,
+        master_clock_data_block: type[BaseDataBlock],
+        rows: DataRows,
+    ) -> DataBlockClocks:
+        """
+        Build the clocks syncing a data block's rows to the master clock, keyed by the name of the field each tracks.
+
+        Every data block gets a clock for its clock sync field, built from its row keys, as a row without data still
+        has its key, while the master clock data block's is the master clock itself. Each dated factor date field also
+        gets its own clock, built from the field's values, as each row's dates differ between those fields.
+
+        Parameters
+        ----------
+        clock_spec
+            The time scale of the data block's rows, as assigned by its data provider
+        data_block
+            The data block whose rows get synced
+        master_clock_column
+            The master clock column of the run
+        master_clock_data_block
+            The data block whose rows make up the master clock
+        rows
+            The rows of the data block's main entity, keyed by their clock sync values
+
+        Returns
+        -------
+        The data block's clocks, keyed by the name of the field each one tracks
+
+        Raises
+        ------
+        ColumnBuilderClockError
+            If the data block's rows can't be synced to the master clock
+        """
+        clock_sync_field_name = data_block.clock_sync_field.__name__
+        if data_block is master_clock_data_block:
+            clocks = {
+                clock_sync_field_name: master_clock_column,
+            }
+        else:
+            clocks = {
+                clock_sync_field_name: cls._build_reference_clock_column(
+                    clock_field=data_block.clock_sync_field,
+                    clock_spec=clock_spec,
+                    data_block=data_block,
+                    master_clock_column=master_clock_column,
+                    timestamps=cls._calculate_key_timestamps(data_block, rows),
+                ),
+            }
+
+        for date_field in data_block.dated_factor_date_fields:
+            if date_field.__name__ in clocks:
+                continue
+
+            clocks[date_field.__name__] = cls._build_reference_clock_column(
+                clock_field=date_field,
+                clock_spec=clock_spec,
+                data_block=data_block,
+                master_clock_column=master_clock_column,
+                timestamps=cls._calculate_field_timestamps(date_field.__name__, rows),
+            )
+
+        return clocks
+
+    @classmethod
     def _build_dependency_graph(
         cls,
         required_columns: set[ColumnIdentifier],
@@ -454,6 +552,118 @@ class ColumnBuilder:
         return dependency_graph
 
     @classmethod
+    def _build_master_clock_column(
+        cls,
+        *,
+        clock_spec: ClockSpec,
+        data_block: type[BaseDataBlock],
+        rows: DataRows,
+    ) -> DataColumn:
+        """
+        Build the master clock from the master clock data block's row keys, as a row without data still has its key.
+
+        Parameters
+        ----------
+        clock_spec
+            The time scale of the master clock data block's rows, as assigned by its data provider
+        data_block
+            The master clock data block
+        rows
+            The rows of the master clock data block's main entity, keyed by their clock sync values
+
+        Returns
+        -------
+        The master clock column
+
+        Raises
+        ------
+        ColumnBuilderClockError
+            If the data block's row keys can't make up a master clock, like when they aren't strictly increasing
+        """
+        timestamps = cls._calculate_key_timestamps(data_block, rows)
+        try:
+
+            return DataColumn(
+                timestamps,
+                clock_master=True,
+                clock_periods_per_row=clock_spec.periods_per_row,
+                clock_reference_period=clock_spec.reference_period,
+            )
+        except DataColumnParameterError as error:
+            msg = f"{data_block.__name__} rows can't make up the master clock: {error}"
+
+            raise ColumnBuilderClockError(
+                msg,
+                data_block=data_block,
+            ) from error
+
+    @staticmethod
+    def _build_reference_clock_column(
+        *,
+        clock_field: EntityField,
+        clock_spec: ClockSpec,
+        data_block: type[BaseDataBlock],
+        master_clock_column: DataColumn,
+        timestamps: pyarrow.Array,
+    ) -> DataColumn:
+        """
+        Build a reference clock syncing a data block's rows to the master clock, through one of the rows' fields.
+
+        The clock gets synced right away, so a data block whose rows can't be synced gets reported before any of its
+        columns get built.
+
+        Parameters
+        ----------
+        clock_field
+            The field of the data block's rows whose values the clock tracks
+        clock_spec
+            The time scale of the data block's rows, as assigned by its data provider
+        data_block
+            The data block whose rows get synced
+        master_clock_column
+            The master clock column of the run
+        timestamps
+            The timestamps of the data block's rows for the clock field, one per row
+
+        Returns
+        -------
+        The reference clock column
+
+        Raises
+        ------
+        ColumnBuilderClockError
+            If the data block's rows can't be synced to the master clock, like when its clock spec can't be ordered
+            against the master clock's
+        """
+        try:
+            reference_clock_column = DataColumn(
+                timestamps,
+                clock_downscale_method=data_block.clock_downscale_method,
+                clock_master=master_clock_column,
+                clock_periods_per_row=clock_spec.periods_per_row,
+                clock_reference_period=clock_spec.reference_period,
+                clock_upscale_method=data_block.clock_upscale_method,
+                consolidation_method=data_block.get_downscale_consolidation_method(clock_field),
+            )
+            # The sync indices get calculated on first access and then cached
+            reference_clock_column.sync_indices    # noqa: B018
+        except (
+            DataColumnParameterError,
+            DataColumnSyncError,
+        ) as error:
+            msg = " ".join([
+                f"{data_block.__name__} rows can't be synced to the master clock",
+                f"through {clock_field.__name__}: {error}",
+            ])
+
+            raise ColumnBuilderClockError(
+                msg,
+                data_block=data_block,
+            ) from error
+
+        return reference_clock_column
+
+    @classmethod
     def _calculate_calculated_columns(
         cls,
         sorted_columns: list[ColumnIdentifier],
@@ -481,12 +691,14 @@ class ColumnBuilder:
             if column.split('_', 1)[0] != cls.CALCULATED_COLUMN_PREFIX:
                 continue
 
-            calculation_function = cls._get_calculation_function(
+            calculation_module = cls._get_calculation_module(
                 column,
                 calculation_modules
             )
+            calculation_function = getattr(calculation_module, column)
             calculated_columns[column] = CalculatedColumn(
                 function=calculation_function,
+                module=calculation_module,
                 parameter_names=tuple(
                     cls._get_function_params(calculation_function)
                 ),
@@ -529,25 +741,109 @@ class ColumnBuilder:
             )
             for (prefix, entity) in data_block.prefix_entity_map.items():
                 if entity is dated_factor_entity:
-                    column_extractors[prefix] = ColumnExtractor(
-                        subentity_field_name=None,
-                        valid_column_names=cls._get_combined_column_names(
-                            data_block.dated_factor_date_fields,
-                            data_block.dated_factor_value_fields,
-                        ),
+                    dated_factor_columns = cls._get_dated_factor_columns(
+                        data_block.dated_factor_date_fields,
+                        data_block.dated_factor_value_fields,
                     )
-                elif entity is main_row_entity:
                     column_extractors[prefix] = ColumnExtractor(
+                        consolidation_methods={
+                            column_name: data_block.get_downscale_consolidation_method(
+                                dated_factor_column.value_field
+                            )
+                            for (column_name, dated_factor_column) in dated_factor_columns.items()
+                        },
+                        data_block=data_block,
+                        dated_factor_columns=dated_factor_columns,
                         subentity_field_name=None,
-                        valid_column_names=cls._get_entity_property_names(entity),
-                    )
-                else:
-                    column_extractors[prefix] = ColumnExtractor(
-                        subentity_field_name=cls._get_subentity_field_name(main_row_entity, entity),
-                        valid_column_names=cls._get_entity_property_names(entity),
+                        valid_column_names=frozenset(dated_factor_columns),
                     )
 
+                    continue
+
+                field_names = cls._get_entity_field_names(entity)
+                column_extractors[prefix] = ColumnExtractor(
+                    consolidation_methods={
+                        field_name: data_block.get_downscale_consolidation_method(
+                            getattr(entity, field_name)
+                        )
+                        for field_name in field_names
+                    },
+                    data_block=data_block,
+                    dated_factor_columns={},
+                    subentity_field_name=(
+                        None
+                        if entity is main_row_entity
+                        else cls._get_subentity_field_name(main_row_entity, entity)
+                    ),
+                    valid_column_names=field_names,
+                )
+
         return column_extractors
+
+    @staticmethod
+    def _calculate_field_timestamps(
+        field_name: str,
+        rows: DataRows,
+    ) -> pyarrow.Array:
+        """
+        Return the values of a date field of each row, as the timestamps of the clock tracking that field.
+
+        Parameters
+        ----------
+        field_name
+            The name of the date field
+        rows
+            The rows holding the field
+
+        Returns
+        -------
+        The field's value of each row, null for the rows without data or without a value
+        """
+        return pyarrow.array([
+            getattr(row, field_name, None)
+            for row in rows.values()
+        ])
+
+    @staticmethod
+    def _calculate_key_timestamps(
+        data_block: type[BaseDataBlock],
+        rows: DataRows,
+    ) -> pyarrow.Array:
+        """
+        Return the dates of a data block's row keys, as the timestamps of the clock tracking its clock sync field.
+
+        Parameters
+        ----------
+        data_block
+            The data block whose rows get keyed by their clock sync values
+        rows
+            The rows of the data block's main entity, keyed by their clock sync values in 'YYYY-MM-DD' format
+
+        Returns
+        -------
+        The date of each row key
+
+        Raises
+        ------
+        ColumnBuilderClockError
+            If any row key isn't a date in 'YYYY-MM-DD' format
+        """
+        try:
+
+            return pyarrow.compute.cast(
+                pyarrow.array(
+                    list(rows.keys()),
+                    type=pyarrow.string(),
+                ),
+                pyarrow.date32(),
+            )
+        except pyarrow.ArrowInvalid as error:
+            msg = f"{data_block.__name__} rows have keys that aren't dates in 'YYYY-MM-DD' format: {error}"
+
+            raise ColumnBuilderClockError(
+                msg,
+                data_block=data_block,
+            ) from error
 
     @classmethod
     def _calculate_sorted_required_columns(
@@ -607,93 +903,43 @@ class ColumnBuilder:
             *columns_after_master_clock,
         ]
 
-    @staticmethod
-    def _expand_dated_factors(
-        dates: typing.Iterator,
-        date_fields: tuple[str, ...],
-        factor_fields: tuple[str, ...],
-        data_rows: DataRows
-    ) -> ExpandedDatedFactors:
-        """
-        Create an outer product between date_fields and factor_fields, with value factor_field for each date_field.
-
-        An example use is dividends, where there are 4 dates and 2 amounts associated with each dividend, and we want
-        1 column for each date and amount combination, with the amount as value for that specific date, and None
-        otherwise.
-
-        Parameters
-        ----------
-        dates
-            An iterator with dates that we will use as indices for all row data associations
-
-        date_fields
-            The date field names
-
-        factor_fields
-            The factor field names
-
-        data_rows
-            The original data rows containing entities with a field per each `date_fields` and each `factor_fields`
-
-        Returns
-        -------
-        A dict with date strings as keys, and dicts with date_fields * factor_fields columns as values
-        """
-        if len(data_rows) < 1:
-            return dict.fromkeys(dates)
-
-        # expand the factor_fields data for each date_fields
-        expanded_dates = {
-            key: {}
-            for key in date_fields
-        }
-        for row in data_rows.values():
-            for date_field in date_fields:
-                if getattr(row, date_field) is not None:
-                    cur_date = str(getattr(row, date_field))
-                    expanded_dates[date_field][cur_date] = {}
-                    for factor_field in factor_fields:
-                        expanded_dates[date_field][cur_date][factor_field] = getattr(row, factor_field)
-
-        output_data = {}
-        for date in dates:
-            output_data[date] = {}
-            for expanded_date_field, expanded_data in expanded_dates.items():
-                if date in expanded_data:
-                    for factor_field, factor_data in expanded_data[date].items():
-                        factor_field_identifier = f'{expanded_date_field}_{factor_field}'
-                        output_data[date][factor_field_identifier] = factor_data
-
-        return output_data
-
     @classmethod
     def _generate_column(
         cls,
-        data_entity_rows: dict[str, object],
+        rows: tuple[BaseDataEntity | None, ...],
         field: str,
-        subfield: str | None = None
+        subfield: str | None = None,
+        *,
+        clock_column: DataColumn,
+        consolidation_method: ConsolidationMethod,
     ) -> DataColumn:
         """
-        Return a DataColumn containing the column data for the chosen field.subfield of the data entity rows.
+        Return a DataColumn holding the chosen field.subfield of each row, synced to the master clock by the clock.
 
         Parameters
         ----------
-        data_entity_rows
-            The rows on the data entity from which to extract the fields and subfields
+        rows
+            The rows of a data block's main entity, from which to extract the fields and subfields
         field
             The name of the field
         subfield
             The name of the subfield
+        clock_column
+            The clock tracking the rows, either the master clock or a reference clock synced to it
+        consolidation_method
+            The method for consolidating the column's values when the rows get downscaled
 
         Returns
         -------
-        The generated DataColumn
+        The generated DataColumn, with one value per row
         """
         return DataColumn.load(
             [
                 cls._get_field_from_row(row, field, subfield)
-                for row in data_entity_rows.values()
+                for row in rows
             ],
+            consolidation_method=consolidation_method,
+            reference_clock_column=clock_column,
         )
 
     @staticmethod
@@ -724,8 +970,9 @@ class ColumnBuilder:
 
         return built_in_data_blocks
 
-    @staticmethod
+    @classmethod
     def _get_calculation_function(
+        cls,
         function_name: str,
         calculation_modules: CalculationModules
     ) -> typing.Callable:
@@ -747,20 +994,50 @@ class ColumnBuilder:
         ------
         ColumnBuilderCustomFunctionNotFoundError
         """
+        calculation_module = cls._get_calculation_module(
+            function_name,
+            calculation_modules,
+        )
+
+        return getattr(calculation_module, function_name)
+
+    @staticmethod
+    def _get_calculation_module(
+        function_name: str,
+        calculation_modules: CalculationModules
+    ) -> types.ModuleType:
+        """
+        Return the first module defining a calculation function, from the custom modules and then the built-in one.
+
+        Parameters
+        ----------
+        function_name
+            The name of the function we're looking for
+        calculation_modules
+            The list of modules where we're searching for the function, in order of precedence
+
+        Returns
+        -------
+        The first module in the list that defines the function
+
+        Raises
+        ------
+        ColumnBuilderCustomFunctionNotFoundError
+        """
         for calculation_module in calculation_modules:
             if hasattr(calculation_module, function_name):
-                return getattr(calculation_module, function_name)
+                return calculation_module
         else:   # noqa: PLW0120
             msg = f"Custom column calculation function not found: {function_name}"
             raise ColumnBuilderCustomFunctionNotFoundError(msg)
 
     @staticmethod
-    def _get_combined_column_names(
+    def _get_dated_factor_columns(
         date_fields: tuple[EntityField, ...],
         value_fields: tuple[EntityField, ...],
-    ) -> frozenset[str]:
+    ) -> dict[str, DatedFactorColumn]:
         """
-        Return the combined column names produced by all the date and value field combinations.
+        Return the dated factor columns produced by all the date and value field combinations, keyed by column name.
 
         Parameters
         ----------
@@ -771,33 +1048,57 @@ class ColumnBuilder:
 
         Returns
         -------
-        The names of the columns generated from all the date/value field combinations
+        The fields of each column generated from the date/value field combinations, keyed by the column's name
         """
-        return frozenset(
-            f'{date_field.__name__}_{value_field.__name__}'
+        return {
+            f'{date_field.__name__}_{value_field.__name__}': DatedFactorColumn(
+                date_field=date_field,
+                value_field=value_field,
+            )
             for date_field in date_fields
             for value_field in value_fields
-        )
+        }
 
     @staticmethod
-    def _get_entity_property_names(entity_class: type) -> frozenset[str]:
+    def _get_entity_clock_spec(
+        entity: BaseDataEntity,
+        clock_spec_field: EntityField,
+    ) -> ClockSpec:
         """
-        Return the names of all the properties of an entity class.
+        Return the clock spec of a data block's main entity, held by the data block's clock spec field.
 
-        Useful for validating whether a column name corresponds to an entity property.
+        Parameters
+        ----------
+        entity
+            The data block's main entity whose clock spec we want to extract
+        clock_spec_field
+            The data block's main entity field holding the clock spec
+
+        Returns
+        -------
+        The time scale of the entity's rows, as assigned by its data provider
+        """
+        return getattr(entity, clock_spec_field.__name__)
+
+    @staticmethod
+    def _get_entity_field_names(entity_class: type) -> frozenset[str]:
+        """
+        Return the names of all the dataclass fields of an entity class.
+
+        Useful for validating whether a column name corresponds to an entity field.
 
         Parameters
         ----------
         entity_class
-            The class whose property names we want to collect
+            The dataclass whose field names we want to collect
 
         Returns
         -------
-        The names of all the properties of the class
+        The names of all the dataclass fields of the class
         """
         return frozenset(
-            member[0]
-            for member in inspect.getmembers(entity_class)
+            field.name
+            for field in dataclasses.fields(entity_class)
         )
 
     @staticmethod
@@ -823,7 +1124,7 @@ class ColumnBuilder:
 
     @staticmethod
     def _get_field_from_row(
-        row: dict | object,
+        row: BaseDataEntity | None,
         field: str,
         subfield: str | None = None
     ) -> typing.Any:
@@ -833,7 +1134,8 @@ class ColumnBuilder:
         Parameters
         ----------
         row
-            The rows on the data entity from which to extract the fields and subfields
+            The row of a data block's main entity from which to extract the field or subfield, or None for a row
+            without data
         field
             The name of the field
         subfield
@@ -843,16 +1145,6 @@ class ColumnBuilder:
         -------
         The requested field or subfield, or None if not exists
         """
-        if isinstance(row, dict):
-            field_value = row.get(field, None)
-            if subfield is None:
-                return field_value
-
-            if isinstance(field_value, dict):
-                return field_value.get(subfield, None)
-
-            return None
-
         # A single getattr with a default avoids the extra hasattr lookup on this per-cell hot path;
         # a missing attribute and an attribute that is None both resolve to None, as before.
         field_value = getattr(row, field, None)
@@ -970,57 +1262,6 @@ class ColumnBuilder:
         raise ColumnBuilderUnavailableEntityFieldError(msg)
 
     @staticmethod
-    def _infill_data(
-        dates: typing.Iterator,
-        data_rows: DataRows
-    ) -> DataRows:
-        """
-        Infill the data rows, duplicating the previous row for each date in `dates` not present in `data_rows`.
-
-        Each date gets the latest data row dated on or before it, or None if there's no such row.
-
-        Parameters
-        ----------
-        dates
-            The dates that will serve as the indices of the data that we will be infilling
-        data_rows
-            The data that will be used to infill the rows for each date in `dates`
-
-        Returns
-        -------
-        The infilled  data rows for all `dates`
-
-        Raises
-        ------
-        ColumnBuilderNoDatesToInfillError
-        """
-        if len(data_rows) < 1:
-            return dict.fromkeys(dates)
-
-        # @todo save each repeating date's data as a separate Array, all consolidated inside a ChunkedArray
-        infilled_data = {}
-        data_row_dates = list(data_rows.keys())
-        next_data_row_index = 0
-        latest_data_row_date = None
-        for date in dates:
-            # advance past every data row dated on or before this date, as several can fall between two dates
-            while (
-                next_data_row_index < len(data_row_dates)
-                and data_row_dates[next_data_row_index] <= date
-            ):
-                latest_data_row_date = data_row_dates[next_data_row_index]
-                next_data_row_index += 1
-
-            infilled_data[date] = data_rows.get(latest_data_row_date)
-
-        if len(infilled_data) < 1:
-            msg = "No dates were passed for infilling the data rows"
-
-            raise ColumnBuilderNoDatesToInfillError(msg)
-
-        return infilled_data
-
-    @staticmethod
     def _map_prefixes_to_data_blocks(
         data_blocks: list[type[BaseDataBlock]],
     ) -> dict[str, type[BaseDataBlock]]:
@@ -1083,15 +1324,17 @@ class ColumnBuilder:
         completed_columns: CompletedColumns,
         *,
         calculated_columns: CalculatedColumnsByName,
+        clocked_rows_by_block: dict[type[BaseDataBlock], ClockedDataBlockRows],
         column_extractors: ColumnExtractorsByPrefix,
-        data_block_rows_by_prefix: DataBlockRowsByPrefix,
+        master_clock_column: DataColumn,
     ) -> DataColumn:
         """
         Calculate a single column, assuming all the columns it depends on are already in completed_columns.
 
-        Calculated columns run their precomputed calculation function. Every other column is built from its
-        prefix's precomputed column extractor: the requested column is validated against the extractor's valid
-        column names, then generated directly or through the extractor's subentity field.
+        Calculated columns run their precomputed calculation function, whose output gets wrapped onto the run's
+        clocks. Every other column is built from its prefix's precomputed column extractor: the requested column is
+        validated against the extractor's valid column names, then generated from its data block's own rows, directly
+        or through the extractor's subentity field, and synced to the master clock by the clock tracking its rows.
 
         Parameters
         ----------
@@ -1101,10 +1344,12 @@ class ColumnBuilder:
             The CompletedColumns containing the already calculated columns, including this column's dependencies
         calculated_columns
             The precomputed calculation functions and parameter names, keyed by calculated column identifier
+        clocked_rows_by_block
+            The rows of each data block that got an entity, with the clocks syncing them to the master clock
         column_extractors
             The precomputed column extractors, keyed by each data block prefix
-        data_block_rows_by_prefix
-            The built data block rows, keyed by each of the blocks' prefixes
+        master_clock_column
+            The master clock column of the run
 
         Returns
         -------
@@ -1112,20 +1357,34 @@ class ColumnBuilder:
 
         Raises
         ------
+        ColumnBuilderCalculationError
         ColumnBuilderUnavailableEntityFieldError
         """
         [column_type, column_name] = column.split('_', 1)
 
         if column_type == cls.CALCULATED_COLUMN_PREFIX:
             calculated_column = calculated_columns[column]
-            param_columns = (
+            param_columns = [
                 completed_columns[parameter_name]
                 for parameter_name in calculated_column.parameter_names
-            )
+            ]
+            # Anything the calculation raises is the calculation's own error, so it gets reported as such
+            try:
+                calculation_output = calculated_column.function(*param_columns)
+            except Exception as error:
+                msg = f"Calculation {column} raised {type(error).__name__}: {error}"
 
-            # Execute the calculation function and wrap it in DataColumn (in case of Pandas.Series, etc.)
-            return DataColumn.load(
-                calculated_column.function(*param_columns)
+                raise ColumnBuilderCalculationError(
+                    msg,
+                    calculation_module=calculated_column.module,
+                    column=column,
+                ) from error
+
+            return cls._wrap_calculation_output(
+                calculation_output,
+                calculated_column=calculated_column,
+                column=column,
+                master_clock_column=master_clock_column,
             )
 
         if column_type not in column_extractors:
@@ -1140,18 +1399,42 @@ class ColumnBuilder:
 
             raise ColumnBuilderUnavailableEntityFieldError(msg)
 
-        data_block_rows = data_block_rows_by_prefix[column_type]
+        if column_extractor.data_block not in clocked_rows_by_block:
+            # The data block got no entity, so its columns have no data at all
+            return DataColumn(
+                pyarrow.nulls(len(master_clock_column)),
+                reference_clock_column=master_clock_column,
+            )
+
+        clocked_rows = clocked_rows_by_block[column_extractor.data_block]
+        consolidation_method = column_extractor.consolidation_methods[column_name]
+
+        if column_name in column_extractor.dated_factor_columns:
+            dated_factor_column = column_extractor.dated_factor_columns[column_name]
+
+            return cls._generate_column(
+                clocked_rows.rows,
+                dated_factor_column.value_field.__name__,
+                clock_column=clocked_rows.clocks[dated_factor_column.date_field.__name__],
+                consolidation_method=consolidation_method,
+            )
+
+        clock_column = clocked_rows.clocks[column_extractor.data_block.clock_sync_field.__name__]
 
         if column_extractor.subentity_field_name is not None:
             return cls._generate_column(
-                data_block_rows,
+                clocked_rows.rows,
                 column_extractor.subentity_field_name,
-                column_name
+                column_name,
+                clock_column=clock_column,
+                consolidation_method=consolidation_method,
             )
 
         return cls._generate_column(
-            data_block_rows,
-            column_name
+            clocked_rows.rows,
+            column_name,
+            clock_column=clock_column,
+            consolidation_method=consolidation_method,
         )
 
     @classmethod
@@ -1379,3 +1662,98 @@ class ColumnBuilder:
             ])
 
             raise InjectedDependencyError(msg)
+
+    @staticmethod
+    def _wrap_calculation_output(
+        calculation_output: object,
+        *,
+        calculated_column: CalculatedColumn,
+        column: ColumnIdentifier,
+        master_clock_column: DataColumn,
+    ) -> DataColumn:
+        """
+        Wrap a calculation function's output in a DataColumn synced to the run's master clock.
+
+        A DataColumn already synced to the run's master clock stays as it is. Any other output, like a pandas Series,
+        a pyarrow Array, or a DataColumn with no clock, gets loaded at the master clock's scale, so it needs exactly
+        one row per master clock row.
+
+        Parameters
+        ----------
+        calculation_output
+            Whatever the calculation function returned
+        calculated_column
+            The calculated column whose function returned the output
+        column
+            The identifier of the calculated column
+        master_clock_column
+            The master clock column of the run
+
+        Returns
+        -------
+        The output as a DataColumn synced to the run's master clock
+
+        Raises
+        ------
+        ColumnBuilderCalculationError
+            If the output is synced to another master clock, can't be loaded into a DataColumn, or doesn't have one row
+            per master clock row
+        """
+        if isinstance(calculation_output, DataColumn):
+            if calculation_output.master_clock_column is master_clock_column:
+                return calculation_output
+
+            if calculation_output.master_clock_column is not None:
+                msg = f"Calculation {column} returned a column synced to a master clock from outside the run"
+
+                raise ColumnBuilderCalculationError(
+                    msg,
+                    calculation_module=calculated_column.module,
+                    column=column,
+                )
+        elif not isinstance(calculation_output, collections.abc.Iterable):
+            msg = " ".join([
+                f"Calculation {column} returned a {type(calculation_output).__name__},",
+                "instead of an iterable with one value per master clock row",
+            ])
+
+            raise ColumnBuilderCalculationError(
+                msg,
+                calculation_module=calculated_column.module,
+                column=column,
+            )
+
+        try:
+            loaded_output = DataColumn.load(calculation_output)
+        except (
+            pyarrow.ArrowException,
+            TypeError,
+        ) as error:
+            msg = " ".join([
+                f"Calculation {column} returned a {type(calculation_output).__name__},",
+                f"which can't be loaded into a DataColumn: {error}",
+            ])
+
+            # Not chained, as only the errors the calculation raises itself get chained
+            raise ColumnBuilderCalculationError(
+                msg,
+                calculation_module=calculated_column.module,
+                column=column,
+            ) from None
+
+        if len(loaded_output) != len(master_clock_column):
+            msg = " ".join([
+                f"Calculation {column} returned {len(loaded_output)} rows,",
+                f"instead of one for each of the {len(master_clock_column)} master clock rows",
+            ])
+
+            raise ColumnBuilderCalculationError(
+                msg,
+                calculation_module=calculated_column.module,
+                column=column,
+            )
+
+        return DataColumn.load(
+            loaded_output,
+            reference_clock_column=master_clock_column,
+        )

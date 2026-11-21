@@ -20,7 +20,7 @@ Each custom function:
 - Can have any valid Python name after the prefix.
 - Receives **`DataColumn`** objects as arguments.
 - Can also take a ``configuration`` parameter, which receives the run's ``Configuration`` object.
-- Must return an iterable (preferably a `DataColumn`, `pyarrow.Array`) of the **same length**.
+- Must return either a `DataColumn` computed from its arguments, or another iterable (like a `pyarrow.Array` or a pandas `Series`) with **one value per output row**.
 - Functions can be composed, they may be used directly or as intermediate steps within other calculations.
 
 Example
@@ -58,6 +58,13 @@ For example, to use a function called ``c_net_margin``, simply add it like this:
 
 Each entry should match exactly the name of the function defined in your code, including the ``c_`` prefix.
 
+
+When a Calculation Fails
+------------------------
+
+If a custom calculation raises an error, or returns something that can't be an output column, the run stops with a
+message naming the calculation, its file, and the identifier being processed. When the calculation raised the error
+itself, the message includes its traceback, starting from the calculation function.
 
 Best Practices
 --------------

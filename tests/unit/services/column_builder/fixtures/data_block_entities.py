@@ -6,6 +6,10 @@ import datetime
 import decimal
 
 from kaxanuk.data_curator import ReferencePeriods
+from kaxanuk.data_curator.data_blocks.dividends import (
+    DividendData,
+    DividendDataRow,
+)
 from kaxanuk.data_curator.data_blocks.market_daily import (
     MarketData,
     MarketDataDailyRow,
@@ -46,6 +50,24 @@ ALTERNATIVE_MARKET_DATA = MarketData(
             close_dividend_and_split_adjusted=None,
             volume_dividend_and_split_adjusted=None,
             vwap_dividend_and_split_adjusted=None,
+        ),
+    },
+)
+# A single dividend, going ex-dividend on the market data's day and getting paid afterward
+DIVIDEND_DATA = DividendData(
+    main_identifier=MarketInstrumentIdentifier('TEST'),
+    clock_spec=ClockSpec(
+        reference_period=ReferencePeriods.DAY,
+        periods_per_row=1,
+    ),
+    rows={
+        '2024-01-30': DividendDataRow(
+            declaration_date=datetime.date(2024, 1, 2),
+            ex_dividend_date=datetime.date(2024, 1, 30),
+            record_date=datetime.date(2024, 1, 31),
+            payment_date=datetime.date(2024, 2, 15),
+            dividend=decimal.Decimal('0.25'),
+            dividend_split_adjusted=decimal.Decimal('0.25'),
         ),
     },
 )

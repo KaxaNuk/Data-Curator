@@ -2,6 +2,7 @@
 Package containing all our custom Exceptions.
 """
 import datetime
+import types
 import typing
 
 import pyarrow
@@ -27,15 +28,48 @@ class CalculationHelperError(CalculationError):
     pass
 
 
+class ColumnBuilderCalculationError(DataCuratorError):
+    """
+    Raised when a calculation function fails, or returns something that can't be a column of the run.
+
+    It's chained from the calculation's own error only when the calculation raised one.
+    """
+
+    def __init__(
+        self,
+        msg: str,
+        *,
+        calculation_module: types.ModuleType,
+        column: str,
+    ):
+        # the module the calculation function was found in, which tells custom calculations from built-in ones:
+        self.calculation_module = calculation_module
+        # the calculated column whose calculation failed:
+        self.column = column
+        super().__init__(msg)
+
+
 class ColumnBuilderCircularDependenciesError(DataCuratorError):
     pass
 
 
+class ColumnBuilderClockError(DataCuratorError):
+    """
+    Raised when a data block's rows can't be synced to the master clock, due to the data its data provider passed.
+    """
+
+    def __init__(
+        self,
+        msg: str,
+        *,
+        data_block: type,
+    ):
+        # the data block whose rows can't be synced:
+        self.data_block = data_block
+        super().__init__(msg)
+
+
 class ColumnBuilderCustomFunctionNotFoundError(DataCuratorError):
-    pass
-
-
-class ColumnBuilderNoDatesToInfillError(DataCuratorError):
     pass
 
 
