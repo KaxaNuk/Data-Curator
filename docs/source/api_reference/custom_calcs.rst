@@ -45,6 +45,16 @@ All column arguments to your functions are instances of :ref:`data_column`. This
 - Null-safe operations (any operation involving a null yields null)
 - Seamless conversion to pandas or pyarrow if needed
 
+Computing on the Columns' Own Rows
+----------------------------------
+
+Each column is synced to the output rows through its own clock, so the financial statements' columns hold one row per statement, and the market data's columns one row per day, even when the output has intraday rows. The DataColumn operators and the :ref:`helpers <helpers>` already compute on those rows, so a 21-day moving average always spans 21 days of data. To compute on them with your own pandas or pyarrow code:
+
+- For a single column, compute on ``column.reference_array``, and wrap the result with ``DataColumn.load(result, reference_clock_column=column.reference_clock_column)``.
+- For several columns, get the clock to compute on with ``helpers.find_operation_clock([column_1, column_2])``, each column's values on its rows with ``helpers.get_float_values(column, operation_clock_column=operation_clock_column)``, and wrap the result with ``DataColumn.load(result, reference_clock_column=operation_clock_column)``.
+
+The clock chain then syncs the result to the output rows. Computing on ``column.to_pandas()`` or ``column.to_pyarrow()`` instead uses the output rows directly, so a rolling window over them counts output rows, like intraday bars.
+
 Usage in Excel
 --------------
 

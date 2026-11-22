@@ -39,7 +39,11 @@ def extract_functions_by_category() -> dict[str, list[tuple[str, str]]]:
     grouped: dict[str, list[tuple[str, str]]] = {}
 
     for name, func in inspect.getmembers(mod, inspect.isfunction):
-        if func.__module__ != HELPERS_MODULE:
+        # The internal functions aren't part of the helpers available to the calculations
+        if (
+            func.__module__ != HELPERS_MODULE
+            or name.startswith('_')
+        ):
             continue
 
         docstring = inspect.getdoc(func) or ""

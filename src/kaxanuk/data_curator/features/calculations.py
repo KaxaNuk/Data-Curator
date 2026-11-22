@@ -23,12 +23,21 @@ There's examples of both approaches in the following functions.
 
 import pyarrow
 
-from kaxanuk.data_curator.exceptions import CalculationError
-
+from kaxanuk.data_curator.entities import ClockSpec
 # Here you'll find helper functions for calculating more complicated features:
 from kaxanuk.data_curator.features import helpers
 # Every calculation function parameter's columnar data is wrapped in this object:
-from kaxanuk.data_curator.modules.data_column import DataColumn
+from kaxanuk.data_curator.modules.data_column import (
+    DataColumn,
+    ReferencePeriods,
+)
+
+
+# the window of the last twelve months calculations, which the rolling sums adapt to each column's clock:
+TWELVE_MONTHS = ClockSpec(
+    reference_period=ReferencePeriods.MONTH,
+    periods_per_row=12,
+)
 
 
 # noinspection PyShadowingNames
@@ -1222,16 +1231,48 @@ def c_exponential_moving_average_252d_close_split_adjusted(
 
 
 # noinspection PyShadowingNames
-def c_last_twelve_months_net_income(
-    fis_net_income,
-    f_fiscal_year,
-    f_fiscal_period,
-    configuration
-):
+def c_last_twelve_months_dividends_split_adjusted(d_ex_dividend_date_dividend_split_adjusted):
+    r"""
+    Calculate the split-adjusted dividends per share with ex-dividend dates in the last twelve months (LTM dividends).
+
+    This function computes the rolling sum of the split-adjusted dividends of each row's last twelve months, by their
+    ex-dividend dates, so each dividend stops counting twelve months after it goes ex-dividend, and the rows without
+    any dividends in their last twelve months get zero.
+
+    .. category:: Fundamental
+
+    Parameters
+    ----------
+    d_ex_dividend_date_dividend_split_adjusted : DataColumn
+        The split-adjusted dividend per share of each ex-dividend date.
+
+    Returns
+    -------
+    DataColumn
+        The last twelve months split-adjusted dividends per share.
+
+    Notes
+    -----
+    The LTM dividends of each row are the sum of the dividends that went ex-dividend after the same date twelve months
+    before, up to the row's date:
+
+    .. math::
+
+        \mathrm{LTM\ Dividends}_t = \sum_{t - 12\ \mathrm{months} < \tau \leq t} \mathrm{Dividend}_{\tau}
+    """
+    return helpers.rolling_sum(
+        d_ex_dividend_date_dividend_split_adjusted,
+        window=TWELVE_MONTHS,
+    )
+
+
+# noinspection PyShadowingNames
+def c_last_twelve_months_net_income(fis_net_income):
     r"""
     Calculate the last twelve months net income (LTM net income).
 
-    For quarterly periods this function computes the rolling sum of net income over the last four quarters.
+    This function computes the rolling sum of the net income of the periods spanning the last twelve months, on the
+    financial statements' own clock, so it adapts to how often each company reports.
 
     .. category:: Fundamental
 
@@ -1239,12 +1280,6 @@ def c_last_twelve_months_net_income(
     ----------
     fis_net_income : DataColumn
         The net income for each period.
-    f_fiscal_year : DataColumn
-        The fiscal year for each period.
-    f_fiscal_period : DataColumn
-        The fiscal period (e.g., quarter) within each fiscal year.
-    configuration : Configuration
-        Configuration object with attribute `period` ("quarterly" or "annual").
 
     Returns
     -------
@@ -1259,43 +1294,21 @@ def c_last_twelve_months_net_income(
 
         \mathrm{LTM\ Net\ Income}_t = \sum_{i=0}^{3} \mathrm{Net\ Income}_{t-i}
 
-    For annual data, return the period net income directly.
+    For half-yearly data, it's the sum of the current and previous halves, and for annual data, the period net income.
     """
-    if fis_net_income.is_null():
-        output = fis_net_income
-    elif f_fiscal_year.is_null():
-        output = f_fiscal_year
-    elif f_fiscal_period.is_null():
-        output = f_fiscal_period
-    elif configuration.period == 'quarterly':
-        period_keys = DataColumn.concatenate(f_fiscal_year, f_fiscal_period)
-        output = helpers.indexed_rolling_window_operation(
-            key_column=period_keys,
-            value_column=fis_net_income,
-            operation_function=sum,
-            window_length=4
-        )
-    elif configuration.period == 'annual':
-        output = fis_net_income
-    else:
-        msg = f"calculations - last_twelve_months_net_income failed, unexpected period type: {configuration.period}"
-
-        raise CalculationError(msg)
-
-    return output
+    return helpers.rolling_sum(
+        fis_net_income,
+        window=TWELVE_MONTHS,
+    )
 
 
 # noinspection PyShadowingNames
-def c_last_twelve_months_revenue(
-    fis_revenues,
-    f_fiscal_year,
-    f_fiscal_period,
-    configuration
-):
+def c_last_twelve_months_revenue(fis_revenues):
     r"""
     Calculate the last twelve months revenue (LTM revenue).
 
-    For quarterly periods this function computes the rolling sum of revenues over the last four quarters.
+    This function computes the rolling sum of the revenues of the periods spanning the last twelve months, on the
+    financial statements' own clock, so it adapts to how often each company reports.
 
     .. category:: Fundamental
 
@@ -1303,12 +1316,6 @@ def c_last_twelve_months_revenue(
     ----------
     fis_revenues : DataColumn
         The total revenues for each period.
-    f_fiscal_year : DataColumn
-        The fiscal year for each period.
-    f_fiscal_period : DataColumn
-        The fiscal period (e.g., quarter) within each fiscal year.
-    configuration : Configuration
-        Configuration object with attribute `period` ("quarterly" or "annual").
 
     Returns
     -------
@@ -1323,30 +1330,12 @@ def c_last_twelve_months_revenue(
 
         \mathrm{LTM\ Revenue}_t = \sum_{i=0}^{3} \mathrm{Revenue}_{t-i}
 
-    For annual data, return the period revenue directly.
+    For half-yearly data, it's the sum of the current and previous halves, and for annual data, the period revenue.
     """
-    if fis_revenues.is_null():
-        output = fis_revenues
-    elif f_fiscal_year.is_null():
-        output = f_fiscal_year
-    elif f_fiscal_period.is_null():
-        output = f_fiscal_period
-    elif configuration.period == 'quarterly':
-        period_keys = DataColumn.concatenate(f_fiscal_year, f_fiscal_period)
-        output = helpers.indexed_rolling_window_operation(
-            key_column=period_keys,
-            value_column=fis_revenues,
-            operation_function=sum,
-            window_length=4
-        )
-    elif configuration.period == 'annual':
-        output = fis_revenues
-    else:
-        msg = f"calculations - last_twelve_months_revenue failed, unexpected period type: {configuration.period}"
-
-        raise CalculationError(msg)
-
-    return output
+    return helpers.rolling_sum(
+        fis_revenues,
+        window=TWELVE_MONTHS,
+    )
 
 
 # noinspection PyShadowingNames

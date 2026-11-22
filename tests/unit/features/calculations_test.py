@@ -1,11 +1,13 @@
+import datetime
 from decimal import Decimal
-import types
+import math
 import pyarrow
 import pytest
 import pyarrow.compute
 from kaxanuk.data_curator import DataColumn
+from kaxanuk.data_curator import ReferencePeriods
+from kaxanuk.data_curator import clock_sync_methods
 from kaxanuk.data_curator.features import calculations
-from kaxanuk.data_curator.exceptions import CalculationError
 
 from .fixtures import example_columns
 #data_column_debugger defined in tests/conftest.py
@@ -27,18 +29,89 @@ def example_chakin_money_flow_calculation():
 
 
 @pytest.fixture
-def example_configuration_period_annual():
-    return types.SimpleNamespace(period='annual')
+def example_daily_master_clock():
+    # Four trading days, from January 2024 to January 2025
+    return DataColumn.load(
+        [
+            datetime.date(2024, 1, 2),
+            datetime.date(2024, 6, 3),
+            datetime.date(2024, 12, 2),
+            datetime.date(2025, 1, 3),
+        ],
+        clock_master=True,
+        clock_periods_per_row=1,
+        clock_reference_period=ReferencePeriods.DAY,
+    )
 
 
 @pytest.fixture
-def example_configuration_period_quarterly():
-    return types.SimpleNamespace(period='quarterly')
+def example_dividend_clock(example_daily_master_clock):
+    # The ex-dividend dates of two dividends, the first one before the master clock starts
+    return DataColumn.load(
+        [
+            datetime.date(2023, 12, 1),
+            datetime.date(2024, 6, 3),
+        ],
+        clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_next_period_end,
+        clock_master=example_daily_master_clock,
+        clock_periods_per_row=0,
+        clock_reference_period=ReferencePeriods.DAY,
+        consolidation_method=clock_sync_methods.ConsolidationMethods.sum,
+    )
 
 
 @pytest.fixture(scope="module")
 def example_earnings_to_price():
     return example_columns.load_example_columns('earnings_to_price.csv')
+
+
+@pytest.fixture
+def example_fundamental_annual_clock(example_daily_master_clock):
+    # The filing dates of two annual financial statements
+    return DataColumn.load(
+        [
+            datetime.date(2023, 2, 1),
+            datetime.date(2024, 2, 1),
+        ],
+        clock_master=example_daily_master_clock,
+        clock_periods_per_row=1,
+        clock_reference_period=ReferencePeriods.YEAR,
+        clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
+    )
+
+
+@pytest.fixture
+def example_fundamental_half_yearly_clock(example_daily_master_clock):
+    # The filing dates of three half-yearly financial statements
+    return DataColumn.load(
+        [
+            datetime.date(2023, 2, 1),
+            datetime.date(2023, 8, 1),
+            datetime.date(2024, 2, 1),
+        ],
+        clock_master=example_daily_master_clock,
+        clock_periods_per_row=6,
+        clock_reference_period=ReferencePeriods.MONTH,
+        clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
+    )
+
+
+@pytest.fixture
+def example_fundamental_quarterly_clock(example_daily_master_clock):
+    # The filing dates of five quarterly financial statements
+    return DataColumn.load(
+        [
+            datetime.date(2023, 2, 1),
+            datetime.date(2023, 5, 1),
+            datetime.date(2023, 8, 1),
+            datetime.date(2023, 11, 1),
+            datetime.date(2024, 2, 1),
+        ],
+        clock_master=example_daily_master_clock,
+        clock_periods_per_row=3,
+        clock_reference_period=ReferencePeriods.MONTH,
+        clock_upscale_method=clock_sync_methods.UpscaleMethods.infill_from_timestamp,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -444,28 +517,27 @@ class TestCChaikinMoneyFlow21dDividendAndSplitAdjusted:
         )
         result = calculations.c_chaikin_money_flow_21d_dividend_and_split_adjusted(high, low, close, volume)
 
-        rounded_result = DataColumn.load(
-            pyarrow.compute.round(
-                result.to_pyarrow(),
-                ndigits=11
-            )
-        )
-
-        expected_result = DataColumn.load(
+        result_values = result.to_pyarrow().to_pylist()
+        expected_values = DataColumn.load(
             example_chakin_money_flow_calculation['c_chaikin_money_flow_21d']
-        )
-        expected_rounded_result = DataColumn.load(
-            pyarrow.compute.round(
-                expected_result.to_pyarrow(),
-                ndigits=11
-            )
-        )
+        ).to_pyarrow().to_pylist()
 
-        assert DataColumn.fully_equal(
-            rounded_result,
-            expected_rounded_result,
-            approximate_floats=True,
-            equal_nulls=True,
+        # The float arithmetic differs from the exact expected values around their 12th significant digit, where the
+        # money flows of a window nearly cancel out
+        assert all(
+            (
+                math.isclose(
+                    result_value,
+                    float(expected_value),
+                    rel_tol=1e-9,
+                )
+                if (
+                    result_value is not None
+                    and expected_value is not None
+                )
+                else result_value is expected_value
+            )
+            for (result_value, expected_value) in zip(result_values, expected_values, strict=True)
         )
 
 
@@ -488,28 +560,27 @@ class TestCChaikinMoneyFlow21dSplitAdjusted:
         )
         result = calculations.c_chaikin_money_flow_21d_split_adjusted(high, low, close, volume)
 
-        rounded_result = DataColumn.load(
-            pyarrow.compute.round(
-                result.to_pyarrow(),
-                ndigits=11
-            )
-        )
-
-        expected_result = DataColumn.load(
+        result_values = result.to_pyarrow().to_pylist()
+        expected_values = DataColumn.load(
             example_chakin_money_flow_calculation['c_chaikin_money_flow_21d']
-        )
-        expected_rounded_result = DataColumn.load(
-            pyarrow.compute.round(
-                expected_result.to_pyarrow(),
-                ndigits=11
-            )
-        )
+        ).to_pyarrow().to_pylist()
 
-        assert DataColumn.fully_equal(
-            rounded_result,
-            expected_rounded_result,
-            approximate_floats=True,
-            equal_nulls=True,
+        # The float arithmetic differs from the exact expected values around their 12th significant digit, where the
+        # money flows of a window nearly cancel out
+        assert all(
+            (
+                math.isclose(
+                    result_value,
+                    float(expected_value),
+                    rel_tol=1e-9,
+                )
+                if (
+                    result_value is not None
+                    and expected_value is not None
+                )
+                else result_value is expected_value
+            )
+            for (result_value, expected_value) in zip(result_values, expected_values, strict=True)
         )
 
 
@@ -761,504 +832,168 @@ class TestCExponentialMovingAverage252dCloseSplitAdjusted:
         )
 
 
+class TestCLastTwelveMonthsDividendsSplitAdjusted:
+    def test_dividends_by_ex_dividend_date(
+        self,
+        example_dividend_clock,
+    ):
+        # Each row sums the dividends that went ex-dividend after the same date a year before, up to its own date
+        dividends = DataColumn.load(
+            [Decimal('0.25'), Decimal('0.30')],
+            reference_clock_column=example_dividend_clock,
+        )
+        result = calculations.c_last_twelve_months_dividends_split_adjusted(dividends)
+
+        assert result.to_pyarrow().to_pylist() == [Decimal('0.25'), Decimal('0.55'), Decimal('0.30'), Decimal('0.30')]
+
+    def test_without_dividends(
+        self,
+        example_daily_master_clock,
+    ):
+        empty_dividend_clock = DataColumn(
+            pyarrow.array(
+                [],
+                type=pyarrow.date32(),
+            ),
+            clock_downscale_method=clock_sync_methods.DownscaleMethods.group_by_next_period_end,
+            clock_master=example_daily_master_clock,
+            clock_periods_per_row=0,
+            clock_reference_period=ReferencePeriods.DAY,
+            consolidation_method=clock_sync_methods.ConsolidationMethods.sum,
+        )
+        dividends = DataColumn.load(
+            [],
+            reference_clock_column=empty_dividend_clock,
+        )
+        result = calculations.c_last_twelve_months_dividends_split_adjusted(dividends)
+
+        assert result.to_pyarrow().to_pylist() == [0, 0, 0, 0]
+
+
 class TestCLastTwelveMonthsNetIncome:
-    def test_annual_period(
+    def test_quarterly_statements(
         self,
-        example_configuration_period_annual,
+        example_fundamental_quarterly_clock,
     ):
-        fi_net_income_annual = DataColumn.load(
-            [
-                None,
-                None,
-                Decimal('3'),
-                Decimal('5'),
-                Decimal('7'),
-                Decimal('11'),
-                Decimal('13'),
-                Decimal('2'),
-            ]
+        net_income = DataColumn.load(
+            [Decimal('1'), Decimal('2'), Decimal('3'), Decimal('4'), Decimal('5')],
+            reference_clock_column=example_fundamental_quarterly_clock,
         )
-        f_fiscal_year_annual = DataColumn.load(
-            [
-                None,
-                None,
-                '2001',
-                '2002',
-                '2003',
-                '2004',
-                '2005',
-                '2006',
-            ]
-        )
-        f_fiscal_period_annual = DataColumn.load(
-            [
-                None,
-                None,
-                'FY',
-                'FY',
-                'FY',
-                'FY',
-                'FY',
-                'FY',
-            ]
-        )
-        assert DataColumn.fully_equal(
-            calculations.c_last_twelve_months_net_income(
-                fi_net_income_annual,
-                f_fiscal_year_annual,
-                f_fiscal_period_annual,
-                example_configuration_period_annual
-            ),
-            fi_net_income_annual,
-            equal_nulls=True
-        )
+        result = calculations.c_last_twelve_months_net_income(net_income)
 
-    def test_invalid_period(self):
-        fi_net_income_valid = DataColumn.load([Decimal('5'), Decimal('7'), Decimal('9')])
-        f_fiscal_year_valid = DataColumn.load(['2001', '2002', '2003'])
-        f_fiscal_period_valid = DataColumn.load(['FY', 'FY', 'FY'])
+        assert result.reference_array.to_pylist() == [None, None, None, Decimal('10'), Decimal('14')]
 
-        class DummyConfig:
-            period = 'monthly'
-
-        with pytest.raises(CalculationError) as exc_info:
-            calculations.c_last_twelve_months_net_income(
-                fi_net_income_valid,
-                f_fiscal_year_valid,
-                f_fiscal_period_valid,
-                DummyConfig()
-            )
-        assert "unexpected period type: monthly" in str(exc_info.value)
-
-    @pytest.mark.parametrize("config_fixture", ["annual", "quarterly"])
-    def test_null_fiscal_period(
+    def test_half_yearly_statements(
         self,
-        example_configuration_period_annual,
-        example_configuration_period_quarterly,
-        config_fixture,
+        example_fundamental_half_yearly_clock,
     ):
-        config = (example_configuration_period_annual
-                  if config_fixture == "annual"
-                  else example_configuration_period_quarterly)
-
-        net_income_valid = DataColumn.load([Decimal('5'), Decimal('7'), Decimal('9')])
-        fiscal_year_valid = DataColumn.load(['2001', '2002', '2003'])
-        fiscal_period_null = DataColumn.load([None, None, None])
-
-        result = calculations.c_last_twelve_months_net_income(
-            net_income_valid,
-            fiscal_year_valid,
-            fiscal_period_null,
-            config
+        net_income = DataColumn.load(
+            [Decimal('1'), Decimal('2'), Decimal('3')],
+            reference_clock_column=example_fundamental_half_yearly_clock,
         )
-        assert DataColumn.fully_equal(result, fiscal_period_null, equal_nulls=True)
+        result = calculations.c_last_twelve_months_net_income(net_income)
 
-    @pytest.mark.parametrize("config_fixture", ["annual", "quarterly"])
-    def test_null_fiscal_year(
+        assert result.reference_array.to_pylist() == [None, Decimal('3'), Decimal('5')]
+
+    def test_annual_statements(
         self,
-        example_configuration_period_annual,
-        example_configuration_period_quarterly,
-        config_fixture,
+        example_fundamental_annual_clock,
     ):
-        config = (example_configuration_period_annual
-                  if config_fixture == "annual"
-                  else example_configuration_period_quarterly)
-
-        net_income_valid = DataColumn.load([Decimal('5'), Decimal('7'), Decimal('9')])
-        fiscal_year_null = DataColumn.load([None, None, None])
-        fiscal_period_valid = DataColumn.load(['FY', 'FY', 'FY'])
-
-        result = calculations.c_last_twelve_months_net_income(
-            net_income_valid,
-            fiscal_year_null,
-            fiscal_period_valid,
-            config
+        net_income = DataColumn.load(
+            [Decimal('1'), Decimal('2')],
+            reference_clock_column=example_fundamental_annual_clock,
         )
-        assert DataColumn.fully_equal(result, fiscal_year_null, equal_nulls=True)
+        result = calculations.c_last_twelve_months_net_income(net_income)
 
-    @pytest.mark.parametrize("config_fixture", ["annual", "quarterly"])
-    def test_null_net_income(
+        assert result.reference_array.to_pylist() == [Decimal('1'), Decimal('2')]
+
+    def test_null_statement_value(
         self,
-        example_configuration_period_annual,
-        example_configuration_period_quarterly,
-        config_fixture,
+        example_fundamental_quarterly_clock,
     ):
-        config = (example_configuration_period_annual
-                  if config_fixture == "annual"
-                  else example_configuration_period_quarterly)
-
-        net_income_null = DataColumn.load([None, None, None])
-        fiscal_year_valid = DataColumn.load(['2001', '2002', '2003'])
-        fiscal_period_valid = DataColumn.load(['FY', 'FY', 'FY'])
-
-        result = calculations.c_last_twelve_months_net_income(
-            net_income_null,
-            fiscal_year_valid,
-            fiscal_period_valid,
-            config
+        # Both windows of four quarters hold the second quarter
+        net_income = DataColumn.load(
+            [Decimal('1'), None, Decimal('3'), Decimal('4'), Decimal('5')],
+            reference_clock_column=example_fundamental_quarterly_clock,
         )
-        assert DataColumn.fully_equal(result, net_income_null, equal_nulls=True)
+        result = calculations.c_last_twelve_months_net_income(net_income)
 
-    def test_quarterly_period(
+        assert result.reference_array.to_pylist() == [None, None, None, None, None]
+
+    def test_on_statements_clock(
         self,
-        example_configuration_period_quarterly,
+        example_fundamental_quarterly_clock,
     ):
-        fi_net_income_quarterly = DataColumn.load(
-            [
-                None,
-                None,
-                Decimal('3'),
-                Decimal('3'),
-                Decimal('3'),
-                Decimal('5'),
-                Decimal('5'),
-                Decimal('5'),
-                Decimal('7'),
-                Decimal('7'),
-                Decimal('7'),
-                Decimal('11'),
-                Decimal('11'),
-                Decimal('11'),
-                Decimal('13'),
-                Decimal('13'),
-                Decimal('13'),
-                Decimal('2'),
-                Decimal('2'),
-                Decimal('2'),
-            ]
+        net_income = DataColumn.load(
+            [Decimal('1'), Decimal('2'), Decimal('3'), Decimal('4'), Decimal('5')],
+            reference_clock_column=example_fundamental_quarterly_clock,
         )
-        f_fiscal_year_quarterly = DataColumn.load(
-            [
-                None,
-                None,
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-            ]
-        )
-        f_fiscal_period_quarterly = DataColumn.load(
-            [
-                None,
-                None,
-                'Q2',
-                'Q2',
-                'Q2',
-                'Q3',
-                'Q3',
-                'Q3',
-                'Q4',
-                'Q4',
-                'Q4',
-                'Q1',
-                'Q1',
-                'Q1',
-                'Q2',
-                'Q2',
-                'Q2',
-                'Q3',
-                'Q3',
-                'Q3',
-            ]
-        )
-        expected_result_quarterly = DataColumn.load(
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Decimal('26'),
-                Decimal('26'),
-                Decimal('26'),
-                Decimal('36'),
-                Decimal('36'),
-                Decimal('36'),
-                Decimal('33'),
-                Decimal('33'),
-                Decimal('33'),
-            ]
-        )
-        assert DataColumn.fully_equal(
-            calculations.c_last_twelve_months_net_income(
-                fi_net_income_quarterly,
-                f_fiscal_year_quarterly,
-                f_fiscal_period_quarterly,
-                example_configuration_period_quarterly
-            ),
-            expected_result_quarterly,
-            equal_nulls=True
-        )
+        result = calculations.c_last_twelve_months_net_income(net_income)
+
+        assert result.reference_clock_column is example_fundamental_quarterly_clock
 
 
 class TestCLastTwelveMonthsRevenue:
-    def test_annual_period(
+    def test_quarterly_statements(
         self,
-        example_configuration_period_annual,
+        example_fundamental_quarterly_clock,
     ):
-        fi_revenue_annual = DataColumn.load(
-            [
-                None,
-                None,
-                Decimal('3'),
-                Decimal('5'),
-                Decimal('7'),
-                Decimal('11'),
-                Decimal('13'),
-                Decimal('2'),
-            ]
+        revenues = DataColumn.load(
+            [Decimal('1'), Decimal('2'), Decimal('3'), Decimal('4'), Decimal('5')],
+            reference_clock_column=example_fundamental_quarterly_clock,
         )
-        f_fiscal_year_annual = DataColumn.load(
-            [
-                None,
-                None,
-                '2001',
-                '2002',
-                '2003',
-                '2004',
-                '2005',
-                '2006',
-            ]
-        )
-        f_fiscal_period_annual = DataColumn.load(
-            [
-                None,
-                None,
-                'FY',
-                'FY',
-                'FY',
-                'FY',
-                'FY',
-                'FY',
-            ]
-        )
-        assert DataColumn.fully_equal(
-            calculations.c_last_twelve_months_revenue(
-                fi_revenue_annual,
-                f_fiscal_year_annual,
-                f_fiscal_period_annual,
-                example_configuration_period_annual
-            ),
-            fi_revenue_annual,
-            equal_nulls=True
-        )
+        result = calculations.c_last_twelve_months_revenue(revenues)
 
-    def test_invalid_period(self):
-        fi_net_income_valid = DataColumn.load([Decimal('5'), Decimal('7'), Decimal('9')])
-        f_fiscal_year_valid = DataColumn.load(['2001', '2002', '2003'])
-        f_fiscal_period_valid = DataColumn.load(['FY', 'FY', 'FY'])
+        assert result.reference_array.to_pylist() == [None, None, None, Decimal('10'), Decimal('14')]
 
-        class DummyConfig:
-            period = 'monthly'
-
-        with pytest.raises(CalculationError) as exc_info:
-            calculations.c_last_twelve_months_revenue(
-                fi_net_income_valid,
-                f_fiscal_year_valid,
-                f_fiscal_period_valid,
-                DummyConfig()
-            )
-        assert "unexpected period type: monthly" in str(exc_info.value)
-
-    @pytest.mark.parametrize("config_fixture", ["annual", "quarterly"])
-    def test_null_fiscal_period(
+    def test_half_yearly_statements(
         self,
-        example_configuration_period_annual,
-        example_configuration_period_quarterly,
-        config_fixture,
+        example_fundamental_half_yearly_clock,
     ):
-        config = (example_configuration_period_annual
-                  if config_fixture == "annual"
-                  else example_configuration_period_quarterly)
-
-        revenue_valid = DataColumn.load([Decimal('5'), Decimal('7'), Decimal('9')])
-        fiscal_year_valid = DataColumn.load(['2001', '2002', '2003'])
-        fiscal_period_null = DataColumn.load([None, None, None])
-
-        result = calculations.c_last_twelve_months_revenue(
-            revenue_valid,
-            fiscal_year_valid,
-            fiscal_period_null,
-            config
+        revenues = DataColumn.load(
+            [Decimal('1'), Decimal('2'), Decimal('3')],
+            reference_clock_column=example_fundamental_half_yearly_clock,
         )
-        assert DataColumn.fully_equal(result, fiscal_period_null, equal_nulls=True)
+        result = calculations.c_last_twelve_months_revenue(revenues)
 
-    @pytest.mark.parametrize("config_fixture", ["annual", "quarterly"])
-    def test_null_fiscal_year(
+        assert result.reference_array.to_pylist() == [None, Decimal('3'), Decimal('5')]
+
+    def test_annual_statements(
         self,
-        example_configuration_period_annual,
-        example_configuration_period_quarterly,
-        config_fixture,
+        example_fundamental_annual_clock,
     ):
-        config = (example_configuration_period_annual
-                  if config_fixture == "annual"
-                  else example_configuration_period_quarterly)
-
-        revenue_valid = DataColumn.load([Decimal('5'), Decimal('7'), Decimal('9')])
-        fiscal_year_null = DataColumn.load([None, None, None])
-        fiscal_period_valid = DataColumn.load(['FY', 'FY', 'FY'])
-
-        result = calculations.c_last_twelve_months_revenue(
-            revenue_valid,
-            fiscal_year_null,
-            fiscal_period_valid,
-            config
+        revenues = DataColumn.load(
+            [Decimal('1'), Decimal('2')],
+            reference_clock_column=example_fundamental_annual_clock,
         )
-        assert DataColumn.fully_equal(result, fiscal_year_null, equal_nulls=True)
+        result = calculations.c_last_twelve_months_revenue(revenues)
 
-    @pytest.mark.parametrize("config_fixture", ["annual", "quarterly"])
-    def test_null_revenue(
+        assert result.reference_array.to_pylist() == [Decimal('1'), Decimal('2')]
+
+    def test_null_statement_value(
         self,
-        example_configuration_period_annual,
-        example_configuration_period_quarterly,
-        config_fixture,
+        example_fundamental_quarterly_clock,
     ):
-        config = (example_configuration_period_annual
-                  if config_fixture == "annual"
-                  else example_configuration_period_quarterly)
-
-        revenue_null = DataColumn.load([None, None, None])
-        fiscal_year_valid = DataColumn.load(['2001', '2002', '2003'])
-        fiscal_period_valid = DataColumn.load(['FY', 'FY', 'FY'])
-
-        result = calculations.c_last_twelve_months_revenue(
-            revenue_null,
-            fiscal_year_valid,
-            fiscal_period_valid,
-            config
+        # Both windows of four quarters hold the second quarter
+        revenues = DataColumn.load(
+            [Decimal('1'), None, Decimal('3'), Decimal('4'), Decimal('5')],
+            reference_clock_column=example_fundamental_quarterly_clock,
         )
-        assert DataColumn.fully_equal(result, revenue_null, equal_nulls=True)
+        result = calculations.c_last_twelve_months_revenue(revenues)
 
-    def test_quarterly_period(
+        assert result.reference_array.to_pylist() == [None, None, None, None, None]
+
+    def test_on_statements_clock(
         self,
-        example_configuration_period_quarterly,
+        example_fundamental_quarterly_clock,
     ):
-        fi_revenue_quarterly = DataColumn.load(
-            [
-                None,
-                None,
-                Decimal('3'),
-                Decimal('3'),
-                Decimal('3'),
-                Decimal('5'),
-                Decimal('5'),
-                Decimal('5'),
-                Decimal('7'),
-                Decimal('7'),
-                Decimal('7'),
-                Decimal('11'),
-                Decimal('11'),
-                Decimal('11'),
-                Decimal('13'),
-                Decimal('13'),
-                Decimal('13'),
-                Decimal('2'),
-                Decimal('2'),
-                Decimal('2'),
-            ]
+        revenues = DataColumn.load(
+            [Decimal('1'), Decimal('2'), Decimal('3'), Decimal('4'), Decimal('5')],
+            reference_clock_column=example_fundamental_quarterly_clock,
         )
-        f_fiscal_year_quarterly = DataColumn.load(
-            [
-                None,
-                None,
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2001',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-                '2002',
-            ]
-        )
-        f_fiscal_period_quarterly = DataColumn.load(
-            [
-                None,
-                None,
-                'Q2',
-                'Q2',
-                'Q2',
-                'Q3',
-                'Q3',
-                'Q3',
-                'Q4',
-                'Q4',
-                'Q4',
-                'Q1',
-                'Q1',
-                'Q1',
-                'Q2',
-                'Q2',
-                'Q2',
-                'Q3',
-                'Q3',
-                'Q3',
-            ]
-        )
-        expected_result_quarterly = DataColumn.load(
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Decimal('26'),
-                Decimal('26'),
-                Decimal('26'),
-                Decimal('36'),
-                Decimal('36'),
-                Decimal('36'),
-                Decimal('33'),
-                Decimal('33'),
-                Decimal('33'),
-            ]
-        )
-        assert DataColumn.fully_equal(
-            calculations.c_last_twelve_months_revenue(
-                fi_revenue_quarterly,
-                f_fiscal_year_quarterly,
-                f_fiscal_period_quarterly,
-                example_configuration_period_quarterly
-            ),
-            expected_result_quarterly,
-            equal_nulls=True
-        )
+        result = calculations.c_last_twelve_months_revenue(revenues)
+
+        assert result.reference_clock_column is example_fundamental_quarterly_clock
 
 
 class TestCLastTwelveMonthsRevenuePerShare:
